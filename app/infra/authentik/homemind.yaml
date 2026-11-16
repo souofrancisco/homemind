@@ -41,3 +41,21 @@ entries:
     attrs:
       name: HomeMind
       provider: !KeyOf provider
+  - model: authentik_brands.brand
+    identifiers:
+      domain: localhost
+    attrs:
+      default: true
+      branding_title: HomeMind
+      branding_custom_css: |
+        :root {
+          --ak-color-primary: #4c6ef5;
+          --ak-font-family-sans-serif: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          --ak-global--Color--100: #212529;
+          --ak-global--BackgroundColor--100: #f8f9fa;
+        }
+
+        html[data-theme="dark"] {
+          --ak-global--Color--100: #f8f9fa;
+          --ak-global--BackgroundColor--100: #212529;
+        }

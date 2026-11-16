@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     database_path: str = "./data/homemind-simulation.db"
     mcp_endpoint: str = ""
     mcp_transport: str = ""
+    # Nunca logar nem devolver este valor (header X-API-Key do MCP Altice).
+    mcp_api_key: str = ""
+    mcp_client_type: str = "core"
     # Nunca logar nem devolver este valor.
     mcp_auth_token: str = ""
     llm_api_key: str = ""
