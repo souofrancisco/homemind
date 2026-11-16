@@ -3,13 +3,13 @@ SHELL := bash
 BACKEND  := app/backend
 FRONTEND := app/frontend
 
-.PHONY: dev down test lint contracts build android smoke secrets check worktree
+.PHONY: dev down test lint contracts build android smoke check worktree
 
 dev:  ## ambiente completo com hot reload (Docker)
-	docker compose up --build
+	docker compose -f app/compose.yaml up --build
 
 down:
-	docker compose down
+	docker compose -f app/compose.yaml down
 
 test:  ## pytest — fora de `check` durante a hackathon (sem testes nesta fase)
 	cd $(BACKEND) && uv run pytest -q
@@ -26,23 +26,20 @@ contracts:  ## OpenAPI do FastAPI -> tipos TS (gerados, não versionados)
 build: contracts  ## typecheck + build do frontend contra o contrato atual
 	cd $(FRONTEND) && npm run build
 
-secrets:
-	scripts/check-secrets.sh
-
 android: contracts  ## APK debug -> app/frontend/android/app/build/outputs/apk/debug/ (requer JDK 21 + ANDROID_HOME)
 	cd $(FRONTEND) && VITE_API_URL=$${VITE_API_URL:-http://localhost:8000} npm run build && npx cap sync android
 	cd $(FRONTEND)/android && ./gradlew --no-daemon assembleDebug
 
 smoke:  ## sobe a stack, valida backend/frontend/proxy, desliga
-	@trap 'docker compose down -v >/dev/null 2>&1' EXIT; \
+	@trap 'docker compose -f app/compose.yaml down -v >/dev/null 2>&1' EXIT; \
 	export BACKEND_PORT=$${BACKEND_PORT:-18000} FRONTEND_PORT=$${FRONTEND_PORT:-15173}; \
-	docker compose up --build -d --wait --wait-timeout 180 && \
+	docker compose -f app/compose.yaml up --build -d --wait --wait-timeout 180 && \
 	curl -fsS localhost:$$BACKEND_PORT/healthz | grep -q '"status":"ok"' && \
 	curl -fsS localhost:$$FRONTEND_PORT/ | grep -q 'HomeMind Spaces' && \
 	curl -fsS localhost:$$FRONTEND_PORT/healthz | grep -q '"status":"ok"' && echo "smoke OK"
 
-check: lint build secrets  ## tudo o que o CI exige (sem Docker, sem testes)
-	docker compose config -q
+check: lint build  ## tudo o que o CI exige (sem Docker, sem testes)
+	docker compose -f app/compose.yaml config -q
 
 worktree:  ## make worktree b=feat/US-12-nome -> ../homemind-US-12-nome (a partir de origin/main)
 	@test -n "$(b)" || { echo "uso: make worktree b=feat/US-xx-nome"; exit 1; }

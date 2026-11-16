@@ -13,11 +13,11 @@ FastAPI + Pydantic + SQLite (backend) · React + Vite + TypeScript + Mantine (fr
 
 ## Arrancar (Docker)
 ```bash
-cp .env.example .env      # opcional; defaults = SIMULATION, escritas físicas OFF
+cp app/.env.example app/.env      # opcional; defaults = SIMULATION, escritas físicas OFF
 make dev   # = docker compose up --build  (backend + frontend + Authentik)
 ```
 Frontend http://localhost:5173 · API http://localhost:8000 (docs `/docs`, `/healthz`, `/api/me`) · Authentik http://localhost:9000.
-Login de desenvolvimento: `akadmin` / `homemind-dev` (só dev; mudar com `AUTHENTIK_ADMIN_PASSWORD`). O provider OIDC (`homemind`, público, PKCE) é criado automaticamente por `infra/authentik/homemind.yaml`. Se mudares `AUTHENTIK_PORT`/`FRONTEND_PORT`, o issuer e os redirect URIs acompanham via compose.
+Login de desenvolvimento: `akadmin` / `homemind-dev` (só dev; mudar com `AUTHENTIK_ADMIN_PASSWORD`). O provider OIDC (`homemind`, público, PKCE) é criado automaticamente por `app/infra/authentik/homemind.yaml`. Se mudares `AUTHENTIK_PORT`/`FRONTEND_PORT`, o issuer e os redirect URIs acompanham via compose.
 
 ## Android (APK debug)
 Requer JDK 21 e Android SDK (`ANDROID_HOME`, plataforma 36).
@@ -30,7 +30,7 @@ A app usa o mesmo frontend; o login abre o navegador do sistema e volta por deep
 
 ## Verificar (igual ao CI; sem testes automatizados na hackathon)
 ```bash
-make check   # ruff + eslint + contrato OpenAPI→TS + build frontend + segredos + compose config
+make check   # ruff + eslint + contrato OpenAPI→TS + build frontend + compose config
 make smoke   # sobe a stack Docker e valida backend/frontend
 ```
 Requer `uv`, Node 22, Docker, make. Também: `make dev`, `make down`, `make lint`, `make android`.

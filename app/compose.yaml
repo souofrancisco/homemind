@@ -1,7 +1,8 @@
 # Ambiente de desenvolvimento local (hot reload). Não é um setup de produção.
+name: homemind
 services:
   backend:
-    build: ./app/backend
+    build: ./backend
     command: uvicorn homemind.main:app --host 0.0.0.0 --port 8000 --reload
     env_file:
       - path: .env
@@ -15,7 +16,7 @@ services:
       CORS_ORIGINS: http://localhost:${FRONTEND_PORT:-5173},http://localhost,https://localhost
     ports: ["${BACKEND_PORT:-8000}:8000"]
     volumes:
-      - ./app/backend/src:/srv/src
+      - ./backend/src:/srv/src
       - db:/srv/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/healthz')"]
@@ -23,13 +24,13 @@ services:
       timeout: 3s
       retries: 10
   frontend:
-    build: ./app/frontend
+    build: ./frontend
     environment:
       API_PROXY_TARGET: http://backend:8000
       VITE_OIDC_AUTHORITY: http://localhost:${AUTHENTIK_PORT:-9000}/application/o/homemind/
     ports: ["${FRONTEND_PORT:-5173}:5173"]
     volumes:
-      - ./app/frontend/src:/app/src
+      - ./frontend/src:/app/src
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173/"]
       interval: 3s
