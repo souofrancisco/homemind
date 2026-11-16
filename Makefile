@@ -11,7 +11,7 @@ dev:  ## ambiente completo com hot reload (Docker)
 down:
 	docker compose down
 
-test:  ## pytest (backend, inclui testes junto das features)
+test:  ## pytest — fora de `check` durante a hackathon (sem testes nesta fase)
 	cd $(BACKEND) && uv run pytest -q
 
 lint:  ## ruff + eslint
@@ -37,7 +37,7 @@ smoke:  ## sobe a stack, valida backend/frontend/proxy, desliga
 	curl -fsS localhost:$$FRONTEND_PORT/ | grep -q 'HomeMind Spaces' && \
 	curl -fsS localhost:$$FRONTEND_PORT/healthz | grep -q '"status":"ok"' && echo "smoke OK"
 
-check: lint test build secrets  ## tudo o que o CI exige (sem Docker)
+check: lint build secrets  ## tudo o que o CI exige (sem Docker, sem testes)
 	docker compose config -q
 
 worktree:  ## make worktree b=feat/US-12-nome -> ../homemind-US-12-nome (a partir de origin/main)

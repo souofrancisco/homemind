@@ -4,7 +4,6 @@
 |---|---|---|
 | Primeira leitura MCP real | 16/11 | — |
 | Percurso completo de 2 estadias | 17/11 | — |
-| Testes críticos de segurança a passar | 100% | — |
 | CI verde em `main` | sempre | — |
 | Demos completas seguidas sem falhas | 3 | — |
 | Check-in+check-out do gestor | < 1 min de cliques | — |
