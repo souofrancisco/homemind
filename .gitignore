@@ -1,0 +1,24 @@
+# secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+# data
+*.db
+*.sqlite
+*.sqlite3
+data/
+# python
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+# node
+node_modules/
+dist/
+# tooling
+graphify-out/
+.DS_Store
