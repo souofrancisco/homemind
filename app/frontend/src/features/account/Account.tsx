@@ -1,8 +1,8 @@
 import { Alert, Button, Card, Loader, Stack, Text, Title } from "@mantine/core";
 import { IconLogout } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { useAuth } from "../../shared/auth/AuthProvider";
-import { getMe, type Me } from "../me/api";
+import { useAuth } from "../auth/AuthProvider";
+import { getMe, type Me } from "../auth/api";
 
 export default function Account() {
   const { logout } = useAuth();

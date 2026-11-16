@@ -1,5 +1,5 @@
 import { notifications } from "@mantine/notifications";
-import { login, manager } from "../auth/oidc";
+import { login, manager } from "./oidc";
 
 // Web: mesmo origin via proxy do Vite (""). Android: URL absoluta do backend (VITE_API_URL).
 const base = import.meta.env.VITE_API_URL ?? "";

@@ -4,8 +4,8 @@ import { useEffect, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import Account from "../features/account/Account";
 import Dashboard from "../features/dashboard/Dashboard";
-import { useAuth } from "../shared/auth/AuthProvider";
-import { completeLogin } from "../shared/auth/oidc";
+import { useAuth } from "../features/auth/AuthProvider";
+import { completeLogin } from "../features/auth/oidc";
 
 // Para uma nova feature: acrescentar uma linha aqui (rota + item de navegação).
 const pages = [

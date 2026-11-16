@@ -1,7 +1,7 @@
 import { Alert, Badge, Card, Group, Loader, Stack, Text, Title } from "@mantine/core";
 import { IconAlertCircle } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { useAuth } from "../../shared/auth/AuthProvider";
+import { useAuth } from "../auth/AuthProvider";
 import { getHealth, type Health } from "../health/api";
 
 export default function Dashboard() {
