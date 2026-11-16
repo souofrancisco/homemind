@@ -28,10 +28,10 @@ adb install -r app/frontend/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 A app usa o mesmo frontend; o login abre o navegador do sistema e volta por deep link (`pt.homemind.app://auth/callback`). Para outros URLs: `VITE_API_URL=… VITE_OIDC_AUTHORITY=… make android` (o issuer tem de coincidir com `OIDC_ISSUER` do backend).
 
-## Verificar (igual ao CI; sem testes automatizados na hackathon)
+## Verificar (CI = make check; sem testes automatizados na hackathon)
 ```bash
 make check   # ruff + eslint + contrato OpenAPI→TS + build frontend + compose config
-make smoke   # sobe a stack Docker e valida backend/frontend
+make smoke   # opcional, local: sobe a stack Docker e valida (fora do CI)
 ```
 Requer `uv`, Node 22, Docker, make. Também: `make dev`, `make down`, `make lint`, `make android`.
 
