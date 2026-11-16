@@ -1,9 +1,9 @@
 # AGENTS.md — HomeMind Spaces
-Aplica-se a Claude Code, Codex e outros agentes. Regras específicas: `backend/AGENTS.md`, `frontend/AGENTS.md`.
+Aplica-se a Claude Code, Codex e outros agentes. Regras específicas: `src/backend/AGENTS.md`, `src/frontend/AGENTS.md`.
 
 ## Produto
 Estadia → permissões → preferências → plano → ação verificada, sobre dispositivos Altice (MCP). Hackathon 16–20/11/2026. Fonte de verdade: https://docs.google.com/document/d/1b9Lq2ZejWwpkt-by3U_Belzig1Or-jZxCQE2yLQSoyU/edit?tab=t.0
-**Ler a US relevante no Docs (separadores 09–22) e 23–30 antes de implementar.** Não copiar o Docs para o repo; contratos detalhados vivem no código (`backend/app/contracts/`) e em `docs/`.
+**Ler a US relevante no Docs (separadores 09–22) e 23–30 antes de implementar.** Não copiar o Docs para o repo; contratos detalhados vivem no código (`src/backend/app/contracts/`) e em `docs/`.
 
 ## Stack e comandos
 Python 3.12 · FastAPI · Pydantic · SQLite · pytest · Ruff | React · Vite · TS · Tailwind | Docker Compose.
@@ -11,7 +11,7 @@ Python 3.12 · FastAPI · Pydantic · SQLite · pytest · Ruff | React · Vite �
 - Executar testes após **cada** alteração; não declarar "feito" sem os correr.
 
 ## Estrutura
-`backend/app/{contracts,core,features,connectors}` · `frontend/src/{app,pages,components,features,api}` · `shared/fixtures` · `docs/`.
+`src/backend/app/{contracts,core,features,connectors}` · `src/frontend/src/{app,pages,components,features,api}` · `shared/fixtures` · `docs/`.
 Módulos: spaces, stays, permissions, devices, plans, turnover, events (P1: maintenance, ai).
 
 ## Convenções

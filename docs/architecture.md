@@ -14,5 +14,5 @@ DeviceGateway  (discover, get_states, execute)
 - Monólito modular: spaces, stays, permissions, devices, plans, turnover, events.
 - SQLite; BD separada por modo (`homemind-simulation.db` / `homemind-real.db`).
 - `ENABLE_PHYSICAL_WRITES=false` por defeito.
-- Contratos (entidades/estados) em `backend/app/contracts/` — a fechar nos primeiros 60–90 min de 16/11 (Docs sep. 26).
+- Contratos (entidades/estados) em `src/backend/app/contracts/` — a fechar nos primeiros 60–90 min de 16/11 (Docs sep. 26).
 - Decisões: `docs/decisions/` (um ficheiro por decisão).

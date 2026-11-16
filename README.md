@@ -23,7 +23,7 @@ Frontend http://localhost:5173 · API http://localhost:8000 · docs http://local
 scripts/test.sh      # ruff + pytest + lint/build frontend + segredos + compose config
 scripts/smoke.sh     # sobe a stack e valida backend/frontend
 ```
-Sem Docker: `cd backend && pip install -e ".[dev]" && ruff check . && pytest` (Python 3.12) · `cd frontend && npm ci && npm run lint && npm run build`.
+Sem Docker: `cd src/backend && pip install -e ".[dev]" && ruff check . && pytest` (Python 3.12) · `cd src/frontend && npm ci && npm run lint && npm run build`.
 
 ## Equipa
 Pessoa 1 MCP & dispositivos · 2 Espaços/estadias/permissões · 3 Frontend base · 4 Planos/regras/turnover · 5 Hóspede & QA. Detalhe: separador 31 do Docs. Mapeamento pessoa→GitHub user: *por preencher* (ver [CONTRIBUTING](CONTRIBUTING.md)).
