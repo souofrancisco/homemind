@@ -1,8 +1,8 @@
 # Ambiente de desenvolvimento local (hot reload). Não é um setup de produção.
 services:
   backend:
-    build: ./backend
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    build: ./app/backend
+    command: uvicorn homemind.main:app --host 0.0.0.0 --port 8000 --reload
     env_file:
       - path: .env
         required: false
@@ -12,7 +12,7 @@ services:
       ENABLE_PHYSICAL_WRITES: ${ENABLE_PHYSICAL_WRITES:-false}
     ports: ["${BACKEND_PORT:-8000}:8000"]
     volumes:
-      - ./backend/app:/srv/app
+      - ./app/backend/src:/srv/src
       - db:/srv/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/healthz')"]
@@ -20,12 +20,12 @@ services:
       timeout: 3s
       retries: 10
   frontend:
-    build: ./frontend
+    build: ./app/frontend
     environment:
       API_PROXY_TARGET: http://backend:8000
     ports: ["${FRONTEND_PORT:-5173}:5173"]
     volumes:
-      - ./frontend/src:/app/src
+      - ./app/frontend/src:/app/src
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173/"]
       interval: 3s

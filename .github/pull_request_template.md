@@ -1,7 +1,8 @@
 ## O quê / porquê
 Issue: #
 ## Verificação
-- [ ] `scripts/test.sh` passa
+- [ ] `make check` passa
 - [ ] Sem segredos; REAL vs SIMULATION preservado
+- [ ] Só toquei na minha feature (ou ficheiros partilhados justificados abaixo)
 - [ ] Contratos partilhados inalterados (ou acordados)
 Evidência (screenshot/log sanitizado):

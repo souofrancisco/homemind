@@ -1,0 +1,10 @@
+# Ficheiros partilhados: mudanças só com revisão do dono (ver docs/parallel-work.md).
+/.github/                  @souofrancisco
+/Makefile                  @souofrancisco
+/compose.yaml              @souofrancisco
+/app/backend/pyproject.toml @souofrancisco
+/app/backend/uv.lock       @souofrancisco
+/app/frontend/package.json @souofrancisco
+/app/frontend/package-lock.json @souofrancisco
+/app/backend/src/homemind/core/ @souofrancisco
+/AGENTS.md                 @souofrancisco
