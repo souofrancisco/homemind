@@ -3,7 +3,7 @@ SHELL := bash
 BACKEND  := app/backend
 FRONTEND := app/frontend
 
-.PHONY: dev down test lint contracts build smoke secrets check worktree
+.PHONY: dev down test lint contracts build android smoke secrets check worktree
 
 dev:  ## ambiente completo com hot reload (Docker)
 	docker compose up --build
@@ -28,6 +28,10 @@ build: contracts  ## typecheck + build do frontend contra o contrato atual
 
 secrets:
 	scripts/check-secrets.sh
+
+android: contracts  ## APK debug -> app/frontend/android/app/build/outputs/apk/debug/ (requer JDK 21 + ANDROID_HOME)
+	cd $(FRONTEND) && VITE_API_URL=$${VITE_API_URL:-http://localhost:8000} npm run build && npx cap sync android
+	cd $(FRONTEND)/android && ./gradlew --no-daemon assembleDebug
 
 smoke:  ## sobe a stack, valida backend/frontend/proxy, desliga
 	@trap 'docker compose down -v >/dev/null 2>&1' EXIT; \
