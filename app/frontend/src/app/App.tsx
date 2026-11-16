@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getHealth, type Health } from "../api/health";
+import { getHealth, type Health } from "../features/health/api";
 
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);

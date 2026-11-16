@@ -1,4 +1,6 @@
-export type Health = { status: string; mode: "simulation" | "real"; physical_writes: boolean };
+import type { components } from "../../shared/api/schema";
+
+export type Health = components["schemas"]["Health"];
 
 export async function getHealth(): Promise<Health> {
   const r = await fetch("/healthz");

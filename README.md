@@ -14,25 +14,25 @@ FastAPI + Pydantic + SQLite (backend) · React + Vite + TypeScript + Tailwind (f
 ## Arrancar (Docker)
 ```bash
 cp .env.example .env      # opcional; defaults = SIMULATION, escritas físicas OFF
-docker compose up --build
+make dev   # = docker compose up --build
 ```
 Frontend http://localhost:5173 · API http://localhost:8000 · docs http://localhost:8000/docs · saúde http://localhost:8000/healthz. Dados SQLite persistem no volume `db`. Hot reload ativo (compose = ambiente de dev).
 
 ## Testes (iguais ao CI)
 ```bash
-scripts/test.sh      # ruff + pytest + lint/build frontend + segredos + compose config
-scripts/smoke.sh     # sobe a stack e valida backend/frontend
+make check   # ruff + pytest + lint + contrato OpenAPI→TS + build frontend + segredos + compose config
+make smoke   # sobe a stack Docker e valida backend/frontend
 ```
-Sem Docker: `cd backend && pip install -e ".[dev]" && ruff check . && pytest` (Python 3.12) · `cd frontend && npm ci && npm run lint && npm run build`.
+Requer `uv`, Node 22, Docker, make. Também: `make dev`, `make down`, `make test`, `make lint`.
 
 ## Equipa
-Pessoa 1 MCP & dispositivos · 2 Espaços/estadias/permissões · 3 Frontend base · 4 Planos/regras/turnover · 5 Hóspede & QA. Detalhe: separador 31 do Docs. Mapeamento pessoa→GitHub user: *por preencher* (ver [CONTRIBUTING](CONTRIBUTING.md)).
+Pessoa 1 MCP & dispositivos · 2 Espaços/estadias/permissões · 3 Frontend base · 4 Planos/regras/turnover · 5 Hóspede & QA. Detalhe: separador 31 do Docs. Mapeamento pessoa→GitHub user: *por preencher* (ver [docs/parallel-work.md](docs/parallel-work.md)).
 
 ## User Stories
 14 US (P0/P1) nos separadores 09–22 do Docs e como issues GitHub (label `P0`/`P1`). Não duplicadas aqui.
 
 ## Contribuir
-Ver [CONTRIBUTING.md](CONTRIBUTING.md) e [AGENTS.md](AGENTS.md).
+Ver [AGENTS.md](AGENTS.md) e [docs/parallel-work.md](docs/parallel-work.md).
 
 ## O que depende da Altice (MCP)
 Endpoint, transporte, auth, catálogo de tools, e se contacto de porta/lâmpada são expostos para leitura/escrita: **desconhecido até 16/11**. Template em [docs/mcp-capabilities.md](docs/mcp-capabilities.md); perguntas em [docs/mentor-questions.md](docs/mentor-questions.md). Sem MCP, só SIMULATION (rotulado) — não prova integração.

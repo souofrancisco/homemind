@@ -22,3 +22,6 @@ dist/
 # tooling
 graphify-out/
 .DS_Store
+tsconfig.tsbuildinfo
+# gerado do OpenAPI do backend: `make contracts`
+app/frontend/src/shared/api/

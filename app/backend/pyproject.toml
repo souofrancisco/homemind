@@ -9,14 +9,20 @@ dependencies = [
   "pydantic-settings==2.7.1",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = ["pytest==8.3.4", "httpx==0.28.1", "ruff==0.8.6"]
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [tool.setuptools.packages.find]
-include = ["app*"]
+where = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["src", "tests"]
+pythonpath = ["src"]
+addopts = "--import-mode=importlib"  # testes com o mesmo nome em features diferentes
 
 [tool.ruff]
 line-length = 100
