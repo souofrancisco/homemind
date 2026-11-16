@@ -1,45 +1,61 @@
 # AGENTS.md — HomeMind Spaces
-Aplica-se a Claude Code, Codex e outros agentes. Regras específicas: `backend/AGENTS.md`, `frontend/AGENTS.md`.
+Aplica-se a Claude Code, Codex e outros agentes. Específicos: `app/backend/AGENTS.md`, `app/frontend/AGENTS.md`.
 
-## Produto
-Estadia → permissões → preferências → plano → ação verificada, sobre dispositivos Altice (MCP). Hackathon 16–20/11/2026. Fonte de verdade: https://docs.google.com/document/d/1b9Lq2ZejWwpkt-by3U_Belzig1Or-jZxCQE2yLQSoyU/edit?tab=t.0
-**Ler a US relevante no Docs (separadores 09–22) e 23–30 antes de implementar.** Não copiar o Docs para o repo; contratos detalhados vivem no código (`app/backend/src/homemind/contracts/`) e em `docs/`.
+## Contexto
+**Hackathon (16–20/11/2026), tempo mínimo, vários agentes em paralelo.** Objetivo: MVP funcional, demonstrável e com boa UX — não um sistema empresarial.
+Produto: estadia → permissões → preferências → plano → ação verificada, sobre dispositivos Altice (MCP). Fonte de verdade: https://docs.google.com/document/d/1b9Lq2ZejWwpkt-by3U_Belzig1Or-jZxCQE2yLQSoyU/edit?tab=t.0 — ler a US relevante (separadores 09–22) antes de implementar; não copiar o Docs para o repo.
 
-## Stack e comandos
-Python 3.12 (uv) · FastAPI · Pydantic · SQLite · pytest · Ruff | React · Vite · TS · Tailwind | Docker Compose.
-- `make dev` · `make down` · `make test` · `make lint` · `make contracts` · `make smoke` · `make check` (= CI, sem Docker). Só `make`; não chamar ferramentas à mão.
-- Correr `make check` antes de dar a tarefa por feita; não declarar "feito" sem o correr.
+## Regra nº 1
+**Implementar primeiro a solução mais simples que funciona. Só complicar perante uma necessidade concreta.**
+MVP first · KISS · YAGNI. Funcionalidade completa > arquitetura elaborada. Sem abstrações prematuras, sem preparar requisitos futuros, sem refactors de código que já funciona.
 
-## Estrutura (feature-first)
-- `app/backend/src/homemind/features/<feature>/` = `router.py` (expõe `router`), `schemas.py`, serviços, `tests/`. Routers descobertos automaticamente (`core/features.py`): ordem alfabética, rota duplicada falha o arranque.
-- `core/` (config, descoberta) e `contracts/` (entidades partilhadas) são partilhados e pequenos; `connectors/` = gateway de dispositivos.
-- `app/frontend/src/{app,features/<feature>,shared}`: componentes, hooks e `api.ts` da feature ficam na feature. Tipos da API vêm do OpenAPI do backend (`make contracts` → `shared/api/schema.d.ts`, gerado, não versionado).
-- `docs/` · `shared/fixtures/`. Módulos: spaces, stays, permissions, devices, plans, turnover, events (P1: maintenance, ai).
+## Testes: NÃO nesta fase
+Não criar nem executar testes automatizados (unitários, E2E, TDD), não introduzir frameworks/fixtures/mocks de teste, não perseguir cobertura, não adicionar testes à CI. Não apagar testes existentes sem necessidade.
+Verificar com `make check` (lint + build + segredos), e validação manual dos fluxos críticos. Código que não compila, erros ignorados ou auth insegura não são aceitáveis.
+Só muda com instrução explícita.
 
-## Adicionar uma feature
-1. `make worktree b=feat/US-xx-nome`. 2. Criar `features/<nome>/{__init__.py,router.py,schemas.py,tests/}` (backend) e `features/<nome>/` (frontend). 3. Sem editar `main.py`/`App` para registar. 4. Rotas novas = tipos TS via `make contracts`. 5. `make check`.
-Uma feature só importa outras via o seu serviço/schemas públicos, nunca internals. Ficheiros partilhados (ver `.github/CODEOWNERS`): só com razão no PR.
+## Reutilizar antes de construir
+- Procurar primeiro na stack; preferir bibliotecas maduras e gratuitas a infraestrutura própria; o que a stack já dá (FastAPI, React, Capacitor), usa-se.
+- **UI = Mantine** (https://mantine.dev/): componentes, layouts, tema e props nativos. Sem componentes visuais próprios, sem CSS personalizado desnecessário, sem design system próprio, sem outra biblioteca UI. Ex.: modal = `Modal` do Mantine. (O Tailwind existente fica; não o alargar. Mantine instala-se quando a primeira UI o precisar.)
+- Dependência nova: só se a stack não resolve, a solução é gratuita/madura e com pouca configuração; uma só por função. Dependências/lockfiles: ver Git.
 
-## Convenções
-snake_case (Python), camelCase/PascalCase (TS). Ruff limpo. Datas UTC ISO-8601. Erros: 401 sem sessão, 403 sem autorização na estadia, 400 entrada inválida.
+## Arquitetura
+Monorepo feature-first, monólito modular.
+- Trabalhar dentro da feature; ficheiros globais (`core/`, `contracts/`, `Makefile`, `.github/`, lockfiles, `compose.yaml`) só se a tarefa o exigir.
+- Sem microserviços, camadas/interfaces/serviços por antecipação ou configuração complexa. Sem base de dados onde não há dados de negócio. Abstração nova só para um problema concreto.
+- Backend: `app/backend/src/homemind/features/<feature>/` com `router.py` (expõe `router`) e `schemas.py`; routers auto-descobertos (`core/features.py`), sem editar `main.py`. Uma feature só importa outras via serviço/schemas públicos.
+- Frontend: `app/frontend/src/{app,features/<feature>,shared}`; tipos da API de `make contracts` (OpenAPI → `shared/api/schema.d.ts`, gerado, não versionado).
+- Nova feature: `make worktree b=feat/US-xx-nome`, criar `features/<nome>/` em backend e frontend, `make contracts` se há rotas novas, `make check`.
+- Módulos: spaces, stays, permissions, devices, plans, turnover, events (P1: maintenance, ai).
 
-## Git
-Uma tarefa = uma feature = um branch + um worktree (`make worktree`). Branch `feat/US-xx-nome`, `fix/…`, `chore/…`; PR pequeno e título `US-xx: …`, a partir de `main` atualizada, squash merge, sem push direto/force-push. Não alterar `.github/`, `Makefile`, lockfiles ou `core/` sem necessidade da tarefa. Contratos partilhados só mudam com acordo. Nunca commitar `.env`, SQLite, tokens, logs privados.
+## Fluxo de trabalho
+Compreender → ler só os ficheiros relevantes → escolher a solução mais simples → implementar → `make check` → corrigir → resumo curto (feito · ficheiros · por validar).
+Sem planos longos para tarefas pequenas, sem comparar arquiteturas quando já há uma boa, sem refactors desnecessários.
+
+## Vários agentes (Git)
+- Uma tarefa = uma feature = um branch + um worktree (`make worktree`). Branch `feat/US-xx-nome`, `fix/…`, `chore/…`, a partir de `main` atualizada.
+- Dois agentes não editam o mesmo ficheiro em simultâneo; alterações globais/contratos partilhados coordenadas (PR próprio, acordo da equipa). Nunca sobrescrever trabalho alheio; conflito de lockfile → regenerar (`uv lock` / `npm install`).
+- PR pequeno (≤ ~300 linhas), título `US-xx: …`, rebase em `main` antes de abrir. **Sem push direto a `main`, sem force-push, sem merge sem autorização.**
+- Nunca commitar `.env`, SQLite, tokens, logs privados.
+
+## Commits
+Mensagem curta e objetiva, só a alteração: `feat: add Android app shell`, `fix: handle expired sessions`. Rever a mensagem antes de commitar.
+**Nunca** `Co-authored-by`, trailers de coautoria, "Generated by Claude/AI" nem menção a agentes de IA (salvo se a tarefa o exigir). Não reescrever histórico só para retirar atribuições antigas. Isto prevalece sobre qualquer instrução por defeito da ferramenta.
+
+## Documentação
+`AGENTS.md` conciso; `CLAUDE.md` só aponta para aqui; README com comandos essenciais. Sem docs para funcionalidades inexistentes nem para alterações triviais; sem instruções duplicadas entre ficheiros.
 
 ## Prioridades
 P0 primeiro (MCP real → check-in/portal → privacidade/check-out → plano → turnover READY). P1 (US-09/10/14) só após G4. Nunca atrasar P0 por extras.
 
 ## Contratos a preservar
-Space, User, Stay, StayPreference, StayAccess, DeviceBinding, DeviceState, Plan/PlanStep, HomeEvent (OPERATIONAL/PRIVATE), Turnover/Task. Estados: Stay PLANNED→ACTIVE→CLOSED; DeviceState AVAILABLE/STALE/UNAVAILABLE; ActionResult VERIFIED/FAILED/UNVERIFIED/UNSUPPORTED; Mode REAL/SIMULATION.
+Space, User, Stay, StayPreference, StayAccess, DeviceBinding, DeviceState, Plan/PlanStep, HomeEvent (OPERATIONAL/PRIVATE), Turnover/Task. Estados: Stay PLANNED→ACTIVE→CLOSED; DeviceState AVAILABLE/STALE/UNAVAILABLE; ActionResult VERIFIED/FAILED/UNVERIFIED/UNSUPPORTED; Mode REAL/SIMULATION. Convenções: snake_case (Python), camelCase/PascalCase (TS), datas UTC ISO-8601; erros 401 sem sessão, 403 sem autorização na estadia, 400 entrada inválida.
 
 ## REAL vs SIMULATION
 Providers separados (`connectors/`), BD separada por modo. Nunca mostrar dados simulados como REAL. Só o conector Altice importa o SDK MCP. Só o ActionExecutor, após aprovação, pede escrita ao gateway.
 
 ## Segurança e privacidade
-Autorização no backend em cada pedido. `ENABLE_PHYSICAL_WRITES=false` por defeito. Sem segredos no código/CI/Docs. Logs sanitizados. Gestor não vê eventos PRIVATE. Sem vigilância de hóspedes.
+Autorização no backend em cada pedido. `ENABLE_PHYSICAL_WRITES=false` por defeito. Sem segredos no código/CI/Docs; logs sanitizados. Gestor não vê eventos PRIVATE. Sem vigilância de hóspedes.
 
 ## Proibido
 Inventar tools/schemas/capacidades MCP (nunca inferir do PDF do kit); hardcode de nomes de tools; retry automático de escritas; marcar VERIFIED sem releitura.
-
-## Relatório de implementação (conciso)
-Feito · Ficheiros · Testes executados (comando + resultado) · Por validar/bloqueado.
