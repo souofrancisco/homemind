@@ -22,6 +22,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["src", "tests"]
 pythonpath = ["src"]
+addopts = "--import-mode=importlib"  # testes com o mesmo nome em features diferentes
 
 [tool.ruff]
 line-length = 100
