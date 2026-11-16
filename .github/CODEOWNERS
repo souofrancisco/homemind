@@ -1,7 +1,7 @@
 # Ficheiros partilhados: mudanças só com revisão do dono (ver docs/parallel-work.md).
 /.github/                  @souofrancisco
 /Makefile                  @souofrancisco
-/compose.yaml              @souofrancisco
+/app/compose.yaml              @souofrancisco
 /app/backend/pyproject.toml @souofrancisco
 /app/backend/uv.lock       @souofrancisco
 /app/frontend/package.json @souofrancisco

@@ -1,0 +1,80 @@
+# Ambiente de desenvolvimento local (hot reload). Não é um setup de produção.
+name: homemind
+services:
+  backend:
+    build: ./backend
+    command: uvicorn homemind.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_MODE: ${APP_MODE:-simulation}
+      DATABASE_PATH: /srv/data/homemind-${APP_MODE:-simulation}.db
+      ENABLE_PHYSICAL_WRITES: ${ENABLE_PHYSICAL_WRITES:-false}
+      OIDC_ISSUER: http://localhost:${AUTHENTIK_PORT:-9000}/application/o/homemind/
+      OIDC_JWKS_URL: http://authentik-server:9000/application/o/homemind/jwks/
+      CORS_ORIGINS: http://localhost:${FRONTEND_PORT:-5173},http://localhost,https://localhost
+    ports: ["${BACKEND_PORT:-8000}:8000"]
+    volumes:
+      - ./backend/src:/srv/src
+      - db:/srv/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  frontend:
+    build: ./frontend
+    environment:
+      API_PROXY_TARGET: http://backend:8000
+      VITE_OIDC_AUTHORITY: http://localhost:${AUTHENTIK_PORT:-9000}/application/o/homemind/
+    ports: ["${FRONTEND_PORT:-5173}:5173"]
+    volumes:
+      - ./frontend/src:/app/src
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173/"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      backend:
+        condition: service_healthy
+  # Authentik (login OIDC). Só desenvolvimento: credenciais por defeito em ${...:-dev}.
+  authentik-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD:-dev-only-db-pass}
+    volumes:
+      - authentik-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  authentik-server: &authentik
+    image: ghcr.io/goauthentik/server:2026.8.5
+    command: server
+    environment: &authentik-env
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-dev-only-secret-key-change-me-0123456789abcdef}
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:-dev-only-db-pass}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_ADMIN_EMAIL:-admin@homemind.local}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_ADMIN_PASSWORD:-homemind-dev}
+      HOMEMIND_WEB_URL: http://localhost:${FRONTEND_PORT:-5173}
+    ports: ["${AUTHENTIK_PORT:-9000}:9000"]
+    volumes:
+      - ./infra/authentik:/blueprints/custom:ro
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+  authentik-worker:
+    <<: *authentik
+    command: worker
+    ports: []
+volumes:
+  authentik-db:
+  db:

@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Literal
 
 from pydantic_settings import BaseSettings
@@ -12,7 +13,15 @@ class Settings(BaseSettings):
     mcp_auth_token: str = ""
     llm_api_key: str = ""
     enable_physical_writes: bool = False
+    # Authentik (OIDC). Issuer = URL pública do provider (campo `iss` dos tokens);
+    # jwks_url pode ser interno (ex.: http://authentik-server:9000/...) em Docker.
+    oidc_issuer: str = "http://localhost:9000/application/o/homemind/"
+    oidc_jwks_url: str = ""
+    oidc_client_id: str = "homemind"
+    # Origens dos clientes autorizados (CORS), separadas por vírgulas.
+    cors_origins: str = "http://localhost:5173,http://localhost,https://localhost"
 
 
+@lru_cache
 def get_settings() -> Settings:
     return Settings()

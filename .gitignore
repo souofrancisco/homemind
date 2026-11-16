@@ -25,3 +25,11 @@ graphify-out/
 tsconfig.tsbuildinfo
 # gerado do OpenAPI do backend: `make contracts`
 app/frontend/src/shared/api/
+# android (gerado)
+app/frontend/android/.gradle/
+app/frontend/android/build/
+app/frontend/android/app/build/
+app/frontend/android/local.properties
+app/frontend/android/capacitor-cordova-android-plugins/
+app/frontend/android/app/src/main/assets/public/
+app/frontend/android/app/src/main/assets/capacitor.*.json
