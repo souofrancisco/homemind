@@ -270,6 +270,7 @@ def test_resposta_feliz_um_vencedor_e_um_evento(client, caplog):
         "action_id": "mine",
         "responded_at": seen["response"]["responded_at"],
         "by_me": False,
+        "target_resident_id": None,
     }
     events = client.app.state.db.run_sync(
         lambda c: load_events(c, types=["notification.responded"])
@@ -342,6 +343,113 @@ def test_inquilino_fora_dos_responsaveis_403(client):
     nid = confirmation(client.app, responders=[fx.ANA])
     r = client.post(url(A, nid, "/respond"), json={"action_id": "mine"}, headers=as_(BRUNO))
     assert err(r) == (403, "forbidden_role")
+
+
+# --- votação (D-32) -------------------------------------------------------------------------------
+
+
+def _vote(client, nid, who, action, target=None):
+    body = {"action_id": action} | ({"target_resident_id": str(target)} if target else {})
+    return client.post(url(A, nid, "/respond"), json=body, headers=as_(who))
+
+
+def _responded(client):
+    events = client.app.state.db.run_sync(
+        lambda c: load_events(c, types=["notification.responded"])
+    )
+    return [e.event for e in events]
+
+
+def test_votacao_pela_api_atribui_a_outra_pessoa_sem_revelar_quem_votou(client):
+    nid = confirmation(client.app)
+    first = _vote(client, nid, ANA, "other", fx.DIOGO)
+    assert first.status_code == 200, first.text
+    body = first.json()
+    assert body["status"] == "unread" and body["can_respond"] is False  # a votação segue aberta
+    assert body["voting"]["my_vote"]["by_me"] is True and body["voting"]["votes"] == 1
+    # a Carla vê as contagens, nunca quem votou (a Ana não é alvo: o id dela não aparece)
+    carla = client.get(url(A), headers=as_("sub-carla"))
+    assert str(fx.ANA) not in carla.text and str(fx.BRUNO) not in carla.text
+    (seen,) = carla.json()
+    assert seen["can_respond"] is True and seen["voting"]["my_vote"] is None
+    assert seen["voting"]["accusations"] == [{"target_resident_id": str(fx.DIOGO), "votes": 1}]
+    assert seen["voting"]["votes_needed"] == 2 and seen["voting"]["eligible"] == 4
+    second = _vote(client, nid, BRUNO, "other", fx.DIOGO)
+    assert second.status_code == 200, second.text
+    closed = second.json()
+    assert closed["status"] == "actioned"
+    assert closed["voting"]["verdict"] == "accusation_accepted"
+    assert closed["voting"]["pays_me"] is False
+    assert str(fx.ANA) not in second.text
+    diogo = client.get(url(A), headers=as_("sub-diogo")).json()[0]
+    assert diogo["voting"]["pays_me"] is True and diogo["can_respond"] is False
+    events = _responded(client)  # um evento por voto, o último com a decisão
+    assert [e.data.outcome.verdict.value for e in events] == ["pending", "accusation_accepted"]
+    assert events[-1].data.outcome.resident_id == fx.DIOGO
+    assert events[-1].data.response.resident_id == fx.BRUNO
+    assert client.get(url(A), headers=as_(LANDLORD)).json() == []
+
+
+def test_um_voto_por_pessoa_pela_api_e_o_segundo_e_409(client):
+    nid = confirmation(client.app)
+    assert _vote(client, nid, ANA, "unknown").status_code == 200
+    again = _vote(client, nid, ANA, "mine")
+    assert err(again) == (409, "already_responded")
+    assert len(_responded(client)) == 1
+    # os outros continuam a poder votar
+    assert client.get(url(A), headers=as_(BRUNO)).json()[0]["can_respond"] is True
+
+
+@pytest.mark.parametrize(
+    ("action", "target"),
+    [
+        ("other", None),
+        ("mine", fx.DIOGO),
+        ("other", fx.ANA),  # a si próprio
+        ("other", fx.LANDLORD),
+        ("other", stable_id("residente", "estranho")),
+    ],
+)
+def test_alvo_invalido_400_e_nao_consome_o_voto(client, action, target):
+    nid = confirmation(client.app)
+    assert err(_vote(client, nid, ANA, action, target)) == (400, "invalid_request")
+    assert _responded(client) == []
+    assert _vote(client, nid, ANA, "unknown").status_code == 200
+
+
+def test_alvo_que_nao_e_uuid_400(client):
+    nid = confirmation(client.app)
+    r = client.post(
+        url(A, nid, "/respond"),
+        json={"action_id": "other", "target_resident_id": "bruno"},
+        headers=as_(ANA),
+    )
+    assert err(r) == (400, "invalid_request")
+
+
+def test_todos_votaram_sem_decisao_divide_se_por_todos_pela_api(client):
+    nid = confirmation(client.app)
+    plan = [
+        (ANA, "unknown", None),
+        (BRUNO, "everyone", None),
+        (CARLA, "other", fx.DIOGO),
+        ("sub-diogo", "other", fx.ANA),
+    ]
+    for who, action, target in plan:
+        assert _vote(client, nid, who, action, target).status_code == 200
+    final = client.get(url(A), headers=as_(ANA)).json()[0]
+    assert final["status"] == "actioned" and final["voting"]["verdict"] == "everyone"
+    assert [e.data.outcome.verdict.value for e in _responded(client)][-1] == "everyone"
+
+
+def test_passadas_24h_a_votacao_expira_e_o_veredicto_e_por_todos(client, now):
+    nid = confirmation(client.app)
+    assert _vote(client, nid, ANA, "unknown").status_code == 200
+    now["value"] = NOW + timedelta(hours=24)
+    assert err(_vote(client, nid, BRUNO, "mine")) == (409, "notification_expired")
+    view = client.get(url(A), headers=as_(BRUNO)).json()[0]
+    assert view["status"] == "expired" and view["voting"]["verdict"] == "everyone"
+    assert len(_responded(client)) == 1  # sem evento de expiração: billing usa o seu prazo
 
 
 # --- ponta a ponta pelo barramento ----------------------------------------------------------------

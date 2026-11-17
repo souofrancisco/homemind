@@ -3,8 +3,10 @@
 Funções e classes SÍNCRONAS sobre uma `sqlite3.Connection` já dentro de uma transação
 (`db.run`/`db.run_sync`, ou o handler do barramento): nunca abrem nem fecham transações.
 A coluna `json` é a `Notification` validada; as colunas escalares servem para filtrar e para o
-índice único de deduplicação. `compare_and_set` é `UPDATE ... WHERE id = ? AND status IN (...)`
-com 1 linha afetada: respostas simultâneas têm um só vencedor.
+índice único de deduplicação. `compare_and_set` é
+`UPDATE ... WHERE id = ? AND status = ? AND json_array_length(json, '$.responses') = ?` com 1
+linha afetada: o par (estado, n.º de votos) só avança, por isso votos simultâneos nunca se
+perdem nem se duplicam (quem leu antes perde e relê).
 """
 
 import sqlite3
@@ -88,16 +90,18 @@ class SqliteNotificationRepository:
         ).fetchone()
         return _notification(row) if row else None
 
-    def compare_and_set(
-        self, new: Notification, *, expected: frozenset[NotificationStatus]
-    ) -> bool:
-        wanted = sorted(s.value for s in expected)
-        if not wanted:
-            return False
+    def compare_and_set(self, new: Notification, *, expected: Notification) -> bool:
         cur = self._conn.execute(
             "UPDATE notification SET status = ?, json = ?, updated_at = ?"
-            f" WHERE id = ? AND status IN ({','.join('?' * len(wanted))})",
-            (new.status.value, new.model_dump_json(), _now(), str(new.id), *wanted),
+            " WHERE id = ? AND status = ? AND json_array_length(json, '$.responses') = ?",
+            (
+                new.status.value,
+                new.model_dump_json(),
+                _now(),
+                str(new.id),
+                expected.status.value,
+                len(expected.responses),
+            ),
         )
         return cur.rowcount == 1
 

@@ -18,7 +18,6 @@ from homemind.contracts.notification import (
     AlreadyRespondedError,
     ConfirmationRequest,
     Notification,
-    NotificationExpiredError,
     NotificationKind,
     NotificationPreferences,
     NotificationScope,
@@ -159,7 +158,7 @@ class NotificationService:
                 # Vencido por tempo mas ainda `unread`/`read`: fecha-o antes de inserir o novo
                 # (o índice único de deduplicação só admite um pedido aberto).
                 self._repo.compare_and_set(
-                    replace(open_one, status=NotificationStatus.expired), expected=_OPEN
+                    replace(open_one, status=NotificationStatus.expired), expected=open_one
                 )
         if not self._repo.insert(n):  # perdeu a corrida com o mesmo evento
             return Outcome(self._repo.get(n.id))
@@ -204,27 +203,55 @@ class NotificationService:
     # --- resposta --------------------------------------------------------------------------
 
     def respond(
-        self, notification_id: UUID, *, household_id: UUID, resident_id: UUID, action_id: str
+        self,
+        notification_id: UUID,
+        *,
+        household_id: UUID,
+        resident_id: UUID,
+        action_id: str,
+        target_resident_id: UUID | None = None,
     ) -> Outcome:
-        """Primeira resposta válida vence; só o vencedor emite `notification.responded`."""
-        now = self._clock()
-        n = self._get_visible(household_id, notification_id, resident_id, now)
-        new = n.respond(resident_id, action_id, now)  # erros do contrato
-        if not self._repo.compare_and_set(new, expected=_OPEN):
-            current = self._repo.get(notification_id)
-            if current is not None and current.status is NotificationStatus.expired:
-                raise NotificationExpiredError("pedido expirado")
-            raise AlreadyRespondedError("já respondida")
-        assert new.response is not None  # `respond` devolve sempre `actioned` com resposta
-        event = de.NotificationResponded(
-            id=event_id_for("notification.responded", n.id),
+        """Regista a resposta e emite `notification.responded` (só quem ganha o CAS).
+
+        Confirmações: é um VOTO (D-32); a notificação só fecha quando a regra B decide, e o
+        evento sai por voto, com o `outcome`. Outros tipos: a primeira resposta vence.
+
+        Concorrência: o CAS exige o estado e o n.º de votos lidos. Se perder, outro voto (ou
+        outro estado) foi gravado entretanto: relê-se e reaplica-se a regra (que pode agora dar
+        409 `already_responded`/`notification_expired`). Cada falha prova que outra escrita
+        avançou, por isso o ciclo termina em, no máximo, um voto por elegível.
+        """
+        for _ in range(self._MAX_CAS_RETRIES):
+            now = self._clock()
+            n = self._get_visible(household_id, notification_id, resident_id, now)
+            new = n.respond(resident_id, action_id, now, target_resident_id)  # erros do contrato
+            if self._repo.compare_and_set(new, expected=n):
+                return Outcome(new, (self._responded_event(n, new, now),))
+        raise AlreadyRespondedError("resposta concorrente; tente de novo")
+
+    # Cada falha do CAS = mais um voto ou estado gravado por outrem; há no máx. um voto por
+    # elegível e poucos estados, por isso o limite nunca se atinge na prática.
+    _MAX_CAS_RETRIES = 64
+
+    @staticmethod
+    def _responded_event(
+        before: Notification, after: Notification, now: datetime
+    ) -> de.NotificationResponded:
+        vote = after.responses[-1] if after.responses else after.response
+        assert vote is not None  # `respond` acrescenta sempre um voto ou fixa a resposta
+        voting = after.kind is NotificationKind.confirmation_request
+        return de.NotificationResponded(
+            id=event_id_for("notification.responded", before.id, vote.resident_id),
             ts=now,
-            household_id=n.household_id,
-            correlation_id=n.correlation_id,
-            provenance=Provenance(origin=n.origin, kind=ValueKind.measured),
-            data=de.NotificationRespondedData(response=new.response, ref=n.ref),
+            household_id=before.household_id,
+            correlation_id=before.correlation_id,
+            provenance=Provenance(origin=before.origin, kind=ValueKind.measured),
+            data=de.NotificationRespondedData(
+                response=vote,
+                ref=before.ref,
+                outcome=after.outcome(now) if voting else None,
+            ),
         )
-        return Outcome(new, (event,))
 
     # --- leitura ---------------------------------------------------------------------------
 
@@ -237,10 +264,7 @@ class NotificationService:
         self._repo.mark_read(n.id, resident_id, now)
         if n.scope is NotificationScope.personal and n.status is NotificationStatus.unread:
             n.transition(NotificationStatus.read)
-            self._repo.compare_and_set(
-                replace(n, status=NotificationStatus.read),
-                expected=frozenset({NotificationStatus.unread}),
-            )
+            self._repo.compare_and_set(replace(n, status=NotificationStatus.read), expected=n)
         return self.view(self._repo.get(n.id) or n, resident_id)
 
     def view(self, n: Notification, resident_id: UUID) -> NotificationView:
@@ -287,7 +311,7 @@ class NotificationService:
         for n in self._repo.open_due(now):
             n.transition(NotificationStatus.expired)
             new = replace(n, status=NotificationStatus.expired)
-            if self._repo.compare_and_set(new, expected=_OPEN):
+            if self._repo.compare_and_set(new, expected=n):
                 expired.append(new)
         return expired
 

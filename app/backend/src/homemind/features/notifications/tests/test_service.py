@@ -412,6 +412,9 @@ def test_senhorio_so_ve_os_tipos_da_allow_list(kind, scope):
     destinatário vê sempre."""
     svc, repo, clock = make_service()
     personal = scope == "personal"
+    if kind is NotificationKind.presence_check and not personal:
+        pytest.skip("«estás em casa?» só existe como notificação pessoal")
+    voters = [LANDLORD] if personal else [ANA, BRUNO]
     repo.insert(
         Notification(
             id=uid(f"allow-{kind}-{scope}"),
@@ -423,8 +426,9 @@ def test_senhorio_so_ve_os_tipos_da_allow_list(kind, scope):
             title="Aviso",
             body="Texto.",
             origin=Origin.real,
+            responder_ids=voters if kind is NotificationKind.confirmation_request else [],
             expires_at=clock.now + timedelta(hours=1)
-            if kind is NotificationKind.confirmation_request
+            if kind in (NotificationKind.confirmation_request, NotificationKind.presence_check)
             else None,
             correlation_id=uid("corr"),
             created_at=clock.now,
@@ -470,15 +474,15 @@ def test_view_can_respond_e_by_me():
     (view,) = svc.list_for(HOUSE, ANA)
     assert view.can_respond is True
     assert view.response is None
-    svc.respond(n.id, household_id=HOUSE, resident_id=ANA, action_id="everyone")
+    svc.respond(n.id, household_id=HOUSE, resident_id=ANA, action_id="mine")
     (mine,) = svc.list_for(HOUSE, ANA)
     (theirs,) = svc.list_for(HOUSE, BRUNO)
     assert mine.status is NotificationStatus.actioned
     assert mine.can_respond is False
     assert mine.response is not None and mine.response.by_me is True
     assert theirs.response is not None and theirs.response.by_me is False
-    assert theirs.response.action_id == "everyone"
-    assert "resident" not in theirs.model_dump_json()
+    assert theirs.response.action_id == "mine"
+    assert str(ANA) not in theirs.model_dump_json() and str(BRUNO) not in theirs.model_dump_json()
 
 
 # --- leitura -----------------------------------------------------------------------------------

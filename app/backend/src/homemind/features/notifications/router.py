@@ -18,15 +18,17 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
-from pydantic import Field, ValidationError
+from pydantic import ValidationError
 
 from homemind.contracts.common import ContractModel
 from homemind.contracts.notification import (
     AlreadyRespondedError,
+    InvalidTargetError,
     NotAllowedToRespondError,
     NotificationExpiredError,
     NotificationKind,
     NotificationPreferences,
+    NotificationRespondIn,
     NotificationScope,
     NotificationStatus,
     NotificationView,
@@ -80,10 +82,6 @@ ReadAccess = Annotated[HouseholdAccess, Depends(require_access(Resource.notifica
 WriteAccess = Annotated[
     HouseholdAccess, Depends(require_access(Resource.notification, Operation.write))
 ]
-
-
-class RespondIn(ContractModel):
-    action_id: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")]
 
 
 class NotificationPreferencesIn(ContractModel):
@@ -148,11 +146,17 @@ async def read_notification(
 
 @router.post("/households/{household_id}/notifications/{notification_id}/respond")
 async def respond_notification(
-    notification_id: UUID, body: RespondIn, access: WriteAccess, db: DbDep, clock: ClockDep,
+    notification_id: UUID,
+    body: NotificationRespondIn,
+    access: WriteAccess,
+    db: DbDep,
+    clock: ClockDep,
     request: Request,
-) -> NotificationView:  # fmt: skip
-    """Primeira resposta válida vence (os restantes recebem 409). A resposta e o evento
-    `notification.responded` gravam-se na mesma transação."""
+) -> NotificationView:
+    """Regista a resposta. Nas confirmações («De quem é esta conta?») é um VOTO (D-32): um por
+    inquilino (o segundo recebe 409) e a notificação só fecha quando a regra B decide; nos outros
+    tipos a primeira resposta vence. A resposta e o evento `notification.responded` gravam-se na
+    mesma transação. A vista nunca revela quem votou."""
 
     def work(conn: sqlite3.Connection) -> tuple[NotificationView, Outcome]:
         service = _service(conn, clock)
@@ -161,10 +165,11 @@ async def respond_notification(
             household_id=access.household_id,
             resident_id=access.resident_id,
             action_id=body.action_id,
+            target_resident_id=body.target_resident_id,
         )
         for ev in out.events:
             append_event(conn, ev)
-        assert out.notification is not None  # só o vencedor chega aqui
+        assert out.notification is not None  # `respond` devolve sempre a notificação gravada
         return service.view(out.notification, access.resident_id), out
 
     try:
@@ -172,11 +177,13 @@ async def respond_notification(
     except NotificationNotFoundError:
         raise _error(404, "notification_not_found", "Notificação não encontrada") from None
     except AlreadyRespondedError:
-        raise _error(409, "already_responded", "Esta notificação já foi respondida") from None
+        raise _error(409, "already_responded", "Já votaste ou a notificação já fechou") from None
     except NotificationExpiredError:
         raise _error(409, "notification_expired", "O pedido já expirou") from None
     except NotAllowedToRespondError:
         raise _error(403, "forbidden_role", "Sem permissão para responder") from None
+    except InvalidTargetError:
+        raise _error(400, "invalid_request", "Pessoa inválida para «É de outra pessoa»") from None
     except UnknownActionError:
         raise _error(400, "invalid_request", "Ação desconhecida") from None
     await _publish(request, out)

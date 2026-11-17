@@ -88,9 +88,9 @@ def test_confirmacao_estrutura_e_texto():
     assert n.kind is NotificationKind.confirmation_request
     assert n.title == "De quem é esta conta?"
     assert n.body == "O aquecedor está ligado numa zona comum, cerca de 0,64 € estimados."
-    assert [a.id for a in n.actions] == ["mine", "everyone", "unknown"]
+    assert [a.id for a in n.actions] == ["mine", "everyone", "unknown", "other"]
     assert [a.label for a in n.actions] == list(CONFIRMATION_LABELS.values())
-    assert [a.style.value for a in n.actions] == ["primary", "neutral", "neutral"]
+    assert [a.style.value for a in n.actions] == ["primary", "neutral", "neutral", "neutral"]
     assert n.responder_ids == [ANA, BRUNO]
     assert n.expires_at == T0 + timedelta(hours=24)
     assert n.ref is not None

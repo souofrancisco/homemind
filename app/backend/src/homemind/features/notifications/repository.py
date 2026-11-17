@@ -1,8 +1,11 @@
 """Persistência das notificações: protocolo + implementação em memória.
 
 A implementação SQLite (`sqlite.py`) cumpre o mesmo protocolo: `compare_and_set` é
-`UPDATE ... WHERE id = ? AND status IN (...)` com 1 linha afetada. A em memória serve de
-referência e de dublê nos testes.
+`UPDATE ... WHERE id = ? AND status = ? AND <n.º de votos> = ?` com 1 linha afetada. O par
+(estado, n.º de votos) é a «versão» da notificação: só avança (os votos só se acrescentam e o
+estado nunca volta atrás), por isso qualquer escrita concorrente muda-o e quem leu antes perde
+(nunca se perde um voto nem se aceita um duplicado). A em memória serve de referência e de
+dublê nos testes.
 """
 
 import threading
@@ -38,10 +41,9 @@ class NotificationRepository(Protocol):
         """Notificação aberta (unread/read) com a mesma chave de deduplicação, a mais recente."""
         ...
 
-    def compare_and_set(
-        self, new: Notification, *, expected: frozenset[NotificationStatus]
-    ) -> bool:
-        """Grava `new` só se o estado atual estiver em `expected`; `False` se perdeu."""
+    def compare_and_set(self, new: Notification, *, expected: Notification) -> bool:
+        """Grava `new` só se o estado atual for o que se leu (`expected`: o mesmo estado e o
+        mesmo n.º de votos); `False` se perdeu (reler e reaplicar a regra)."""
         ...
 
     def list_household(self, household_id: UUID) -> list[Notification]: ...
@@ -96,12 +98,14 @@ class InMemoryNotificationRepository:
             ]
         return max(matches, key=lambda n: (n.created_at, str(n.id)), default=None)
 
-    def compare_and_set(
-        self, new: Notification, *, expected: frozenset[NotificationStatus]
-    ) -> bool:
+    def compare_and_set(self, new: Notification, *, expected: Notification) -> bool:
         with self._lock:
             current = self._items.get(new.id)
-            if current is None or current.status not in expected:
+            if (
+                current is None
+                or current.status is not expected.status
+                or len(current.responses) != len(expected.responses)
+            ):
                 return False
             self._items[new.id] = new
             return True

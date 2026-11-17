@@ -25,7 +25,12 @@ from homemind.features.notifications.text import format_eur
 # Espaço de nomes dos ids determinísticos da P3 (idempotência: mesmo evento, mesmo id).
 _NAMESPACE_P3 = UUID("8c3f5b7e-1d24-4e6a-9b0c-5a1e7d3c2f40")
 
-CONFIRMATION_LABELS = {"mine": "É minha", "everyone": "É de todos", "unknown": "Não sei"}
+CONFIRMATION_LABELS = {
+    "mine": "É minha",
+    "everyone": "É de todos",
+    "unknown": "Não sei",
+    "other": "É de outra pessoa",  # a app pede a pessoa e envia `target_resident_id`
+}
 
 _SIMULATED = " (SIMULADO)"
 
@@ -35,9 +40,12 @@ def notification_id_for(source_event_id: UUID, kind: NotificationKind) -> UUID:
     return uuid5(_NAMESPACE_P3, f"notification/{kind.value}/{source_event_id}")
 
 
-def event_id_for(event_type: str, notification_id: UUID) -> UUID:
-    """Id do evento de seguimento (`notification.created`/`notification.responded`)."""
-    return uuid5(_NAMESPACE_P3, f"event/{event_type}/{notification_id}")
+def event_id_for(event_type: str, notification_id: UUID, resident_id: UUID | None = None) -> UUID:
+    """Id do evento de seguimento (`notification.created`/`notification.responded`).
+
+    `notification.responded` sai por voto: o id inclui quem votou (um voto por pessoa)."""
+    suffix = f"/{resident_id}" if resident_id else ""
+    return uuid5(_NAMESPACE_P3, f"event/{event_type}/{notification_id}{suffix}")
 
 
 def compose_confirmation(

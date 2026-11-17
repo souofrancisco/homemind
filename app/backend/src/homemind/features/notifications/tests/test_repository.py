@@ -18,8 +18,6 @@ from homemind.features.notifications.tests._fakes import (
     uid,
 )
 
-OPEN = frozenset({NotificationStatus.unread, NotificationStatus.read})
-
 
 class _SqlRepo:
     """O repositório SQLite como o serviço o usa, mas com uma transação por chamada (e o lock da
@@ -82,7 +80,7 @@ def test_find_open_por_chave(repo):
     assert repo.find_open(**key) == n
     assert repo.find_open(**(key | {"household_id": OTHER_HOUSE})) is None
     assert repo.find_open(**(key | {"recipient_resident_id": ANA})) is None
-    repo.compare_and_set(replace(n, status=NotificationStatus.expired), expected=OPEN)
+    repo.compare_and_set(replace(n, status=NotificationStatus.expired), expected=n)
     assert repo.find_open(**key) is None
 
 
@@ -90,17 +88,38 @@ def test_compare_and_set_so_com_estado_esperado(repo):
     n = _n()
     repo.insert(n)
     read = replace(n, status=NotificationStatus.read)
-    assert repo.compare_and_set(read, expected=frozenset({NotificationStatus.read})) is False
-    assert repo.compare_and_set(read, expected=OPEN) is True
+    assert repo.compare_and_set(read, expected=read) is False  # o estado lido era `unread`
+    assert repo.compare_and_set(read, expected=n) is True
     expired = replace(n, status=NotificationStatus.expired)
-    assert repo.compare_and_set(expired, expected=frozenset({NotificationStatus.unread})) is False
-    assert repo.compare_and_set(expired, expected=OPEN) is True
-    assert repo.compare_and_set(read, expected=OPEN) is False  # já não está aberta
+    assert repo.compare_and_set(expired, expected=n) is False  # entretanto passou a `read`
+    assert repo.compare_and_set(expired, expected=read) is True
+    assert repo.compare_and_set(read, expected=read) is False  # já não está nesse estado
     assert repo.get(n.id).status is NotificationStatus.expired  # type: ignore[union-attr]
 
 
+def test_compare_and_set_exige_o_n_de_votos_lido(repo):
+    """Mesmo estado (`unread`) mas mais um voto gravado por outrem: quem leu antes perde, para
+    que um voto nunca se perca nem se grave duas vezes."""
+    n = _n()
+    repo.insert(n)
+    after_ana = n.respond(ANA, "everyone", T0)
+    assert after_ana.status is NotificationStatus.unread and len(after_ana.responses) == 1
+    after_bruno_stale = n.respond(BRUNO, "unknown", T0)  # lido antes do voto da Ana
+    assert repo.compare_and_set(after_ana, expected=n) is True
+    assert repo.compare_and_set(after_bruno_stale, expected=n) is False
+    # Relido: já aplica, com os dois votos (o último fecha: todos votaram).
+    current = repo.get(n.id)
+    assert current is not None and len(current.responses) == 1
+    final = current.respond(BRUNO, "unknown", T0)
+    assert repo.compare_and_set(final, expected=current) is True
+    stored = repo.get(n.id)
+    assert stored is not None and len(stored.responses) == 2
+    assert stored.status is NotificationStatus.actioned
+
+
 def test_compare_and_set_de_inexistente_e_false(repo):
-    assert repo.compare_and_set(_n(), expected=OPEN) is False
+    n = _n()
+    assert repo.compare_and_set(n, expected=n) is False
 
 
 def test_cas_concorrente_so_um_ganha(repo):
@@ -113,7 +132,7 @@ def test_cas_concorrente_so_um_ganha(repo):
 
     def attempt() -> None:
         barrier.wait()
-        won = repo.compare_and_set(replace(n, status=NotificationStatus.expired), expected=OPEN)
+        won = repo.compare_and_set(replace(n, status=NotificationStatus.expired), expected=n)
         with lock:
             results.append(won)
 
@@ -140,7 +159,7 @@ def test_open_due_so_abertas_vencidas(repo):
     done = _n("e3", consumption="c3", expires_in=timedelta(hours=1))
     for n in (due, later, done):
         repo.insert(n)
-    repo.compare_and_set(replace(done, status=NotificationStatus.dismissed), expected=OPEN)
+    repo.compare_and_set(replace(done, status=NotificationStatus.dismissed), expected=done)
     assert repo.open_due(T0 + timedelta(hours=1)) == [due]
     assert repo.open_due(T0) == []
 

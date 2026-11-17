@@ -79,7 +79,7 @@ P5 (barramento, papéis), P4 (pedidos e alertas), P1 (ações físicas), P2 (ale
 
 ## Testes
 
-Serviço com relógio injetado e barramento falso; permissões por papel; idempotência; expiração; preferências. Sem rede.
+Serviço com relógio injetado e barramento falso; permissões por papel; idempotência; expiração; preferências; votação (`tests/test_voting.py`: os quatro veredictos, um voto por pessoa, alvos inválidos, anonimato, eventos por voto e corridas de votos simultâneos em memória e em SQLite: sem votos perdidos nem duplicados e uma só decisão). Sem rede.
 
 ## Estado de implementação (backend parcial)
 
@@ -87,10 +87,10 @@ Refs #95 (APP-02) e #96 (APP-03); não as fecham (faltam UI, WebSocket e os prod
 
 | Feito (**IMPLEMENTADO**) | Como |
 |---|---|
-| Persistência | SQLite (`0300_notifications_core.sql`): `notification` (JSON validado + colunas escalares), `notification_read`, `notification_preferences` (por residente e casa); compare-and-set `UPDATE … WHERE status IN ('unread','read')` |
+| Persistência | SQLite (`0300_notifications_core.sql`): `notification` (JSON validado + colunas escalares), `notification_read`, `notification_preferences` (por residente e casa); compare-and-set sobre o estado e o n.º de votos lido: `UPDATE … WHERE id=? AND status=? AND json_array_length(json,'$.responses')=?` (o par só avança: nenhum voto se perde nem se duplica) |
 | Lista | `GET …/notifications` (filtros `status`, `scope`, `limit` 1..100), só `NotificationView`; o senhorio só recebe os tipos da allow-list (hoje `info`) |
 | Leitura | `POST …/read`: recibo por residente; o estado partilhado só muda nas pessoais |
-| Resposta | `POST …/respond`: um só vencedor (409 `already_responded` aos restantes), `notification.responded` gravado na mesma transação, 409 `notification_expired` |
+| Resposta / voto | `POST …/respond` (corpo `NotificationRespondIn`: `action_id` e, com `other`, `target_resident_id`). Confirmações: um voto por inquilino (409 `already_responded` ao repetir ou depois de fechada), fecha segundo `confirmation_outcome` (D-32); alvo inválido 400 `invalid_request`; 409 `notification_expired`. Outros tipos: a primeira resposta vence. `notification.responded` **por voto**, com `outcome`, gravado na mesma transação; se o CAS perde, relê e reaplica a regra |
 | Preferências | `GET|PUT …/notification-preferences` (por casa; `security_alert` não se desliga: 400) |
 | Consumidor | `notifications.confirmation_needed` (nome permanente) sobre `billing.confirmation_needed`; idempotente por evento; deduplicação por pedido aberto (índice único parcial) |
 
@@ -110,7 +110,7 @@ Estado: **PROPOSTA** (o contrato da `main` não mudou): pedidos da P3 à P4/P5 s
 
 1. **Estado de leitura partilhado.** `Notification.status` tem `read` e as notificações de casa são partilhadas: se um morador abre, passa a «lida» para todos. Proposta: recibo de leitura por residente (fora da entidade); `status=read` só nas pessoais. **P3 já aplica:** recibo por residente (`notification_read`); `read` partilhado só nas pessoais.
 2. **Expiração sem sinal.** Nada avisa a P4 de que um pedido caducou (o fallback depende disso). Proposta: evento `notification.expired {notification_id, ref}` emitido pelo varrimento da P3.
-3. **Retry da resposta (P-03).** `respond` devolve `409 already_responded` a qualquer repetição, mesmo do mesmo residente com a mesma ação (reenvio de rede). Proposta: decidir se esse caso devolve `200` com a vista atual ou `409`; APP-03 exige que o retry não duplique cobranças.
+3. **Retry da resposta.** Com D-32, `respond` devolve `409 already_responded` a qualquer repetição do mesmo residente (um voto por pessoa), mesmo com a mesma ação (reenvio de rede). Pergunta que fica: o reenvio idêntico devia devolver `200` com a vista atual em vez de `409`? Não duplica votos nem cobranças (o evento só sai ao gravar o voto).
 4. **`ConfirmationRequest` curto.** Só tem `appliance_name`: faltam divisão/localização, evidência e confiança, e origem (APP-03 pede evidência). «O aquecedor do Bruno» expõe o dono de um aparelho (P-18). Proposta: campos opcionais (`room_name`, `evidence`, `confidence`, `origin`) e regra sobre nomes de terceiros.
 5. **Proveniência dos eventos.** `EventBase.provenance` é obrigatória mas `NotificationCreatedData`/`NotificationRespondedData` não têm proveniência e `Notification` só tem `origin`. Proposta: `(n.origin, measured)`, escrita no contrato. **P3 já aplica:** `notification.created` herda a proveniência do evento de origem e `notification.responded` usa `(n.origin, measured)`.
 6. **`responder_ids` é um snapshot.** Quem deixa a casa (`ends_on`) continua a poder responder. Proposta: `respond` revalida a membership ativa (via `core/access`) além do snapshot; documentar que o senhorio é filtrado por P3 (nada no contrato o garante). **P3 já aplica:** quem não é membro ativo na data (fuso da casa) recebe 404 e deixa de ver a notificação, mesmo estando em `responder_ids`; o senhorio é filtrado dos `responder_ids` à criação.
@@ -123,4 +123,4 @@ Estado: **PROPOSTA** (o contrato da `main` não mudou): pedidos da P3 à P4/P5 s
 13. **Operador.** `PERMISSIONS[notification]` não inclui `operator`. Confirmar que é intencional (sem alertas técnicos para o operador no MVP).
 14. **Idempotência do `notification.created`.** O barramento entrega «pelo menos uma vez» e `EventBase.id` é aleatório por omissão. Proposta: documentar que o id da notificação e o do evento derivam do evento de origem (`stable_id`), para a reentrega não duplicar. **P3 já aplica:** ids `uuid5` derivados do evento de origem e `processed_event` por consumidor.
 
-Resolvido pelo contrato da `main` (sem pedido): as regras de resposta, erros e transições são de `Notification.respond`; os limiares de orçamento (50/80/100) são `Budget.thresholds`, da P4, e não preferências da P3.
+Resolvido pelo contrato da `main` (sem pedido): a regra B como votação (D-32: `Notification.respond`, `confirmation_outcome`, `VotingView`, `notification.responded` por voto com `outcome`; sem evento de expiração: billing divide por todos pelo seu prazo), as regras de resposta, erros e transições são de `Notification.respond`; os limiares de orçamento (50/80/100) são `Budget.thresholds`, da P4, e não preferências da P3.

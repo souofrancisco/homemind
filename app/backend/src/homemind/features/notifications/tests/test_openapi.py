@@ -48,13 +48,37 @@ def test_sem_entidade_interna_nem_ids_de_terceiros_nem_pares_ambiguos(spec):
 
 def test_modelos_de_entrada_locais_so_com_o_que_o_cliente_pode_enviar(spec):
     schemas = spec["components"]["schemas"]
-    assert set(schemas["RespondIn"]["properties"]) == {"action_id"}
-    assert schemas["RespondIn"]["additionalProperties"] is False
+    # o corpo do POST /respond é o do contrato (`NotificationRespondIn`): não há cópia local
+    assert "RespondIn" not in schemas
+    assert set(schemas["NotificationRespondIn"]["properties"]) == {
+        "action_id",
+        "target_resident_id",
+    }
+    assert schemas["NotificationRespondIn"]["additionalProperties"] is False
     assert set(schemas["NotificationPreferencesIn"]["properties"]) == {
         "quiet_hours",
         "disabled_kinds",
     }
     assert schemas["NotificationPreferencesIn"]["additionalProperties"] is False
+
+
+def test_respond_recebe_o_corpo_do_contrato_e_a_vista_expoe_a_votacao(spec):
+    op = spec["paths"][f"{BASE}/notifications/{{notification_id}}/respond"]["post"]
+    body = op["requestBody"]["content"]["application/json"]["schema"]
+    assert body["$ref"].endswith("/NotificationRespondIn")
+    view = spec["components"]["schemas"]["NotificationView"]["properties"]
+    assert "voting" in view
+    # a vista da votação nunca tem ids de quem votou (só alvos e contagens)
+    voting = spec["components"]["schemas"]["VotingView"]["properties"]
+    assert set(voting) == {
+        "verdict",
+        "pays_me",
+        "votes",
+        "eligible",
+        "votes_needed",
+        "accusations",
+        "my_vote",
+    }
 
 
 def test_lista_limita_o_tamanho_e_exige_casa(spec):

@@ -75,7 +75,7 @@ def test_cas_entre_threads_tem_um_so_vencedor(db):
         barrier.wait()
         won = db.run_sync(
             lambda c: SqliteNotificationRepository(c).compare_and_set(
-                replace(n, status=NotificationStatus.expired), expected=OPEN
+                replace(n, status=NotificationStatus.expired), expected=n
             )
         )
         with lock:
@@ -98,7 +98,7 @@ def test_indice_de_deduplicacao_so_admite_um_pedido_aberto(db):
     # fechado o primeiro, o segundo já entra
     db.run_sync(
         lambda c: SqliteNotificationRepository(c).compare_and_set(
-            replace(first, status=NotificationStatus.expired), expected=OPEN
+            replace(first, status=NotificationStatus.expired), expected=first
         )
     )
     assert db.run_sync(lambda c: SqliteNotificationRepository(c).insert(second)) is True
