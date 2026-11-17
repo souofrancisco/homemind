@@ -545,3 +545,52 @@ def test_collector_failure_does_not_affect_home(tmp_path):
     run(home._refrescar())
     assert not run(home.estado()).mcp_ok
     run(home.parar())
+
+
+def test_sensor_collector_read_only_and_failure(tmp_path):
+    home, mcp, _ = make(tmp_path)
+    mcp.dev["S0"] = {
+        "id": "S0",
+        "type": "contactSensor",
+        "categories": ["security"],
+        "capabilities": _caps(("sensorState", {"value": "normal"})),
+    }
+    calls = []
+    home.sensores = SimpleNamespace(
+        ingest=lambda devices: calls.append(("ingest", devices)),
+        unavailable=lambda: calls.append(("unavailable", None)),
+    )
+    run(home._refrescar())
+    assert calls == [("ingest", list(mcp.dev.values()))]
+    assert [name for name, _ in mcp.calls].count("get_home_devices") == 2
+    mcp.down = True
+    run(home._refrescar())
+    assert calls[-1] == ("unavailable", None)
+    assert mcp.writes() == []
+    run(home.parar())
+
+
+def test_no_sensor_collector_no_extra_inventory(tmp_path):
+    home, mcp, _ = make(tmp_path)
+    run(home._refrescar())
+    run(home._refrescar())
+    assert [name for name, _ in mcp.calls].count("get_home_devices") == 1
+    assert mcp.writes() == []
+    run(home.parar())
+
+
+def test_sensor_collector_failure_does_not_affect_home(tmp_path, caplog):
+    home, mcp, _ = make(tmp_path)
+
+    def fail(*args):
+        raise RuntimeError("secret")
+
+    home.sensores = SimpleNamespace(ingest=fail, unavailable=fail)
+    run(home._refrescar())
+    assert run(home.estado()).mcp_ok
+    mcp.down = True
+    run(home._refrescar())
+    assert not run(home.estado()).mcp_ok
+    assert "secret" not in caplog.text
+    assert mcp.writes() == []
+    run(home.parar())

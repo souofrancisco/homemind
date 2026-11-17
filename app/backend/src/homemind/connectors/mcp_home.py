@@ -29,6 +29,7 @@ from homemind.core.config import Settings, get_settings
 
 if TYPE_CHECKING:
     from homemind.connectors.mcp_collector import EnergyCollector
+    from homemind.connectors.mcp_sensor_collector import SensorCollector
 
 log = logging.getLogger(__name__)
 
@@ -328,6 +329,7 @@ class McpHome:
         # alterações relevantes (estado, consumo, disponibilidade), não por timestamps.
         self.ao_estado: EstadoOuvinte | None = None
         self.coletor: EnergyCollector | None = None
+        self.sensores: SensorCollector | None = None
         self._falhas_consecutivas = 0
         self.ultima_falha: str | None = None  # motivo (sem segredos) da última escrita recusada
         self.tempos_ms: dict[str, float] = {}  # duração da última operação de cada tipo
@@ -466,6 +468,13 @@ class McpHome:
                 self.coletor.unavailable()
             except Exception as erro:
                 log.exception("falha no coletor (%s)", type(erro).__name__, exc_info=False)
+        if self.sensores is not None:
+            try:
+                self.sensores.unavailable()
+            except Exception as erro:
+                log.exception(
+                    "falha no coletor de sensores (%s)", type(erro).__name__, exc_info=False
+                )
         self._mcp_ok = False
         self._lampada, self._tomada = EstadoLampada(), EstadoTomada()
         self._consumo_w = self._lido_em = self._consumo_em = None
@@ -551,6 +560,16 @@ class McpHome:
             )
         )
         self._aplicar_leitura(lamp, plug)
+        if self.sensores is not None:
+            payload = _payload(await session.call_tool(TOOL_HOME_DEVICES, {}))
+            if not isinstance(payload, dict) or not isinstance(payload.get("devices"), list):
+                raise RuntimeError("Unexpected home-device-list response")
+            try:
+                self.sensores.ingest(payload["devices"])
+            except Exception as erro:
+                log.exception(
+                    "falha no coletor de sensores (%s)", type(erro).__name__, exc_info=False
+                )
 
     def _aplicar_leitura(self, lamp: dict | None, plug: dict | None) -> None:
         if lamp is not None:
