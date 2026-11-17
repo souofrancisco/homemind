@@ -9,6 +9,7 @@ dependencies = [
   "pydantic-settings==2.7.1",
   "pyjwt[crypto]==2.10.1",
   "mcp==1.12.4",
+  "opencv-python-headless==5.0.0.93",
 ]
 
 [dependency-groups]
