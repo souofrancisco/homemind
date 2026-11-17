@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.responses import StreamingResponse
 
 from homemind.core.config import get_settings
+from homemind.features.auth.service import current_user
 from homemind.features.video import service
 from homemind.features.video.service import LIMITE, Fonte, partes_mjpeg
 
@@ -19,7 +20,8 @@ async def lifespan(app: FastAPI):
 router = APIRouter(prefix="/api", tags=["video"], lifespan=lifespan)
 
 
-@router.get("/video", response_class=StreamingResponse)
+# Bearer obrigatório: o frontend usa fetch (um <img> não envia cabeçalhos; token nunca no URL).
+@router.get("/video", response_class=StreamingResponse, dependencies=[Depends(current_user)])
 async def video(fonte: Fonte) -> StreamingResponse:
     """MJPEG do frame mais recente, para `<img src="/api/video">`. Local, sem gravação."""
     settings = get_settings()

@@ -11,6 +11,7 @@ services:
         required: false
     environment:
       APP_MODE: ${APP_MODE:-simulation}
+      HOME_BACKEND: ${HOME_BACKEND:-fake}  # fake = demonstração sem dispositivos físicos
       DATABASE_PATH: /srv/data/homemind-${APP_MODE:-simulation}.db
       ENABLE_PHYSICAL_WRITES: ${ENABLE_PHYSICAL_WRITES:-false}
       OIDC_ISSUER: http://localhost:${AUTHENTIK_PORT:-9000}/application/o/homemind/
@@ -31,6 +32,7 @@ services:
       network: host  # DNS do resolver embebido do Docker falha nalgumas máquinas
     environment:
       API_PROXY_TARGET: http://backend:8000
+      VITE_OBJECTOS_SOURCE: api
       VITE_OIDC_AUTHORITY: http://localhost:${AUTHENTIK_PORT:-9000}/application/o/homemind/
     ports: ["${FRONTEND_PORT:-5173}:5173"]
     volumes:
@@ -72,6 +74,9 @@ services:
     ports: ["${AUTHENTIK_PORT:-9000}:9000"]
     volumes:
       - ./infra/authentik:/blueprints/custom:ro
+      # Assets do brand (branding_logo/branding_favicon são nomes de ficheiros em /media/public); o favicon reutiliza o ícone da app.
+      - ./infra/authentik/media/objectos-logo.svg:/media/public/objectos-logo.svg:ro
+      - ./frontend/assets/icon.svg:/media/public/objectos-icon.svg:ro
     depends_on:
       authentik-db:
         condition: service_healthy

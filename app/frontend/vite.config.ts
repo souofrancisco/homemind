@@ -6,5 +6,10 @@ const target = process.env.API_PROXY_TARGET ?? "http://127.0.0.1:8000";
 
 export default defineConfig({
   plugins: [react()],
-  server: { proxy: { "/api": target, "/healthz": target } },
+  server: {
+    proxy: {
+      "/api": { target, ws: true }, // inclui /api/ws e /api/video
+      "/healthz": target,
+    },
+  },
 });
