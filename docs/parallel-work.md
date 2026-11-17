@@ -1,6 +1,6 @@
 # Trabalho paralelo — ObjectOS (5 pessoas)
 
-Ler `CLAUDE.md`, `docs/objectos-plano.md` e a issue. Cada pessoa assume um módulo. Mapeamento GitHub: P1 `brunoviera88` (ainda sem permissão de colaborador, atribuição pendente), P2 `1Mii`, P3 `RafaelMat0s-Dev`, P4 `Amorim3000`, P5 `souofrancisco`. A issue de extras #30 é partilhada por P4/P5; #31 por P1/P2/P3/P5 (P1 pendente).
+Ler `CLAUDE.md`, `docs/objectos-plano.md` e a issue. Cada pessoa assume um módulo. Mapeamento GitHub: P1 `brunovieira88`, P2 `1Mii`, P3 `RafaelMat0s-Dev`, P4 `Amorim3000`, P5 `souofrancisco`. A issue de extras #30 é partilhada por P4/P5; #31 por P1/P2/P3/P5 (P1 incluída).
 
 | Pessoa | Área | Primeira entrega |
 |---|---|---|
