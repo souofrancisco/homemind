@@ -24,7 +24,7 @@ from homemind.features.households.repo import seed_demo
 DEMO_ROOT = Path(__file__).resolve().parents[4] / ".demo-data"
 FILE_NAME = "conta-certa-demo.sqlite3"
 MARKER = "conta-certa-DEMO-01-dedicated-v1"
-SQLITE_MAGIC = b"SQLite format 3\\x00"
+SQLITE_MAGIC = b"SQLite format 3\x00"
 
 
 class DemoSafetyError(RuntimeError):
@@ -164,7 +164,7 @@ class DemoStore:
         if invoices["A"] == invoices["B"]:
             raise AssertionError("fixtures A e B confundidas")
         fingerprint = hashlib.sha256(
-            "\\n".join(event.model_dump_json() for event in expected).encode()
+            "\n".join(event.model_dump_json() for event in expected).encode()
         ).hexdigest()
         return {
             "mode": "SIMULADO / offline",
@@ -190,7 +190,7 @@ def main() -> None:
     try:
         report = getattr(store, args.action)()
     except (DemoSafetyError, AssertionError, sqlite3.Error) as exc:
-        parser.exit(2, f"DEMO RECUSADA: {exc}\\n")
+        parser.exit(2, f"DEMO RECUSADA: {exc}\n")
     print(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2))
 
 
