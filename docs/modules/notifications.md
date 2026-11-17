@@ -1,6 +1,8 @@
 # Módulo `notifications` — centro de notificações
 
-**Dono: P3 (RafaelMat0s-Dev).** UI: páginas desenhadas por P5 com P3. **PLANEADO.** Substitui todas as interações que o PDF previa no Telegram (D-01 em [decisions.md](../decisions.md)).
+**Dono: P3 (RafaelMat0s-Dev).** UI: páginas desenhadas por P5 com P3. **PLANEADO.**
+
+> **REGRA B = VOTAÇÃO (D-32, prevalece):** em `confirmation_request` cada inquilino vota uma vez; um «É minha» fecha; atribuir a outro exige ≥ metade dos elegíveis com o mesmo alvo (fecha antes se o próprio assumir); todos votaram sem decisão ou 24 h → por todos. Fonte única: `confirmation_outcome` em `contracts/notification.py`. **Quem fizer merge (pessoa ou agente) adapta o código de P3/P5/billing a esta regra; não reintroduzir «primeira resposta vence» nas confirmações.** Substitui todas as interações que o PDF previa no Telegram (D-01 em [decisions.md](../decisions.md)).
 
 ## Responsabilidade
 
@@ -10,7 +12,7 @@ Ser o **único canal de comunicação com o utilizador**: avisos, perguntas inte
 
 | Tipo | Origem | Âmbito | Interativa | Exemplo (PT-PT) |
 |---|---|---|---|---|
-| `confirmation_request` | `billing.confirmation_needed` | Casa (moradores autorizados) | Sim | «O aquecedor do Bruno está ligado na sala. De quem é esta conta?» [É minha] [É de todos] [Não sei] |
+| `confirmation_request` | `billing.confirmation_needed` | Casa (moradores autorizados) | Sim | «O aquecedor do Bruno está ligado na sala. De quem é esta conta?» [É minha] [É de todos] [Não sei] [É de outra pessoa → escolher] |
 | `budget_alert` | `alerts.threshold_crossed` | Pessoal | Não | «Já gastaste 20 € dos teus 25 € (80 %). Ao ritmo atual chegas aos 31 €.» |
 | `peak_alert` | `alerts.alert_raised` | Casa | Opcional | «Pico na sala: 2 kW há 40 min.» |
 | `forgotten_appliance` | `alerts.alert_raised` | Pessoal (dono) | Sim | «Saíste há 1 h e o aquecedor continua ligado. Desligo?» [Desliga] [Deixa estar] |
@@ -32,7 +34,8 @@ Um aviso «da casa» é o que o PDF punha no grupo; um aviso «pessoal» é o qu
 
 ## Regras
 
-- **Resposta persistida e idempotente:** a primeira resposta válida fixa o estado; repetir devolve `409 already_responded`. Registo: autor, hora, ação.
+- **Confirmações = votação (D-32):** cada inquilino elegível vota uma vez (`409 already_responded` ao repetir); a notificação fica aberta até `confirmation_outcome` decidir e fecha (`actioned`) com o voto decisivo em `response` e todos em `responses`. Persistência: *compare-and-set* sobre o n.º de votos lido (perdeu → reler e reaplicar). Cada voto aceite emite `notification.responded` com `outcome`. A app mostra `NotificationView.voting` (votos, necessários, atribuições por alvo, o meu voto; nunca quem votou).
+- **Restantes tipos:** a primeira resposta válida fixa o estado; repetir devolve `409 already_responded`. Registo: autor, hora, ação.
 - **Quem responde:** inquilinos ativos da casa (confirmações); o **senhorio nunca** vê nem responde a pedidos de confirmação de consumo.
 - **Expiração:** `expires_at` por tipo (omissão 24 h para confirmações); ao expirar, o produtor aplica o fallback.
 - **Deduplicação:** uma notificação por `(kind, ref_type, ref_id, destinatário)` aberta de cada vez.
@@ -65,7 +68,8 @@ P5 (barramento, papéis), P4 (pedidos e alertas), P1 (ações físicas), P2 (ale
 ## Critérios de aceitação
 
 - Fluxo completo com simulador: pedido → notificação no ecrã do inquilino A → resposta «É minha» → `Attribution` atualizada → confirmação mostrada; pedido não chega ao senhorio.
-- Responder duas vezes: segunda resposta `409`.
+- Votação: 2 de 4 votam «É de outra pessoa → Bruno» → atribuído ao Bruno; o Bruno assume antes → fecha com ele; votos divididos/«Não sei» até ao fim ou 24 h → por todos.
+- Votar duas vezes: segundo voto `409`.
 - Expiração sem resposta aciona o fallback (verificado por P4).
 - Reconexão do WebSocket recupera as notificações por `GET`.
 - Preferências de silêncio aplicadas a alertas não críticos.

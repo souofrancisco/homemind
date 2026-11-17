@@ -34,6 +34,7 @@ from homemind.contracts.energy import (
     PowerStep,
 )
 from homemind.contracts.notification import (
+    ConfirmationOutcome,
     ConfirmationRequest,
     NotificationKind,
     NotificationRef,
@@ -94,8 +95,13 @@ class NotificationCreatedData(ContractModel):
 
 
 class NotificationRespondedData(ContractModel):
+    """Um por resposta aceite. Em `confirmation_request` sai um por VOTO, com `outcome`:
+    billing só atribui quando `outcome.decided` (D-32); sem decisão até `expires_at`, billing
+    divide por todos pelo seu próprio prazo (não há evento de expiração)."""
+
     response: NotificationResponse
     ref: NotificationRef | None = None  # o que foi respondido (ex.: o consumo)
+    outcome: ConfirmationOutcome | None = None  # só em `confirmation_request`
 
 
 class AlertKind(StrEnum):
