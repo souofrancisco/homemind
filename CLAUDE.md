@@ -8,7 +8,7 @@ Fonte de verdade do produto: documento Conta Certa v5.1 ([`docs/references/Conta
 
 - O **código na `main` é ainda o do ObjectOS**; o que está «planeado» nos documentos **não existe**. Ao escrever código, docs, PRs ou respostas, distinguir sempre **IMPLEMENTADO** de **PLANEADO**.
 - Antes de tocar no código antigo, ler [`docs/architecture/migration.md`](docs/architecture/migration.md) (KEEP/ADAPT/REPLACE/REMOVE/DEFER). **Não remover código ObjectOS** fora de um PR da BASE-04 (#74).
-- Índice da documentação: [`docs/README.md`](docs/README.md). Divisão por pessoa e ficheiros preferenciais: [`docs/development/team.md`](docs/development/team.md). GitHub Project: «Conta Certa — Desenvolvimento» (ver `docs/development/roadmap.md`).
+- Índice da documentação: [`docs/README.md`](docs/README.md). Divisão por pessoa e ficheiros preferenciais: [`docs/development/team.md`](docs/development/team.md). GitHub Project «Conta Certa — Desenvolvimento»: **PENDENTE** (ainda não criado; ver `docs/decisions.md` D-22).
 
 ## Produto
 

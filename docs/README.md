@@ -50,7 +50,7 @@ Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home).
 | Documento | Conteúdo |
 |---|---|
 | [team.md](development/team.md) | Divisão do trabalho pelas cinco pessoas |
-| [roadmap.md](development/roadmap.md) | Fases F0–F3, prioridades, bloqueios, ordem de trabalho (espelho da issue #129 e do GitHub Project) |
+| [roadmap.md](development/roadmap.md) | Fases F0–F3, prioridades, bloqueios, ordem de trabalho (espelho da issue #129) |
 | [mvp.md](development/mvp.md) | MVP, cenário de demo, real vs simulado, plano B |
 | [backlog.md](development/backlog.md) | Mapa épico → issues reais (#58–#132) e destino das issues antigas |
 | [risks.md](development/risks.md) | Riscos técnicos e limites do hardware |

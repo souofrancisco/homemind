@@ -27,7 +27,7 @@ Registo das decisões da reorganização (17/11/2026), reconciliadas com o docum
 | D-19 | Idempotência de eventos: cada consumidor regista **todos** os `event.id` processados e o efeito na **mesma transação** (`processed_event`); nunca «só o último id recebido» | [event-flow.md](architecture/event-flow.md) |
 | D-20 | Os dois conjuntos de valores do PDF mantêm-se como fixtures distintas: **A** = §7.1 (quatro componentes, 45,12/29,76/24,64/20,48 €; MVP) e **B** = «três regras» do §6.2 (46,80/27,60/24,40/21,20 €). Regras e total (120 €) diferentes; ambas ilustrativas | [billing.md](modules/billing.md) |
 | D-21 | A tarefa de preparação usa as issues existentes (#58–#132) e a roadmap #129; os IDs provisórios `C-Px-nn` de versões anteriores ficam substituídos pelos códigos `BASE-01`… ([backlog.md](development/backlog.md)). Hierarquia épico → tarefa por **sub-issues nativas** do GitHub; dependências por referência | Estado real do GitHub |
-| D-22 | **GitHub Project v2** único «Conta Certa — Desenvolvimento» (owner `souofrancisco`): ver [roadmap.md](development/roadmap.md) | Gestão |
+| D-22 | **GitHub Project v2** único «Conta Certa — Desenvolvimento» (owner `souofrancisco`): **decidido, PENDENTE de criação** (falta o scope `project` do `gh`); atualizar com o URL quando existir | Gestão |
 
 ### Telegram → aplicação (D-01), mapeamento completo
 
