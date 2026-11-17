@@ -160,6 +160,52 @@ aviso. Valores `dW` (0,1 W) e `mW` continuam suportados mas ficam excluídos par
 (1) Com os mentores da Altice: a unidade documentada de `instantPower`/`instantVoltage`/
 `instantCurrent`; (2) se `todayConsumption` é kWh (não medido aqui).
 
+## Sensores do kit (MCP-03) — inventário e matriz (2026-11-17)
+
+Inventário por `get_home_devices` (só leitura; sem IDs, nomes nem MACs). O kit tem 7 dispositivos; a lista e o detalhe (`get_device_details`) devolvem as **mesmas** capabilities em todos os sensores.
+
+### Matriz por dispositivo: observado × suportado × simulado
+
+| Dispositivo (`type`) | Capabilities observadas (valor/forma) | Observado | Adaptador | Simulado |
+|---|---|---|---|---|
+| **Contacto** (`contactSensor`) | `sensorState` (`normal`/`alarm`), `tamperState`, `batteryStatus` (`low`/`medium`/`high`) | **REAL**, confirmado fisicamente | `SensorReading` `contact` (PLANEADO nesta issue) | PLANEADO (MCP-05) |
+| **Clima** (`temperatureSensor`) | `temperatureValue` (min −50, max 60), `humidityValue` (0–100), `batteryLevel` (0–100) | **REAL** | `SensorReading` `temperature` + `humidity` (PLANEADO nesta issue) | PLANEADO (MCP-05) |
+| **Fumo** (`smokeSensor`) | só `batteryStatus` (sem estado de alarme) | REAL (só bateria) | **Fora de âmbito** (decisão do utilizador: o detetor de fumo não é usado) | — |
+| **Gateway** (`gateway`) | `alarmState`, `tamperState`, `networkMode` (`ethernet`/`wifi`/`cellular`), `chargeState`, `batteryLevel`, `factoryReset` | REAL | Só estado, sem adaptador de decisão. **`factoryReset` nunca se escreve** | — |
+| Câmara, tomada, lâmpada | ver secções anteriores | REAL | `McpHome` (já implementado) | FakeHome |
+
+Todos os dispositivos de segurança (`categories` contém `security`: contacto, fumo e gateway) ficam **fora** do caminho de controlo do `McpHome` (`_find_devices` ignora-os); só se leem, sem escritas.
+
+### Contacto — mapeamento verificado fisicamente
+
+| Estado físico | `sensorState` | Leituras |
+|---|---|---|
+| Fechado (íman junto) | `normal` | 3 + 1 depois de fechar |
+| Aberto (íman afastado) | **`alarm`** | 4 |
+
+**`alarm` = aberto, `normal` = fechado.** Observado com o operador a abrir e fechar o sensor.
+- O sensor reporta **por mudança de estado** e tem atualizações periódicas (`lastCommunicationTime` avançou com o mesmo estado ao fim de ~30–70 s).
+- **Latência (não medida com precisão)**: ao abrir, a mudança já estava reportada ~10 s depois do gesto. Ao fechar, o operador disse «fechei» antes das 22:11:56, as leituras seguiram em `alarm` e a mudança só foi reportada às 22:12:23: **≥ ~27 s**. Não se sabe a hora exata dos gestos. A meta «janela aberta → corte < 10 s» exige um teste cronometrado antes de ser prometida.
+- Resposta com valor desconhecido/ausente = `unknown`; nunca se assume «fechado».
+
+### Clima
+
+- `humidityValue` está em % (intervalo declarado 0–100).
+- `temperatureValue` **sem unidade declarada**: o valor lido (25,3) coincide com a temperatura do local indicada pelo operador (~25 °C), logo **°C** (verificação aproximada, sem termómetro calibrado; a escala −50…60 também é a de °C).
+- Reporta devagar: sem nova atualização durante **7 min** de observação, depois de já ter ~4 min (≥ ~11 min entre reportes). Um limiar de `stale` do clima tem de ser de vários minutos (provisório: 30 min), não os 90 s da tomada.
+
+### Cadência de frescura observada (uma série de 7 min)
+
+| Sensor | Observado |
+|---|---|
+| Contacto | por mudança + batimentos de ~30–70 s |
+| Clima | ≥ ~11 min sem reportar |
+| Fumo, gateway | sem reporte em 7 min; `lastCommunicationTime` já com ~1 h no início (batimento horário provável, não confirmado) |
+
+### Por confirmar
+
+Latência real abrir/fechar do contacto (teste cronometrado); intervalo de reporte do clima; se o alarme de fumo aparece no `alarmState` do gateway (fora de âmbito).
+
 ## Verificação física da lâmpada (#10/#11) — 2026-11-17, BLOQUEADA
 
 Executada com autorização explícita do operador (`make mcp-verify what=lamp`, grant privado de
