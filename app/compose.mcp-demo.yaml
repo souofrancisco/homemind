@@ -1,0 +1,15 @@
+# Demo completa (frontend + Authentik + câmara + motor + MCP real). Sobrepõe app/compose.yaml:
+#   make mcp-demo        (equivale a docker compose -p homemind-mcpdemo -f compose.yaml -f este)
+# O frontend não muda: continua a falar com o mesmo backend, agora com HOME_BACKEND=mcp.
+services:
+  backend:
+    environment:
+      HOME_BACKEND: mcp
+      MCP_TOKEN_PATH: /srv/mcp-auth/tokens.json
+      MCP_WRITE_GRANT_PATH: /srv/data/mcp-write-grant.json
+    volumes:
+      - type: bind
+        source: ./.mcp-auth
+        target: /srv/mcp-auth
+        bind:
+          create_host_path: false

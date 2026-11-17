@@ -17,6 +17,7 @@ Este repositório era o *HomeMind Spaces* e já contém infraestrutura reutiliz�
 - [Instruções para Claude e agentes](CLAUDE.md) — regras, paths reais e segurança.
 - [Trabalho paralelo](docs/parallel-work.md) — divisão por pessoa e integração.
 - [Issues ObjectOS](https://github.com/souofrancisco/homemind/issues) — unidades de implementação e critérios de aceitação.
+- [MCP Altice: login, escritas autorizadas e demo](docs/mcp-demo.md)
 - [Capacidades MCP](docs/mcp-capabilities.md) — conferir schemas reais antes de fazer escritas. O que estiver legado/por validar não deve ser dado como confirmado.
 
 ## Stack
@@ -54,7 +55,7 @@ make check     # lint, contratos OpenAPI, build, validação de compose
 
 A infraestrutura atual disponibiliza frontend em `http://localhost:5173`, backend em `http://localhost:8000` e Authentik em `http://localhost:9000` com a configuração de desenvolvimento existente. Não pressupor que as rotas ObjectOS já existem.
 
-As variáveis do ObjectOS a definir durante a implementação incluem `VIDEO_SOURCE`, `HOME_BACKEND=fake|mcp`, `PROFILE=normal|demo`, `NVIDIA_API_KEY` e as variáveis MCP existentes (`MCP_ENDPOINT`, `MCP_API_KEY`, `MCP_AUTH_TOKEN`). Guardar segredos fora do repositório. O `FakeHome` e o clip MEARI são reservas de desenvolvimento/demo, sempre identificados como simulação.
+As variáveis do ObjectOS a definir durante a implementação incluem `VIDEO_SOURCE`, `HOME_BACKEND=fake|mcp`, `PROFILE=normal|demo`, `NVIDIA_API_KEY` e as variáveis MCP existentes (`MCP_ENDPOINT`, `MCP_API_KEY`, `MCP_OAUTH_*`, `ENABLE_PHYSICAL_WRITES`; ver `app/.env.example`). Guardar segredos fora do repositório. O `FakeHome` e o clip MEARI são reservas de desenvolvimento/demo, sempre identificados como simulação.
 
 ## Equipa (cinco pessoas)
 

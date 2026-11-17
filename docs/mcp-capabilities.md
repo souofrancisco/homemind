@@ -56,9 +56,11 @@ permitidas pelo conector:
 
 O schema também anuncia `temperature`, mas o conector não permite essa operação. O ObjectOS não
 usa ferramentas de alarme/segurança, cenários ou timers. Atualizações físicas continuam
-desativadas por `ENABLE_PHYSICAL_WRITES=false`. Além do flag, `McpHome` exige um callback de
-aprovação por ação; o motor atual não fornece esse callback, portanto ativar apenas o flag não
-autoriza escritas automáticas de regras ou temporizadores.
+desativadas por `ENABLE_PHYSICAL_WRITES=false`. Além do flag, `McpHome` exige um grant temporário
+criado pelo operador (`make mcp-writes-on`, ver `docs/mcp-demo.md`), partilhado pelo motor e pelo
+`McpHome`; expirado ou revogado, todas as escritas são recusadas. A whitelist é exata:
+`get_home_devices`, `get_device_details`, `update_device_capabilities`; lâmpada `power`,
+`brightness`, `color_rgb`; tomada só `power`. Os schemas são validados antes da primeira chamada.
 
 ## Inventário obtido por leitura MCP
 
@@ -93,15 +95,30 @@ Na resposta real da lâmpada (`get_device_details`), foram observadas:
 | `workMode` | valores disponíveis incluem `colour`, `music`, `white`, `scene` |
 | `temperature` | número, min 0 e max 100; não é usado como brilho nem controlado |
 
+## Consumo (`instantPower`, #12) — evidência e bloqueio
+
+Evidência recolhida em leitura (2026-11-17), incluindo `get_device_details` com `techInfo: true`:
+
+- A capability traz `value`, `min: 0`, `max: 50000` e nenhum campo de unidade; `techInfo` não
+  devolve fabricante/modelo/unidade.
+- `instantVoltage` = 234 (max 50000) e `instantCurrent` = 0 (max 30000): as escalas dos máximos não
+  são coerentes com V/A/W inteiros; com 50000 em W seriam 50 kW, implausível para uma tomada.
+  Compatível com décimas de W, mW ou W — não distinguível.
+- Com a tomada em vazio `instantPower` = 0, logo não dá para comparar `V × I` com a potência.
+
+**Não confirmado:** a unidade de `instantPower`. `consumo_w` mantém-se `null`. Perguntar aos
+mentores da Altice: (1) a unidade de `instantPower` (W, 0,1 W ou mW) e das capabilities
+`instantVoltage`/`instantCurrent`; (2) se `todayConsumption` é kWh. Alternativa interna: ligar uma
+carga conhecida (ex.: 60 W) e comparar `instantPower` com `instantVoltage × instantCurrent`.
+Confirmada a unidade, basta acrescentá-la em `_UNIT_FACTOR` (`mcp_home.py`); o polling,
+timestamp e limpeza em falha já estão implementados.
+
 ## Limites da evidência
 
-- Leituras de `get_home_devices` e `get_device_details` foram efetuadas; nenhuma escrita física foi
-  chamada.
-- A confirmação de escritas por releitura está implementada, mas depende do flag e de um callback
-  explícito de aprovação por ação. Esse callback ainda não está ligado a um ActionExecutor e
-  nenhuma escrita foi exercitada.
+- Leituras de `get_home_devices` e `get_device_details` foram efetuadas. Escritas: ver
+  `docs/mcp-demo.md` §5 e o registo de verificação física abaixo, quando executada.
 - A unidade de `instantPower` não consta no schema/resposta observados. Consumo em watts não está
   validado.
-- `get_home_devices` e `get_device_details` são as fontes de estado; os tempos `lastCommunicationTime`
-  são devolvidos pelo servidor, mas o polling ObjectOS regista separadamente o instante da sua
-  última leitura.
+- `get_home_devices` e `get_device_details` devolvem as mesmas capabilities (comparado em leitura).
+  O polling ObjectOS regista separadamente o instante da sua última leitura.
+- Latência observada: 1.ª chamada de cada sessão ~2 s, seguintes ~0,5–0,8 s.

@@ -3,7 +3,7 @@ SHELL := bash
 BACKEND  := app/backend
 FRONTEND := app/frontend
 
-.PHONY: dev down test lint contracts build android smoke check worktree mcp-login mcp-doctor mcp-up mcp-down
+.PHONY: dev down test lint contracts build android smoke check worktree mcp-login mcp-doctor mcp-up mcp-down mcp-demo mcp-demo-down mcp-writes-on mcp-writes-off mcp-writes-status mcp-verify
 
 dev:  ## ambiente completo com hot reload (Docker)
 	docker compose -f app/compose.yaml up --build
@@ -52,6 +52,28 @@ mcp-up:  ## backend MCP isolado (porta 18080; sem frontend/volumes partilhados)
 
 mcp-down:  ## parar apenas o projeto MCP isolado
 	docker compose -p homemind-altice -f app/compose.mcp.yaml down
+
+MCP_DEMO := -p homemind-mcpdemo -f app/compose.yaml -f app/compose.mcp-demo.yaml
+mcp-demo:  ## demo completa: frontend + Authentik + backend com HOME_BACKEND=mcp (escritas bloqueadas)
+	docker compose $(MCP_DEMO) up --build -d --wait
+
+mcp-demo-down:
+	docker compose $(MCP_DEMO) down
+
+# Sessão de escritas físicas (ENABLE_PHYSICAL_WRITES=true no .env + grant temporário).
+# stack=demo para a demo completa; omissão = backend MCP isolado. Ex.: make mcp-writes-on minutes=15
+MCP_STACK = $(if $(filter demo,$(stack)),$(MCP_DEMO),-p homemind-altice -f app/compose.mcp.yaml)
+mcp-writes-on:  ## autoriza escritas na lâmpada+tomada por N minutos (máx. MCP_WRITE_MAX_MINUTES)
+	docker compose $(MCP_STACK) exec backend python -m homemind.connectors.write_grant on --minutes $(or $(minutes),15) $(if $(roles),--roles $(roles))
+
+mcp-writes-off:  ## revoga imediatamente as escritas
+	docker compose $(MCP_STACK) exec backend python -m homemind.connectors.write_grant off
+
+mcp-writes-status:
+	docker compose $(MCP_STACK) exec backend python -m homemind.connectors.write_grant status
+
+mcp-verify:  ## verificação física controlada (what=lamp|plug), pede autorização explícita
+	uv run --project $(BACKEND) --env-file app/.env python -m homemind.connectors.mcp_verify $(what)
 
 worktree:  ## make worktree b=feat/US-12-nome -> ../homemind-US-12-nome (a partir de origin/main)
 	@test -n "$(b)" || { echo "uso: make worktree b=feat/US-xx-nome"; exit 1; }

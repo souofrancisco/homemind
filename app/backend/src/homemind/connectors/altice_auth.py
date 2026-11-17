@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import fcntl
 import json
 import logging
 import os
@@ -11,8 +12,8 @@ import re
 import tempfile
 import time
 import webbrowser
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -34,18 +35,53 @@ class OAuthCallbackError(RuntimeError):
     """OAuth server error code safe to report without response descriptions or secrets."""
 
 
+class OAuthReauthRequired(RuntimeError):
+    """Refresh token expirado/revogado: só `make mcp-login` no host recupera."""
+
+
+def needs_login(exc: BaseException) -> bool:
+    """True se `exc` (ou um filho de um ExceptionGroup) pede novo login."""
+    if isinstance(exc, OAuthReauthRequired):
+        return True
+    return isinstance(exc, BaseExceptionGroup) and any(needs_login(e) for e in exc.exceptions)
+
+
+# Uma sessão MCP de cada vez neste processo: renovações do token nunca correm em simultâneo.
+_SESSION_LOCK = asyncio.Lock()
+
+
 class JsonTokenStorage:
-    """Persist OAuth tokens and the fixed client registration in a mode-0600 file."""
+    """Persist OAuth tokens and the fixed client registration in a mode-0600 file.
+
+    O ficheiro vive numa diretoria própria (0700) para o `os.replace` atómico funcionar com
+    bind mounts Docker. `flock` num ficheiro de lock coordena processos (host e container).
+    """
 
     def __init__(self, path: Path):
         self.path = path
+        self._mtime: float | None = None
         self.tokens: OAuthToken | None = None
         self.client_info: OAuthClientInformationFull | None = None
         self.oauth_metadata: OAuthMetadata | None = None
         self.protected_resource_metadata: ProtectedResourceMetadata | None = None
         self.saved_at: float | None = None
+        self._load()
+
+    @contextmanager
+    def _flock(self) -> Iterator[None]:
+        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with open(self.path.parent / ".tokens.lock", "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+    def _load(self) -> None:
+        path = self.path
         if path.is_file():
             try:
+                self._mtime = path.stat().st_mtime
                 saved = json.loads(path.read_text(encoding="utf-8"))
                 self.tokens = OAuthToken.model_validate(saved["tokens"])
                 self.client_info = OAuthClientInformationFull.model_validate(saved["client_info"])
@@ -61,7 +97,18 @@ class JsonTokenStorage:
                     "Ficheiro de sessão MCP inválido; execute make mcp-login"
                 ) from exc
 
+    def _reload_if_changed(self) -> None:
+        """Outro processo (ex.: `make mcp-login`) pode ter renovado os tokens entretanto."""
+        try:
+            mtime = self.path.stat().st_mtime
+        except OSError:
+            return
+        if mtime != self._mtime:
+            with self._flock():
+                self._load()
+
     async def get_tokens(self) -> OAuthToken | None:
+        self._reload_if_changed()
         return self.tokens
 
     async def set_tokens(self, tokens: OAuthToken) -> None:
@@ -79,7 +126,6 @@ class JsonTokenStorage:
     def _save(self) -> None:
         if self.tokens is None or self.client_info is None:
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "tokens": self.tokens.model_dump(mode="json", exclude_none=True),
             "client_info": self.client_info.model_dump(mode="json", exclude_none=True),
@@ -95,18 +141,19 @@ class JsonTokenStorage:
             ),
             "saved_at": self.saved_at,
         }
-        fd, temp_path = tempfile.mkstemp(prefix=".mcp-tokens-", dir=self.path.parent)
-        try:
-            os.fchmod(fd, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as file:
-                json.dump(payload, file)
-                file.flush()
-                os.fsync(file.fileno())
-            os.replace(temp_path, self.path)
-            os.chmod(self.path, 0o600)
-        finally:
-            if os.path.exists(temp_path):
-                os.unlink(temp_path)
+        with self._flock():
+            fd, temp_path = tempfile.mkstemp(prefix=".mcp-tokens-", dir=self.path.parent)
+            try:
+                os.fchmod(fd, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as file:
+                    json.dump(payload, file)
+                    file.flush()
+                    os.fsync(file.fileno())
+                os.replace(temp_path, self.path)
+                self._mtime = self.path.stat().st_mtime
+            finally:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
 
 
 class PersistentOAuthClientProvider(OAuthClientProvider):
@@ -237,7 +284,7 @@ def create_oauth_provider(
     async def redirect_handler(url: str) -> None:
         nonlocal callback_server, callback_result
         if not interactive:
-            raise RuntimeError(
+            raise OAuthReauthRequired(
                 "Sessão MCP expirada; execute make mcp-login no host para autenticar novamente"
             )
         callback_server, callback_result = await _listener(
@@ -250,7 +297,7 @@ def create_oauth_provider(
 
     async def callback_handler() -> tuple[str, str | None]:
         if not interactive:
-            raise RuntimeError(
+            raise OAuthReauthRequired(
                 "Sessão MCP expirada; execute make mcp-login no host para autenticar novamente"
             )
         if callback_server is None or callback_result is None:
@@ -296,6 +343,13 @@ def create_oauth_provider(
 
 @asynccontextmanager
 async def altice_session(*, interactive: bool = False) -> AsyncIterator[ClientSession]:
+    async with _SESSION_LOCK:
+        async with _open_session(interactive) as session:
+            yield session
+
+
+@asynccontextmanager
+async def _open_session(interactive: bool) -> AsyncIterator[ClientSession]:
     settings = get_settings()
     provider, storage = create_oauth_provider(interactive=interactive)
     headers = {

@@ -12,6 +12,7 @@ services:
       ENABLE_PHYSICAL_WRITES: ${ENABLE_PHYSICAL_WRITES:-false}
       HOME_BACKEND: ${HOME_BACKEND:-fake}
       MCP_TOKEN_PATH: /srv/mcp-auth/tokens.json
+      MCP_WRITE_GRANT_PATH: /srv/data/mcp-write-grant.json
       OIDC_ISSUER: http://localhost:${AUTHENTIK_PORT:-9000}/application/o/homemind/
       OIDC_JWKS_URL: http://host.docker.internal:${AUTHENTIK_PORT:-9000}/application/o/homemind/jwks/
     ports:
@@ -20,9 +21,11 @@ services:
       - host.docker.internal:host-gateway
     volumes:
       - altice-data:/srv/data
+      # Diretoria (não ficheiro): permite o os.replace atómico dos tokens. Criada no host com
+      # `make mcp-login` (0700, dono = o teu utilizador, uid 1000 como o utilizador `app`).
       - type: bind
-        source: ./.mcp-tokens.json
-        target: /srv/mcp-auth/tokens.json
+        source: ./.mcp-auth
+        target: /srv/mcp-auth
         bind:
           create_host_path: false
     healthcheck:
