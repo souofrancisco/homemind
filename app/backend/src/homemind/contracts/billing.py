@@ -42,6 +42,7 @@ class AttributionTarget(StrEnum):
 
 class AttributionMethod(StrEnum):
     room_rule = "room_rule"
+    equal_rule = "equal_rule"  # política A automática, distinta do fallback
     confirmation = "confirmation"
     presence_rule = "presence_rule"
     equal_fallback = "equal_fallback"
