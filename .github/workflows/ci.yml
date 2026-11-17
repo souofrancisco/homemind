@@ -9,7 +9,7 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  check:  # make check = lint + contrato OpenAPI→TS + build + compose config
+  check:  # make check = lint + pytest + contrato OpenAPI→TS + build + compose config
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

@@ -1,25 +1,36 @@
-# KPIs
-**Metas internas (não são resultados):**
-| Meta | Alvo | Medido |
+# Métricas
+
+Só entram na coluna «Medido» valores com evidência. **REAL** = hardware/serviço real; **SIMULADO** = FakeHome, clip sintético ou IdP de teste.
+
+## Critérios da demo
+
+| Critério | Alvo | Medido | Tipo | Como medir |
+|---|---|---|---|---|
+| Leitura RTSP contínua | 10 min, 0 quedas | 600 s, 5974 frames, 10,0 FPS, 0 quedas, maior intervalo 609 ms, 1920×1080 (17/11, via relay RTSP) | REAL | `python -m homemind.features.video.medir --minutos 10` |
+| Atraso câmara → ecrã | < 1,5 s | por medir | — | guia VID-02 |
+| FPS de inferência (objetos + pose) | ≥ 10 com GPU | ~40 FPS em Apple Silicon (MPS), ~9 FPS em CPU, imagem sintética 640×480 (PR #45) | REAL (não é a GPU nem a câmara da demo) | guia YOLO-02 |
+| Gestos corretos | 10/10, 0 falsos positivos | por medir no clip MEARI | — | guia GES-01/02, afinador |
+| Latência gesto → luz | < 4 s | por medir | — | `medir_latencia` (software) e guia LAT-01/02 |
+| Demos completas seguidas | 10 | por medir | — | guia DEMO-01 |
+
+## MCP Altice (REAL, só leituras)
+
+| Medida | Valor | Data |
 |---|---|---|
-| Primeira leitura MCP real | 16/11 | — |
-| Percurso completo de 2 estadias | 17/11 | — |
-| CI verde em `main` | sempre | — |
-| Demos completas seguidas sem falhas | 3 | — |
-| Check-in+check-out do gestor | < 1 min de cliques | — |
-| Entregáveis: relatório 18/11 19h00; sumário+PPT 20/11 17h30 | submetidos | — |
-Resultados medidos: preencher só com evidência. Sem poupanças inventadas.
+| Abrir sessão (OAuth + initialize) | ~0,8 s (até ~2 s na 1.ª chamada) | 17/11 |
+| `get_device_details` em sessão quente | 0,65–0,87 s | 17/11 |
+| Polling de lâmpada + tomada | ~0,9 s por ciclo de 5 s | 17/11 |
+| Escrita com efeito físico confirmado | **nenhuma** (bloqueado, ver `mcp-capabilities.md`) | — |
+| Consumo em W | **indisponível** (unidade de `instantPower` não declarada) | — |
 
-## ObjectOS — vídeo (issue #2)
+## Software (verificado em 17/11, ver `estado-para-amanha.md`)
 
-Medido em 17/11/2026 com `python -m homemind.features.video.medir --minutos 10`, câmara MEARI através do relay RTSP (não em rede local), stream principal.
-
-| Medida | Alvo | Medido |
+| Medida | Valor | Tipo |
 |---|---|---|
-| Duração da leitura contínua | 10 min | 600 s, 5974 frames |
-| FPS da fonte | — | 10,0 (estável minuto a minuto) |
-| Maior intervalo entre frames | — | 609 ms (420–610 ms em todos os minutos) |
-| Quedas de `camara_ok` | 0 | 0 |
-| Resolução | — | 1920x1080 |
-| Atraso câmara→ecrã em `GET /video` | < 1,5 s | por medir (cronómetro) |
-| Stream secundário | comparar | por medir (sem URL) |
+| `pytest` | 199 testes, ~10 s | fakes |
+| Evento simulado → `home_state` ativo no WebSocket | ~2 ms (uma medição) | SIMULADO (FakeHome, processo real) |
+| Encerramento do servidor (SIGINT) | < 1 s, sem tarefas pendentes | REAL (processo) |
+
+## Poupança de energia
+
+A poupança apresentada é uma **estimativa** (W da tomada ao suspender × tempo suspenso × tarifa). Com FakeHome usa 60 W fixos (SIMULADO). Com MCP fica a zero até a unidade de `instantPower` ser confirmada. Nunca apresentar como leitura de contador.

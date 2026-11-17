@@ -132,6 +132,28 @@ Executada com autorização explícita do operador (`make mcp-verify what=lamp`,
 - Observado: o `color_rgb` lido vem **escalado pelo brilho** (RGB × brilho/100). O `McpHome` confirma
   a cor contra o RGB escalado e publica o RGB normalizado (cor a 100 %), como o FakeHome.
 
+## Leitura de diagnóstico — 2026-11-17 (noite), só leituras
+
+RESULTADO REAL, obtido com `get_home_devices` e `get_device_details` (nenhuma escrita):
+
+- **`lastCommunicationTime` é um instante em milissegundos (epoch).** Na leitura, a lâmpada não contactava a cloud há ~14 min e a tomada há ~69 min, com ambas a reportar `power: on`.
+- Lâmpada: `workMode: "colour"`, `brightness: 18`, `color_rgb` com `value: "46,31,0"` além dos três canais. O estado difere do registado na verificação física anterior, portanto a cloud aceitou alterações entretanto.
+- Tomada: tem `multiPower` com um interruptor `switch_1` (`on`) além de `power`.
+- Schema de `update_device_capabilities`: `body` obrigatório; `deviceId`, `deviceName` e `vendor` opcionais. A descrição diz «Update **one** capability» (uma capability por chamada, como o `McpHome` faz) e brilho «0-100», embora o dispositivo declare `min: 1`.
+- Latências: abrir sessão ~0,8 s; `get_device_details` 0,65–0,87 s.
+
+### Porque é que a lâmpada pode não ter reagido — hipóteses verificáveis
+
+| # | Hipótese | Evidência | Como confirmar amanhã (ver guia de validação, MCP-04) |
+|---|---|---|---|
+| H1 | **A lâmpada está sem ligação à cloud**; o MCP aceita a escrita («device updated») mas o dispositivo nunca a recebe | `lastCommunicationTime` com 3 min (verificação) e 14 min (hoje); a releitura voltou ao estado inicial | Ler `lastCommunicationTime` antes e depois de comandar a lâmpada pela app oficial; se não avançar, é conectividade (Wi-Fi 2,4 GHz, alimentação, re-emparelhar) |
+| H2 | A escrita é assíncrona e demora mais do que a janela de releitura (~2,5 s + leituras) | Numa tentativa a alteração apareceu ~12 s e reverteu | Após a escrita, ler o estado durante 60 s e ver a lâmpada |
+| H3 | `color_rgb` só tem efeito físico em `workMode: colour` | Hoje estava em `colour`; não se sabe em que modo estava na verificação | Registar `workMode` antes de cada teste; o `McpHome` não pode mudá-lo (fora da whitelist e do schema) |
+| H4 | O servidor encaminha pelo `vendor`/nome e o `deviceId` sozinho não chega | `vendor` existe no schema («used to decide where to route») | Perguntar aos mentores; não testar às cegas |
+| H5 | A tomada é multi-interruptor e `power` não atua em `switch_1` | `multiPower` na leitura | `make mcp-verify what=plug` com carga segura |
+
+Para ajudar a distinguir H1, quando uma escrita não é confirmada o `McpHome` acrescenta ao motivo o tempo sem contacto, por exemplo «estado final não corresponde ao pedido (dispositivo sem contactar a cloud há 14 min)». É só diagnóstico: nunca bloqueia nem repete escritas. **PRESSUPOSTO:** `lastCommunicationTime` reflete o último contacto do dispositivo com a cloud; confirmar com os mentores.
+
 ## Limites da evidência
 
 - Leituras de `get_home_devices` e `get_device_details` foram efetuadas. Escritas: ver a

@@ -1,4 +1,4 @@
-"""API do motor (frontend-api-contract v3): estado, histórico, regras, NVIDIA, off e WebSocket.
+"""API do motor (docs/contratos.md): estado, histórico, regras, NVIDIA, off e WebSocket.
 
 REST protegido por login (Bearer). O WebSocket autentica-se na primeira mensagem
 `{"type": "auth", "token": "<access token>"}` — nunca token no URL (ficaria nos logs).
@@ -82,17 +82,19 @@ async def lifespan(app: FastAPI):
     iniciar_home = getattr(engine.home, "iniciar", None)
     if iniciar_home is not None:
         await iniciar_home()
-    await engine.iniciar()
-    app.state.engine = engine  # a visão publica com engine.publicar_de_thread(evento)
-    tarefas = [
-        asyncio.create_task(engine.consumir()),
-        asyncio.create_task(engine.vigiar_camara(video.camara_ok)),  # sinal de vida da P1
-    ]
+    tarefas: list[asyncio.Task] = []
     try:
+        await engine.iniciar()
+        app.state.engine = engine  # a visão publica com engine.publicar_de_thread(evento)
+        tarefas = [
+            asyncio.create_task(engine.consumir()),
+            asyncio.create_task(engine.vigiar_camara(video.camara_ok)),  # sinal de vida da P1
+        ]
         yield
     finally:
         for t in tarefas:
             t.cancel()
+        await asyncio.gather(*tarefas, return_exceptions=True)
         await engine.parar()
         parar_home = getattr(engine.home, "parar", None)
         if parar_home is not None:

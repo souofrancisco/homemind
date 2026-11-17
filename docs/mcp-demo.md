@@ -12,7 +12,7 @@ Fluxo: câmara → gesto → evento → regra → motor → `McpHome` → MCP Al
 
 ```bash
 make mcp-login      # abre o browser; guarda tokens em app/.mcp-auth/tokens.json (dir 0700, ficheiro 0600)
-make mcp-doctor     # initialize + tools/list no MCP real; não escreve nada
+make mcp-doctor     # só leitura: tools/list + estado e último contacto da lâmpada/tomada (sem IDs)
 ```
 
 O backend nunca abre browser: com sessão expirada/revogada fica `mcp_ok=false` com o aviso
@@ -74,6 +74,7 @@ funcionar. O FakeHome é independente do MCP.
 | evento «Falha ao atuar em … : escritas físicas desativadas» | flag a false |
 | evento «… sem sessão de escritas autorizada» | grant ausente/expirado: `make mcp-writes-on` |
 | evento «… estado final não corresponde ao pedido» | releitura difere do pedido; nada foi dado como sucesso |
+| evento «… (dispositivo sem contactar a cloud há N min)» | o MCP aceitou a escrita mas o dispositivo parece offline; ver hipóteses em `mcp-capabilities.md` |
 | `/api/off` com `partial_failure` / `mcp_unavailable` | um / nenhum dispositivo confirmado desligado (a mensagem diz porquê) |
 | `ligada: null` | `power` devolvido ≠ `on`/`off`: desconhecido |
 
@@ -81,7 +82,13 @@ Escritas de resultado incerto (timeout) nunca são repetidas: só se relê (até
 porque a cloud pode demorar a refletir o estado). Um gesto com falha física
 não ativa o modo nem contabiliza poupança.
 
-## 8. Latência (medida no MCP real)
+## 8. Tokens partilhados entre host e container
+
+O ficheiro de tokens é único (`app/.mcp-auth/tokens.json`). `make mcp-doctor` e `make mcp-verify` no host podem renovar o token enquanto o backend corre. Se o servidor rodar o refresh token, o backend pode mostrar durante um ciclo de polling o aviso de sessão expirada; a sessão seguinte relê o ficheiro e recupera sozinha. Se o aviso persistir mais de 15 s: `make mcp-login`.
+
+Timeouts do `McpHome`: abrir sessão 10 s, leitura 8 s, escrita com releituras 14 s.
+
+## 9. Latência (medida no MCP real)
 
 O servidor demora ~2 s na 1.ª chamada de cada sessão e ~0,5–0,8 s nas seguintes. O `McpHome`
 mantém uma sessão persistente (aberta por uma tarefa dona), cacheia catálogo validado e IDs, e faz a

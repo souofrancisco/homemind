@@ -6,10 +6,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    app_mode: Literal["simulation", "real"] = "simulation"
-    database_path: str = "./data/homemind-simulation.db"
     mcp_endpoint: str = ""
-    mcp_transport: str = ""
     # Nunca logar nem devolver este valor (header X-API-Key do MCP Altice).
     mcp_api_key: str = ""
     mcp_client_type: str = "core"
@@ -24,7 +21,6 @@ class Settings(BaseSettings):
     mcp_write_max_minutes: int = 60
     mcp_lamp_id: str = ""
     mcp_plug_id: str = ""
-    llm_api_key: str = ""
     enable_physical_writes: bool = False
     # Authentik (OIDC). Issuer = URL pública do provider (campo `iss` dos tokens);
     # jwks_url pode ser interno (ex.: http://authentik-server:9000/...) em Docker.

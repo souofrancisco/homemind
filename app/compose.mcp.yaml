@@ -7,8 +7,6 @@ services:
     env_file:
       - .env
     environment:
-      APP_MODE: ${APP_MODE:-simulation}
-      DATABASE_PATH: /srv/data/homemind-altice.db
       ENABLE_PHYSICAL_WRITES: ${ENABLE_PHYSICAL_WRITES:-false}
       HOME_BACKEND: ${HOME_BACKEND:-fake}
       MCP_TOKEN_PATH: /srv/mcp-auth/tokens.json

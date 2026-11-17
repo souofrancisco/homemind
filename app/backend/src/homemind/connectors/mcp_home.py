@@ -44,6 +44,7 @@ _READBACK_GAP_S = 0.5
 _INVENTORY_EVERY_POLLS = 12  # volta a descobrir dispositivos de ~60 s a ~60 s
 _STALE_S = 30  # leitura de consumo mais antiga que isto deixa de ser devolvida
 _POWER = {"on": True, "off": False}  # qualquer outro valor = desconhecido
+_SEM_CONTACTO_MIN = 5  # só diagnóstico na mensagem de falha; nunca bloqueia escritas
 _RGB_TOL = 3  # arredondamentos do brilho; o RGB devolvido vem escalado por ele
 _UNIT_FACTOR = {"W": 1.0, "w": 1.0, "mW": 0.001, "milliwatt": 0.001}
 
@@ -192,6 +193,14 @@ def _plug_consumption(device: dict[str, Any]) -> float | None:
     return None
 
 
+def _minutos_sem_contacto(device: dict[str, Any]) -> int | None:
+    """Minutos desde `lastCommunicationTime` (epoch em ms no MCP real); None se ausente."""
+    t = device.get("lastCommunicationTime")
+    if isinstance(t, bool) or not isinstance(t, int | float) or t <= 0:
+        return None
+    return max(int((time.time() * 1000 - t) / 60000), 0)
+
+
 async def _nada() -> None:
     return None
 
@@ -241,13 +250,17 @@ class _Conexao:
 
     async def _correr(self) -> None:
         stack = AsyncExitStack()
+        eu = asyncio.current_task()
         erro: BaseException = ConnectionError("sessão MCP fechada")
+        fut: asyncio.Future[Any] | None = None
         try:
             async with asyncio.timeout(_OPEN_TIMEOUT_S):
                 session = await stack.enter_async_context(self._factory())
             self._ao_abrir()
             while True:
                 fn, fut, timeout = await self._fila.get()
+                if fut.done():  # quem pediu já desistiu (timeout): nunca executar mais tarde
+                    continue
                 try:
                     async with asyncio.timeout(timeout):
                         resultado = await fn(session)
@@ -261,6 +274,12 @@ class _Conexao:
         except Exception as exc:
             erro = exc
         finally:
+            # Deixa de ser a sessão corrente ANTES de fechar (o fecho tem awaits): um pedido que
+            # chegue entretanto abre uma sessão nova em vez de ficar numa fila que ninguém lê.
+            if self._task is eu:
+                self._task = None
+            if fut is not None and not fut.done():  # cancelada a meio de um pedido
+                fut.set_exception(erro)
             while not self._fila.empty():  # pedidos que ficaram para trás (ex.: falha ao abrir)
                 _, fut, _ = self._fila.get_nowait()
                 if not fut.done():
@@ -574,6 +593,10 @@ class McpHome:
                 ok = erro is None and confirmado(atual)
                 if erro is None and not ok:
                     erro = "estado final não corresponde ao pedido"
+                    # Diagnóstico: o MCP aceita escritas para dispositivos que não as recebem.
+                    minutos = _minutos_sem_contacto(atual)
+                    if minutos is not None and minutos >= _SEM_CONTACTO_MIN:
+                        erro += f" (dispositivo sem contactar a cloud há {minutos} min)"
             elif enviado:
                 self._mcp_ok = False
             self.tempos_ms[f"escrita_{role}"] = round((time.monotonic() - inicio) * 1000)

@@ -26,6 +26,7 @@ class FakeMcp:
     def __init__(self, lamps=1, plugs=1, unit=None):
         self.down = False
         self.explicit_error = False
+        self.ignore_writes = False
         self.list_calls = 0
         self.opens = 0
         self.calls: list[tuple[str, dict]] = []
@@ -90,6 +91,8 @@ class FakeMcp:
             return ok(self.dev[args["deviceId"]])
         if self.explicit_error:
             return SimpleNamespace(isError=True, structuredContent=None, content=[])
+        if self.ignore_writes:  # observado no MCP real: «device updated» sem efeito
+            return ok({"message": "device updated"})
         dev = self.dev[args["deviceId"]]
         caps = {c["type"]: c for c in dev["capabilities"]}
         body = dict(args["body"])
@@ -224,3 +227,86 @@ def test_poll_failure_then_recovery_notifies(tmp_path):
     run(home._refrescar())
     assert run(home.estado()).mcp_ok is True
     assert vistos == [(True, True), (False, True), (True, True)]
+
+
+def test_request_during_session_close_uses_new_session():
+    """Regressão: um pedido feito enquanto a sessão falhada fecha não pode ficar órfão."""
+    from homemind.connectors.mcp_home import _Conexao
+
+    opens = 0
+
+    @asynccontextmanager
+    async def factory():
+        nonlocal opens
+        opens += 1
+        try:
+            yield opens
+        finally:
+            await asyncio.sleep(0.05)  # fecho lento, como o transporte real
+
+    async def falha(_):
+        raise ConnectionError("x")
+
+    async def ok(session):
+        return session
+
+    async def cenario():
+        con = _Conexao(factory, lambda: None)
+        try:
+            await con.executar(falha, 1)
+        except ConnectionError:
+            pass
+        try:
+            return await asyncio.wait_for(con.executar(ok, 1), 0.5)
+        finally:
+            await con.fechar()
+
+    assert run(cenario()) == 2
+
+
+def test_abandoned_request_never_runs_later():
+    """Um pedido cujo chamador desistiu (timeout) não pode ser executado mais tarde."""
+    from homemind.connectors.mcp_home import _Conexao
+
+    executados = []
+
+    @asynccontextmanager
+    async def factory():
+        yield None
+
+    async def cenario():
+        con = _Conexao(factory, lambda: None)
+        desistiu = asyncio.get_running_loop().create_future()
+        desistiu.cancel()
+
+        async def escrita_antiga(_):
+            executados.append("antiga")
+
+        async def nova(_):
+            executados.append("nova")
+
+        con._fila.put_nowait((escrita_antiga, desistiu, 1))
+        await con.executar(nova, 1)
+        await con.fechar()
+
+    run(cenario())
+    assert executados == ["nova"]
+
+
+def test_accepted_but_unapplied_write_is_failure_without_retry(tmp_path, monkeypatch):
+    """MCP responde sucesso mas o dispositivo não muda: falha, 1 só escrita, com diagnóstico."""
+    import time
+
+    from homemind.connectors import mcp_home
+
+    monkeypatch.setattr(mcp_home, "_READBACK_GAP_S", 0)
+    fake = FakeMcp()
+    fake.ignore_writes = True
+    fake.dev["L0"]["lastCommunicationTime"] = int((time.time() - 20 * 60) * 1000)
+    home, _, _ = make(tmp_path, fake, grant=("lamp",))
+    assert run(home.definir_lampada(False)) is True  # já estava desligada: confirmado
+    fake.calls.clear()
+    assert run(home.definir_lampada(True)) is False
+    assert len(fake.writes()) == 1
+    assert "não corresponde" in home.ultima_falha
+    assert "sem contactar a cloud há 2" in home.ultima_falha

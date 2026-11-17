@@ -2,7 +2,29 @@
 
 Aveiro Tech City Hackathon 2026 · Desafio 3 (Altice Labs, Connected Home)
 
-> **Plano de referência ObjectOS**, adaptado aos caminhos reais do repositório HomeMind. O plano de origem fornecido pela equipa define as especificações; as issues GitHub separam o trabalho para cinco pessoas. O código do monorepo existente não foi apagado.
+> Plano de referência (especificação original, secções 1–11). O **estado real** está na tabela abaixo e em [estado-para-amanha.md](estado-para-amanha.md); os contratos em vigor em [contratos.md](contratos.md). Onde o plano e o código divergirem, vale o código.
+
+## 0. Estado por área (17/11/2026)
+
+Legenda: **Implementado** = código na `main` com testes automáticos · **Validado** = comprovado com hardware/serviço real · **Simulado** = só comprovado com fakes · **Bloqueado** = depende de terceiros.
+
+| Área | Implementado | Validado (REAL) | Notas |
+|---|---|---|---|
+| RTSP, reconexão, clip de reserva (#2, #3) | sim | leitura RTSP 10 min sem quedas | atraso câmara→ecrã por medir |
+| YOLO objetos + pose + ByteTrack (#4) | sim (extra `visao`) | FPS em MPS/CPU com imagem sintética | falta clip MEARI, livro, GPU da demo |
+| Gesto e presença (#5, #6) | sim | não | **Simulado**: só dados sintéticos |
+| Ponte visão → motor, MJPEG anotado (#7, #28) | sim | não | **Simulado**: clip sintético + detetor falso, ponta a ponta |
+| Afinador offline (#8) | sim | não | falta clip real |
+| `Home` + FakeHome (#9) | sim | n/a | é o modo simulado |
+| MCP: OAuth, descoberta, leituras (#10) | sim | **sim**, leituras e renovação de sessão | |
+| MCP: escrita na lâmpada/tomada (#11) | sim | **não** | **Bloqueado**: o MCP aceita a escrita, a lâmpada não reage |
+| Consumo da tomada (#12) | sim | não | **Bloqueado**: unidade não declarada; `consumo_w` fica `null` |
+| Regras, estados, energia, registo (#13, #22, #23) | sim | n/a | **Simulado** com FakeHome; ponta a ponta em processo real |
+| NVIDIA texto → regra (#14) | sim | não verificado nesta auditoria | precisa de `NVIDIA_API_KEY` |
+| Painel: WS, vídeo, estado, regras, off (#24–#27) | sim | login Authentik real verificado; UI por validar à mão | |
+| Integração e benchmark (#28) | sim | não | latência real e 10 demos por fazer |
+| Entregáveis (#29) | README e docs | — | PDF, PPT e pitch por fazer |
+| Extras (#30, #31) | não | — | não começar |
 
 ## 1. Produto e decisões
 
@@ -56,7 +78,7 @@ Implementações `FakeHome` (memória) e `McpHome` (hardware). Regra JSON:
 {"id":"leitura","objeto":"livro","nome":"Modo leitura","acoes":[{"dispositivo":"lampada","ligada":true,"cor":"branco_quente","brilho":40},{"dispositivo":"tomada","ligada":true}]}
 ```
 
-Endpoints lógicos (confirmar prefixo no repo): `GET /video` MJPEG, `WS /ws` estado e registo, `GET /status` câmara/MCP, `GET/POST/DELETE /rules`, `POST /rules/parse` só proposta, `POST /off` desligar tudo.
+Endpoints lógicos do plano: `GET /video`, `WS /ws`, `GET /status`, `GET/POST/DELETE /rules`, `POST /rules/parse`, `POST /off`. **Implementados com prefixo `/api`** e com `ler_consumo() -> float | None`; ver [contratos.md](contratos.md).
 
 ## 4. Pessoa 1 — vídeo, visão, integração
 
@@ -78,11 +100,11 @@ Endpoints lógicos (confirmar prefixo no repo): `GET /video` MJPEG, `WS /ws` est
 ## 6. Pessoa 3 — interface e MCP
 
 - **5.7 prioritário:** `FakeHome` totalmente funcional sem hardware, mesma interface Home.
-- **5.1 Auth:** `streamablehttp_client` + `ClientSession` já têm uma implementação inicial em `connectors/altice.py`, com API key e token externo. Falta comprovar OAuth local (`mcp-client`; callback do guia na porta 5434), renovação e chamadas reais por script. Nunca divulgar token; consultar mentores se precisar de alternativa.
+- **5.1 Auth:** `streamablehttp_client` + `ClientSession` com API key e OAuth próprio (`mcp-client`; callback na porta 5434) em `connectors/altice_auth.py`: login interativo no host, renovação automática. Nunca divulgar tokens.
 - **5.2 Descoberta:** registar nomes e schemas reais de `tools/list`, `GET_HOME_DEVICES`, `GET_DEVICE_DETAILS`, `UPDATE_DEVICE_CAPABILITIES` em `docs/mcp-capabilities.md`.
 - **5.3 McpHome:** descobrir IDs ao arrancar, implementar quatro métodos, permitir apenas lâmpada/tomada e três tools autorizadas. Nunca alarme/segurança.
 - **5.4 Consumo:** polling a cada 5 s, `ler_consumo()` devolve o último valor.
-- **5.5 Falhas:** timeout 5 s, confirmar ações por leitura de volta, repetir só em caso de falha conhecida e de forma segura; não repetir escrita em timeout ambíguo. Expor `mcp_ok`.
+- **5.5 Falhas:** timeouts (implementado: abrir 10 s, ler 8 s, escrita com releituras 14 s), confirmar ações por leitura de volta; nunca repetir uma escrita de resultado incerto. Expor `mcp_ok`.
 
 ## 7. Pessoa 4 — motor, LLM, eventos
 

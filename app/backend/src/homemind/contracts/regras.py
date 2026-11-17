@@ -1,4 +1,4 @@
-"""Regra (`Rule`): objeto levantado → ações na lâmpada/tomada. Ver frontend-api-contract (v3) §6.
+"""Regra (`Rule`): objeto levantado → ações na lâmpada/tomada. Ver docs/contratos.md.
 
 Persistida em `rules.json` pelo motor (P4). `POST /api/rules/parse` só devolve uma proposta; nada
 é guardado nem executado antes de `POST /api/rules` com confirmação humana.

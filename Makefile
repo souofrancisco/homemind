@@ -3,15 +3,18 @@ SHELL := bash
 BACKEND  := app/backend
 FRONTEND := app/frontend
 
-.PHONY: dev down test lint contracts build android smoke check worktree mcp-login mcp-doctor mcp-up mcp-down mcp-demo mcp-demo-down mcp-writes-on mcp-writes-off mcp-writes-status mcp-verify
+.PHONY: dev auth down test lint contracts build android smoke check worktree mcp-login mcp-doctor mcp-up mcp-down mcp-demo mcp-demo-down mcp-writes-on mcp-writes-off mcp-writes-status mcp-verify
 
 dev:  ## ambiente completo com hot reload (Docker)
 	docker compose -f app/compose.yaml up --build
 
+auth:  ## só o Authentik (login), para correr backend e frontend no host (ex.: visão com YOLO)
+	docker compose -f app/compose.yaml up -d --wait authentik-server authentik-worker
+
 down:
 	docker compose -f app/compose.yaml down
 
-test:  ## pytest — fora de `check` durante a hackathon (sem testes nesta fase)
+test:  ## pytest (lógica pura com fakes; sem hardware, rede nem NVIDIA)
 	cd $(BACKEND) && uv run pytest -q
 
 lint:  ## ruff + eslint
@@ -38,13 +41,13 @@ smoke:  ## sobe a stack, valida backend/frontend/proxy, desliga
 	curl -fsS localhost:$$FRONTEND_PORT/ | grep -q 'ObjectOS' && \
 	curl -fsS localhost:$$FRONTEND_PORT/healthz | grep -q '"status":"ok"' && echo "smoke OK"
 
-check: lint build  ## tudo o que o CI exige (sem Docker, sem testes)
+check: lint test build  ## tudo o que o CI exige (não sobe containers)
 	docker compose -f app/compose.yaml config -q
 
 mcp-login:  ## autenticação OAuth interativa Altice no host
 	uv run --project $(BACKEND) --env-file app/.env python -m homemind.connectors.altice_auth login
 
-mcp-doctor:  ## initialize e tools/list no MCP real Altice
+mcp-doctor:  ## só leitura no MCP real: tools/list + estado e último contacto da lâmpada/tomada
 	uv run --project $(BACKEND) --env-file app/.env python -m homemind.connectors.altice_auth doctor
 
 mcp-up:  ## backend MCP isolado (porta 18080; sem frontend/volumes partilhados)

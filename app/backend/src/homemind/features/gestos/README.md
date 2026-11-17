@@ -27,7 +27,7 @@ Frame válido por classe: existe um objeto da classe e um pulso (esq. ou dir., d
 - **Beber:** só afinação por config; se o clip real der falsos positivos, propor critério extra (ex. pulso acima do ombro) à equipa.
 - **Integração:** P1 chama `processar` por frame novo (via `ProcessadorObjectOS` em #8); P4 consome os eventos pela fila (#7).
 - **Pendente:** validar 10/10 e 0 «beber» no clip MEARI real (P1 + afinador #8). Os testes usam dados SIMULADOS.
-- Ambiente: `make check` corrido com sucesso (uv no venv local). O CI só corre `make check`, não `pytest`: correr `pytest` à parte.
+- Ambiente: `make check` inclui `pytest` (CI incluído).
 
 ## Presença binária (#6)
 

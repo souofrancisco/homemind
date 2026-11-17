@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 
 class VisaoSettings(BaseSettings):
-    visao_detetor: str = ""  # ex.: homemind.features.video.detetor:DetetorYolo (quando existir)
+    visao_detetor: str = ""  # ex.: homemind.features.visao.detetor:DetetorYolo
 
 
 @asynccontextmanager

@@ -414,9 +414,32 @@ async def doctor() -> None:
     _, storage = create_oauth_provider()
     if storage.tokens is None:
         raise RuntimeError("Sem sessão OAuth persistida; execute make mcp-login primeiro")
+    # Import tardio: `mcp_home` importa este módulo.
+    from homemind.connectors.mcp_home import (
+        TOOL_HOME_DEVICES,
+        _capabilities,
+        _find_devices,
+        _minutos_sem_contacto,
+        _payload,
+    )
+
     async with altice_session() as session:
         result = await session.list_tools()
+        devices = _payload(await session.call_tool(TOOL_HOME_DEVICES, {}))
     print("MCP operacional: initialize() e tools/list concluídos.")
+    # Diagnóstico só de leitura, sem IDs nem nomes: estado e último contacto com a cloud.
+    lamp, plug, aviso = _find_devices(devices, settings.mcp_lamp_id, settings.mcp_plug_id)
+    for rotulo, device in (("Lâmpada", lamp), ("Tomada", plug)):
+        if device is None:
+            print(f"{rotulo}: não identificada inequivocamente.")
+            continue
+        caps = _capabilities(device)
+        campos = {k: caps[k].get("value") for k in ("power", "workMode", "brightness") if k in caps}
+        minutos = _minutos_sem_contacto(device)
+        contacto = "desconhecido" if minutos is None else f"há {minutos} min"
+        print(f"{rotulo}: {json.dumps(campos, ensure_ascii=False)}; último contacto {contacto}.")
+    if aviso:
+        print(f"Aviso: {aviso}")
     for tool in result.tools:
         print(
             json.dumps(

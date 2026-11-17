@@ -1,6 +1,6 @@
 ---
 name: User Story
-about: US do Google Docs
+about: Unidade de trabalho ObjectOS
 ---
 **Objetivo:**
 **Critérios de aceitação:**

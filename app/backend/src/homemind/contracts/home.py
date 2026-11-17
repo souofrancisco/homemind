@@ -1,4 +1,4 @@
-"""Interface `Home` (FakeHome | McpHome) e `EstadoCasa`, conforme frontend-api-contract (P3).
+"""Interface `Home` (FakeHome | McpHome) e `EstadoCasa`, conforme docs/contratos.md.
 
 O motor só conhece este contrato, nunca o MCP. Sem IDs de dispositivos (ficam no backend).
 """

@@ -5,5 +5,5 @@ from pydantic import BaseModel
 
 class Health(BaseModel):
     status: Literal["ok"]
-    mode: Literal["simulation", "real"]
+    backend: Literal["fake", "mcp"]  # fake = SIMULADO (FakeHome)
     physical_writes: bool

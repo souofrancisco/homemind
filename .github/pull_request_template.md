@@ -2,7 +2,7 @@
 Issue: #
 ## Verificação
 - [ ] `make check` passa
-- [ ] Sem segredos; REAL vs SIMULATION preservado
+- [ ] Sem segredos; REAL vs SIMULADO identificado
 - [ ] Só toquei na minha feature (ou ficheiros partilhados justificados abaixo)
 - [ ] Contratos partilhados inalterados (ou acordados)
 Evidência (screenshot/log sanitizado):

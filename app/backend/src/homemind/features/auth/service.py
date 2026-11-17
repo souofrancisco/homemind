@@ -25,7 +25,7 @@ class User(BaseModel):
 def _jwks() -> jwt.PyJWKClient:
     s = get_settings()
     url = s.oidc_jwks_url or s.oidc_issuer.rstrip("/") + "/jwks/"
-    return jwt.PyJWKClient(url, cache_keys=True)
+    return jwt.PyJWKClient(url, cache_keys=True, timeout=5)
 
 
 def current_user(

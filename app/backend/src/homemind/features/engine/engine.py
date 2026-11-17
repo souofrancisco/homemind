@@ -3,7 +3,7 @@
 Estados: INATIVO → ATIVO (gesto) → EM_ESPERA (divisão vazia) → SUSPENSO (luz/tomada off, estado
 guardado) → INATIVO (após `suspenso_max_s`). O regresso restaura; `desligar_tudo` cancela tudo.
 Todas as mudanças passam por `_lock`; os temporizadores são uma única tarefa asyncio cancelável.
-Modelos expostos ao frontend: ver frontend-api-contract (v3) §3, §4 e §7.
+Modelos expostos ao frontend: ver docs/contratos.md.
 """
 
 import asyncio

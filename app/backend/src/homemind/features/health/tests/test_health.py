@@ -7,7 +7,7 @@ client = TestClient(app)
 
 def test_healthz_ok_and_safe_defaults():
     body = client.get("/healthz").json()
-    assert body == {"status": "ok", "mode": "simulation", "physical_writes": False}
+    assert body == {"status": "ok", "backend": "fake", "physical_writes": False}
 
 
 def test_healthz_never_leaks_token(monkeypatch):
