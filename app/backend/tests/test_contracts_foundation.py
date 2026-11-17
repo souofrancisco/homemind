@@ -7,7 +7,16 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
-from homemind.contracts import agent, billing, devices, domain_events, energy, notification
+from homemind.contracts import (
+    agent,
+    billing,
+    devices,
+    domain_events,
+    energy,
+    notification,
+    safety,
+    sensors,
+)
 from homemind.contracts import fixtures as fx
 from homemind.contracts import household as hh
 from homemind.contracts import presence as pr
@@ -43,6 +52,8 @@ def test_every_fixture_builds_and_roundtrips_json():
         fx.confirmation_notification(), fx.carla_attribution(), fx.landlord_view(), fx.budget(),
         fx.tool_request(), fx.tool_result(), fx.proposed_action(), fx.uncertain_execution(),
         fx.automation(), fx.notification_preferences(), *fx.bill_a()[1], fx.bill_a()[0],
+        fx.appliance_cue(), fx.presence_confirmation(), fx.occupancy(), fx.presence_device(),
+        fx.camera_status(), fx.window_open(), fx.window_alert(), fx.smoke_alert(),
     ]:  # fmt: skip
         again = type(obj).model_validate_json(obj.model_dump_json())
         assert again == obj, type(obj).__name__
@@ -310,6 +321,110 @@ def test_door_crossed_is_anonymous():
     assert fields == {"ts", "direction", "confidence", "provenance"}
 
 
+def test_presence_cue_rules():
+    cue = fx.appliance_cue().model_dump()
+    bad(pr.PresenceEvent, **{**cue, "state": "out"})  # um aparelho não prova ausência
+    bad(pr.PresenceEvent, **{**cue, "consumption_event_id": None})
+    bad(pr.PresenceEvent, **{**cue, "source": "manual"})  # manual não aponta para um consumo
+    bad(pr.PresenceEvent, **{**cue, "state": "uncertain"})  # a dúvida é da fusão
+    manual = {**cue, "source": "manual", "consumption_event_id": None}
+    assert pr.PresenceEvent(**{**manual, "state": "out"}).state is pr.PresenceState.away
+    pr.PresenceMeIn(state="in")
+    pr.PresenceMeIn(state="out")
+    bad(pr.PresenceMeIn, state="uncertain")
+
+
+def test_consumption_owner_only_with_identified_appliance():
+    c = fx.consumption().model_dump()
+    assert c["appliance_owner_resident_id"] == fx.BRUNO
+    unknown = energy.ApplianceMatch().model_dump()
+    bad(energy.ConsumptionEvent, **{**c, "match": unknown})
+    energy.ConsumptionEvent(**{**c, "match": unknown, "appliance_owner_resident_id": None})
+
+
+def test_presence_confirmation_becomes_a_personal_presence_check():
+    req = fx.presence_confirmation()
+    assert pr.PRESENCE_CONFIRMATION_ACTIONS == ("in", "out")
+    n = fx.confirmation_notification().model_dump()
+    check = {
+        **n,
+        "scope": "personal",
+        "recipient_resident_id": req.resident_id,
+        "responder_ids": [req.resident_id],
+        "kind": "presence_check",
+        "actions": [{"id": a, "label": a} for a in pr.PRESENCE_CONFIRMATION_ACTIONS],
+        "ref": {"type": "presence_check", "id": req.id},
+        "expires_at": req.expires_at,
+    }
+    notification.Notification(**check)
+    bad(notification.Notification, **{**check, "expires_at": None})
+    bad(
+        notification.Notification,
+        **{**check, "scope": "household", "recipient_resident_id": None},
+    )
+
+
+def test_occupancy_is_anonymous_and_conservative():
+    o = fx.occupancy().model_dump()
+    assert not {"resident_id", "resident_ids", "visitor_ids"} & set(o)
+    bad(pr.HouseOccupancy, **{**o, "people_inside": None})  # contagem perdida não é «ocupada»
+    pr.HouseOccupancy(**{**o, "people_inside": None, "visitors": None, "state": "uncertain"})
+    bad(pr.HouseOccupancy, **{**o, "state": "likely_empty"})
+    empty = {**o, "state": "likely_empty", "people_inside": 0, "visitors": 0, "residents_home": 0}
+    pr.HouseOccupancy(**empty)
+    bad(pr.HouseOccupancy, **{**empty, "state": "occupied"})
+    bad(pr.HouseOccupancy, **{**o, "visitors": 4})
+
+
+def test_presence_device_consent_and_hidden_key():
+    d = fx.presence_device()
+    assert "match_key" not in repr(d)
+    assert "match_key" not in pr.PresenceDeviceView.of(d).model_dump()
+    raw = d.model_dump()
+    bad(pr.PresenceDevice, **{**raw, "consented_at": None})
+    bad(pr.PresenceDevice, **{**raw, "revoked_at": T0})  # revogado mas ainda opt-in
+    pr.PresenceDevice(**{**raw, "wifi_opt_in": False, "revoked_at": T0})
+    bad(pr.PresenceDevice, **{**raw, "wifi_opt_in": False, "revoked_at": T0 - timedelta(days=2)})
+    bad(pr.PresenceDevice, **{**raw, "match_key": "aa:bb"})
+
+
+def test_camera_status_labels_fallback_as_simulated():
+    s = fx.camera_status().model_dump()
+    bad(pr.CameraStatus, **{**s, "origin": "real"})  # clip nunca é o feed real
+    pr.CameraStatus(**{**s, "source": "rtsp", "origin": "real"})
+    bad(pr.CameraStatus, **{**s, "camera_ok": False})  # falha com fps
+    pr.CameraStatus(**{**s, "camera_ok": False, "fps": None})
+
+
+# --- sensores e segurança -------------------------------------------------------------------------
+
+
+def test_sensor_reading_values_match_kind_and_unknown_has_no_value():
+    r = fx.window_open().model_dump()
+    assert fx.window_open().usable
+    bad(sensors.SensorReading, **{**r, "contact": None})
+    bad(sensors.SensorReading, **{**r, "smoke_detected": False})
+    unknown = sensors.SensorReading(**{**r, "status": "unknown", "contact": None})
+    assert not unknown.usable
+    bad(sensors.SensorReading, **{**r, "status": "stale"})  # stale com valor
+    smoke = {**r, "kind": "smoke", "contact": None}
+    sensors.SensorReading(**{**smoke, "smoke_detected": False})
+    bad(sensors.SensorReading, **{**r, "kind": "temperature", "contact": None, "temperature_c": 99})
+
+
+def test_safety_alert_guards():
+    w = fx.window_alert().model_dump()
+    bad(safety.SafetyAlert, **{**w, "notify_landlord": True})
+    bad(safety.SafetyAlert, **{**w, "consumption_event_id": None})
+    on = {**w["suggested_command"], "power": True}
+    bad(safety.SafetyAlert, **{**w, "suggested_command": on})  # nunca sugere ligar
+    bad(safety.SafetyAlert, **{**w, "status": "resolved"})  # sem resolved_at
+    safety.SafetyAlert(**{**w, "status": "resolved", "resolved_at": T0 + timedelta(minutes=9)})
+    s = fx.smoke_alert().model_dump()
+    bad(safety.SafetyAlert, **{**s, "severity": "warning"})
+    bad(safety.SafetyAlert, **{**s, "suggested_command": w["suggested_command"]})
+
+
 # --- atribuição e faturação ---------------------------------------------------------------------
 
 
@@ -346,7 +461,11 @@ def test_pdf_fixtures_sum_exactly(make):
 def test_fixture_amounts_match_the_pdf():
     assert [a.amount_cents for a in fx.bill_a()[1]] == [4512, 2976, 2464, 2048]
     assert [a.amount_cents for a in fx.bill_b()[1]] == [4680, 2760, 2440, 2120]
-    assert [a.amount_cents for a in fx.bill_c()[1]] == [3334, 3333, 3333]
+    assert [a.amount_cents for a in fx.bill_c()[1]] == [
+        3333,
+        3333,
+        3334,
+    ]  # Ana, Bruno, Carla (D-34)
     assert fx.bill_a()[0].energy_cents == 9600
 
 
@@ -583,7 +702,7 @@ def test_automation_rules_and_transitions():
 
 def test_every_event_type_has_a_sample_and_roundtrips_json():
     samples = fx.event_samples()
-    assert {s.type for s in samples} == set(domain_events.EVENT_TYPES) and len(samples) == 18
+    assert {s.type for s in samples} == set(domain_events.EVENT_TYPES) and len(samples) == 23
     for s in samples:
         wire = s.model_dump_json()
         back = domain_events.domain_event_adapter.validate_json(wire)
@@ -595,6 +714,8 @@ def test_event_types_cover_the_documented_list():
     documented = {
         "energy.reading_recorded", "energy.step_detected", "energy.consumption_detected",
         "energy.consumption_closed", "presence.door_crossed", "presence.changed",
+        "presence.cue_recorded", "presence.confirmation_needed", "presence.occupancy_changed",
+        "sensor.reading_recorded", "safety.alert_raised",
         "billing.confirmation_needed", "billing.attribution_changed", "billing.bill_created",
         "billing.bill_finalized", "billing.allocation_published", "notification.created",
         "notification.responded", "alerts.threshold_crossed", "alerts.alert_raised",

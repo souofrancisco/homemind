@@ -33,13 +33,21 @@ async def lifespan(app: FastAPI):
         log.warning("visão desligada: falta VISAO_DETETOR e/ou VIDEO_SOURCE")
         yield
         return
+    if not video.fonte_dev_permitida(settings):
+        log.warning("visão desligada: PRIV-02 só permite clips locais no diretório de teste")
+        yield
+        return
+    engine = app.state.engine
+    if engine.home_state().backend != "fake":
+        log.warning("visão desligada: clips de teste não podem conduzir dispositivos reais")
+        yield
+        return
     try:
         detetor = carregar_detetor(especificacao)
     except DetetorIndisponivel as e:
         log.error("visão desligada: detetor indisponível (%s)", e)
         yield
         return
-    engine = app.state.engine
     thread = ThreadVisao(
         video.get_fonte(),
         detetor,
