@@ -1,0 +1,34 @@
+name: homemind-altice
+services:
+  backend:
+    build:
+      context: ./backend
+    command: uvicorn homemind.main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - .env
+    environment:
+      APP_MODE: ${APP_MODE:-simulation}
+      DATABASE_PATH: /srv/data/homemind-altice.db
+      ENABLE_PHYSICAL_WRITES: ${ENABLE_PHYSICAL_WRITES:-false}
+      HOME_BACKEND: ${HOME_BACKEND:-fake}
+      MCP_TOKEN_PATH: /srv/mcp-auth/tokens.json
+      OIDC_ISSUER: http://localhost:${AUTHENTIK_PORT:-9000}/application/o/homemind/
+      OIDC_JWKS_URL: http://host.docker.internal:${AUTHENTIK_PORT:-9000}/application/o/homemind/jwks/
+    ports:
+      - "${MCP_BACKEND_PORT:-18080}:8000"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - altice-data:/srv/data
+      - type: bind
+        source: ./.mcp-tokens.json
+        target: /srv/mcp-auth/tokens.json
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  altice-data:

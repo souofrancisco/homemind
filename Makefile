@@ -3,7 +3,7 @@ SHELL := bash
 BACKEND  := app/backend
 FRONTEND := app/frontend
 
-.PHONY: dev down test lint contracts build android smoke check worktree
+.PHONY: dev down test lint contracts build android smoke check worktree mcp-login mcp-doctor mcp-up mcp-down
 
 dev:  ## ambiente completo com hot reload (Docker)
 	docker compose -f app/compose.yaml up --build
@@ -40,6 +40,18 @@ smoke:  ## sobe a stack, valida backend/frontend/proxy, desliga
 
 check: lint build  ## tudo o que o CI exige (sem Docker, sem testes)
 	docker compose -f app/compose.yaml config -q
+
+mcp-login:  ## autenticação OAuth interativa Altice no host
+	uv run --project $(BACKEND) --env-file app/.env python -m homemind.connectors.altice_auth login
+
+mcp-doctor:  ## initialize e tools/list no MCP real Altice
+	uv run --project $(BACKEND) --env-file app/.env python -m homemind.connectors.altice_auth doctor
+
+mcp-up:  ## backend MCP isolado (porta 18080; sem frontend/volumes partilhados)
+	docker compose -p homemind-altice -f app/compose.mcp.yaml up --build -d --wait
+
+mcp-down:  ## parar apenas o projeto MCP isolado
+	docker compose -p homemind-altice -f app/compose.mcp.yaml down
 
 worktree:  ## make worktree b=feat/US-12-nome -> ../homemind-US-12-nome (a partir de origin/main)
 	@test -n "$(b)" || { echo "uso: make worktree b=feat/US-xx-nome"; exit 1; }
