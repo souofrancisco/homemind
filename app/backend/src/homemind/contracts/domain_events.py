@@ -34,6 +34,7 @@ from homemind.contracts.energy import (
     PowerStep,
 )
 from homemind.contracts.notification import (
+    ConfirmationOutcome,
     ConfirmationRequest,
     NotificationKind,
     NotificationRef,
@@ -41,7 +42,15 @@ from homemind.contracts.notification import (
     NotificationScope,
     NotificationSeverity,
 )
-from homemind.contracts.presence import DoorCrossed, PersonPresence
+from homemind.contracts.presence import (
+    DoorCrossed,
+    HouseOccupancy,
+    PersonPresence,
+    PresenceConfirmationRequest,
+    PresenceEvent,
+)
+from homemind.contracts.safety import SafetyAlert
+from homemind.contracts.sensors import SensorReading
 
 
 class EventBase(ContractModel):
@@ -86,8 +95,13 @@ class NotificationCreatedData(ContractModel):
 
 
 class NotificationRespondedData(ContractModel):
+    """Um por resposta aceite. Em `confirmation_request` sai um por VOTO, com `outcome`:
+    billing só atribui quando `outcome.decided` (D-32); sem decisão até `expires_at`, billing
+    divide por todos pelo seu próprio prazo (não há evento de expiração)."""
+
     response: NotificationResponse
     ref: NotificationRef | None = None  # o que foi respondido (ex.: o consumo)
+    outcome: ConfirmationOutcome | None = None  # só em `confirmation_request`
 
 
 class AlertKind(StrEnum):
@@ -154,6 +168,38 @@ class PresenceDoorCrossed(EventBase):
 class PresenceChanged(EventBase):
     type: Literal["presence.changed"] = "presence.changed"
     data: PersonPresence
+
+
+class PresenceCueRecorded(EventBase):
+    """Pista por pessoa (Wi-Fi, manual, aparelho), auditável. Só presence a consome."""
+
+    type: Literal["presence.cue_recorded"] = "presence.cue_recorded"
+    data: PresenceEvent
+
+
+class PresenceConfirmationNeeded(EventBase):
+    type: Literal["presence.confirmation_needed"] = "presence.confirmation_needed"
+    data: PresenceConfirmationRequest
+
+
+class PresenceOccupancyChanged(EventBase):
+    type: Literal["presence.occupancy_changed"] = "presence.occupancy_changed"
+    data: HouseOccupancy
+
+
+# --- sensores e segurança -------------------------------------------------------------------
+
+
+class SensorReadingRecorded(EventBase):
+    type: Literal["sensor.reading_recorded"] = "sensor.reading_recorded"
+    data: SensorReading
+
+
+class SafetyAlertRaised(EventBase):
+    """Também para a resolução: o mesmo `data.id` com `status=resolved`."""
+
+    type: Literal["safety.alert_raised"] = "safety.alert_raised"
+    data: SafetyAlert
 
 
 # --- faturação ------------------------------------------------------------------------------
@@ -232,6 +278,11 @@ DomainEvent = Annotated[
     | EnergyConsumptionClosed
     | PresenceDoorCrossed
     | PresenceChanged
+    | PresenceCueRecorded
+    | PresenceConfirmationNeeded
+    | PresenceOccupancyChanged
+    | SensorReadingRecorded
+    | SafetyAlertRaised
     | BillingConfirmationNeeded
     | BillingAttributionChanged
     | BillingBillCreated

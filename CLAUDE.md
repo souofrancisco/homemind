@@ -90,6 +90,7 @@ Comandos: só os do `Makefile` (ver `README.md`).
 - **Plafond solidário:** aquecimento básico por quarto pago em comum; só o excesso é individual.
 - **Atribuição por aparelho, não por tomada:** a assinatura é reconhecida em qualquer tomada; sem identificação nem evidência, divide-se por igual ou só por quem estava em casa. Consumos abaixo de ~5 kWh/mês são ignorados; o assistente só pergunta quando vale a pena (~0,50 €).
 - **Presença** (em casa / fora / incerto): Wi-Fi conta muito a favor e pouco contra; só se considera “fora” após 20–30 min **e** saída pela porta. Um aparelho a continuar ligado não prova presença; só um aparelho a ligar prova. Contradição → pergunta, não acusação.
+- **«De quem é esta conta?» é uma votação (D-32), não «primeira resposta vence»:** um «É minha» basta; atribuir a outra pessoa exige pelo menos metade dos moradores (fecha antes se o próprio assumir); inconclusivo em 24 h → por todos. Fonte única: `confirmation_outcome` em `contracts/notification.py`. Código de notifications/UI/billing que ainda siga a regra antiga **adapta-se a esta**, não o contrário.
 - **Alertas:** orçamento a 50/80/100 % com previsão; pico = zona comum > 1,5 kW durante > 30 min.
 - **Assistente IA:** nunca inventa números; tudo vem de ferramentas tipadas e as contas são feitas em código. Ações sensíveis pedem confirmação humana.
 

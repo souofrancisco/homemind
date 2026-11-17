@@ -2,16 +2,17 @@ import asyncio
 import logging
 import threading
 from collections.abc import AsyncIterator, Callable
-from typing import Annotated
+from pathlib import Path
 
 import numpy as np
-from fastapi import Depends, HTTPException
+from fastapi import HTTPException
 
 from homemind.contracts.video import FonteVideo
 from homemind.core.config import get_settings
 from homemind.features.video.fonte import FonteClip, FonteRtsp, criar_fonte
 
 LIMITE = "frame"
+VIDEO_TEST_CLIPS_DIR = Path(__file__).resolve().parents[5] / "data" / "privacy-test-clips"
 
 _fonte: FonteRtsp | FonteClip | None = None
 _fonte_lock = threading.Lock()
@@ -22,16 +23,41 @@ anotador: Callable[[np.ndarray, bool], np.ndarray] | None = None
 
 
 def get_fonte() -> FonteVideo:
-    """Fonte única do processo, criada e iniciada no primeiro uso."""
+    """Fonte única: apenas clips de teste locais explicitamente permitidos em desenvolvimento."""
     global _fonte
     settings = get_settings()
-    if not settings.video_source:
-        raise HTTPException(503, "Fonte de vídeo não configurada")
+    if not fonte_dev_permitida(settings):
+        raise HTTPException(404, "Not Found")
     with _fonte_lock:
         if _fonte is None:
             _fonte = criar_fonte(settings)
             _fonte.iniciar()
         return _fonte
+
+
+def fonte_atual() -> FonteVideo | None:
+    """A fonte já iniciada, sem a criar nem falhar quando não está configurada."""
+    return _fonte
+
+
+def fonte_dev_permitida(settings=None) -> bool:
+    """Aceita clips de teste dentro do diretório dedicado; RTSP e caminhos arbitrários falham."""
+    settings = settings or get_settings()
+    if (
+        settings.profile != "demo"
+        or settings.home_backend != "fake"
+        or not settings.enable_dev_video_preview
+        or not settings.video_source
+    ):
+        return False
+    if "://" in settings.video_source:
+        return False
+    try:
+        raiz = VIDEO_TEST_CLIPS_DIR.resolve(strict=True)
+        fonte = Path(settings.video_source).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return False
+    return fonte.is_file() and fonte.is_relative_to(raiz)
 
 
 def parar_fonte() -> None:
@@ -46,9 +72,6 @@ def parar_fonte() -> None:
 def camara_ok() -> bool:
     """Sinal de vida para `GET /status`. False se a fonte não está configurada ou iniciada."""
     return _fonte is not None and _fonte.camara_ok
-
-
-Fonte = Annotated[FonteVideo, Depends(get_fonte)]
 
 
 async def partes_mjpeg(

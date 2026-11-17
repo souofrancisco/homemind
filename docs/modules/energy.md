@@ -30,6 +30,18 @@
 | Aparelhos desconhecidos recorrentes (clustering) | Agrupar degraus semelhantes e perguntar uma vez | P2 |
 | Estimativa de lâmpada (9 W × tempo × brilho) | `provenance=estimated` | P2 |
 
+## Collector MCP → `EnergyReading` (MCP-02) — **IMPLEMENTADO** (sem ligação à app)
+
+Código: `connectors/mcp_energy.py` (`reading_from_device`, função pura) e `connectors/mcp_collector.py` (`EnergyCollector`); ligação opcional ao `McpHome` por `McpHome.coletor`.
+
+- **Estados:** `ok`, `missing`, `unit_unknown` (há valor bruto mas a unidade não é conhecida: nunca se converte), `stale` (último contacto mais antigo que `stale_after`, por omissão 90 s = 3 × o batimento de 30 s da tomada). Ausência de leitura **nunca** é 0; um 0 W é uma leitura válida.
+- **Unidade:** a declarada na capability tem prioridade sobre `MCP_INSTANTPOWER_UNIT`; sem nenhuma, `unit_unknown`. `observed_at` vem de `lastCommunicationTime` (epoch em ms).
+- **Proveniência:** `real/measured` só em `ok`; nos outros estados `real/estimated` (nenhum valor é de confiança).
+- **Deduplicação:** o `McpHome` lê a cada 5 s mas a tomada atualiza de ~30 em ~30 s (e quando a carga muda); o collector só publica `EnergyReadingRecorded` quando (`observed_at`, estado, valor bruto) mudam, e publica **uma vez** a transição `ok → stale`. Falha do MCP (`unavailable()`): esquece a leitura e não publica nada.
+- **Resiliência:** uma falha de `publish` é registada (só o tipo) e nunca chega ao `McpHome`; a amostra repete a tentativa na leitura seguinte.
+- **Polling:** `MCP_POLL_SECONDS` (por omissão 5, mínimo 1) e backoff exponencial até `MCP_POLL_BACKOFF_MAX_S` (60) após falhas seguidas.
+- **Por fazer (PLANEADO):** montar o `EnergyCollector` no arranque da app com o barramento (`app.state.bus`), o `household_id` e o `device_id`. Ainda não existe tabela de dispositivos (HOUSE-03) nem rota para criar casas (HOUSE-01); o barramento recusa eventos de casas inexistentes. O `publish` injetado deve ser não bloqueante quando chamado no event loop.
+
 ## O que não se promete
 
 Com **uma só tomada de medição** o sistema separa cargas com potências bem distintas (aquecedor ~2000 W vs secador ~600 W), mas **não** garante a identificação de aparelhos pequenos (< 100 W), de dois aparelhos em simultâneo com potências próximas, nem a distinção de dois aparelhos iguais em quartos diferentes. O resultado tem sempre `confidence` e pode ser `unknown`; o resíduo divide-se por igual. Os próprios autores do PDF dizem que o NILM «funciona para cargas grandes» (§15.1).

@@ -502,3 +502,176 @@ def test_engine_over_mcp_home_gesture_outage_and_recovery(tmp_path):
         await home.parar()
 
     run(cenario())
+
+
+@pytest.mark.parametrize("failures,expected", [(0, 5), (1, 10), (2, 20), (3, 40), (10000, 60)])
+def test_next_poll_delay(failures, expected):
+    from homemind.connectors.mcp_home import _next_poll_delay
+
+    assert _next_poll_delay(5, failures, 60) == expected
+
+
+def test_collector_receives_readings_and_failure(tmp_path):
+    home, mcp, _ = make(tmp_path)
+    calls = []
+    home.coletor = SimpleNamespace(
+        ingest=lambda plug: calls.append(("ingest", plug)),
+        unavailable=lambda: calls.append(("unavailable", None)),
+    )
+    run(home._refrescar())
+    assert calls == [("ingest", mcp.dev["P0"])]
+    mcp.down = True
+    run(home._refrescar())
+    assert calls[-1] == ("unavailable", None)
+    assert home._falhas_consecutivas == 1
+    mcp.down = False
+    run(home._refrescar())
+    assert home._falhas_consecutivas == 0
+    home.coletor = None
+    run(home._refrescar())
+    run(home.parar())
+
+
+def test_collector_failure_does_not_affect_home(tmp_path):
+    home, mcp, _ = make(tmp_path, FakeMcp(unit="W"))
+
+    def fail(*args):
+        raise RuntimeError("secret")
+
+    home.coletor = SimpleNamespace(ingest=fail, unavailable=fail)
+    run(home._refrescar())
+    assert run(home.ler_consumo()) == 55
+    mcp.down = True
+    run(home._refrescar())
+    assert not run(home.estado()).mcp_ok
+    run(home.parar())
+
+
+def test_sensor_collector_read_only_and_failure(tmp_path):
+    home, mcp, _ = make(tmp_path)
+    mcp.dev["S0"] = {
+        "id": "S0",
+        "type": "contactSensor",
+        "categories": ["security"],
+        "capabilities": _caps(("sensorState", {"value": "normal"})),
+    }
+    calls = []
+    home.sensores = SimpleNamespace(
+        ingest=lambda devices: calls.append(("ingest", devices)),
+        unavailable=lambda: calls.append(("unavailable", None)),
+    )
+    run(home._refrescar())
+    assert calls == [("ingest", list(mcp.dev.values()))]
+    assert [name for name, _ in mcp.calls].count("get_home_devices") == 2
+    mcp.down = True
+    run(home._refrescar())
+    assert calls[-1] == ("unavailable", None)
+    assert mcp.writes() == []
+    run(home.parar())
+
+
+def test_no_sensor_collector_no_extra_inventory(tmp_path):
+    home, mcp, _ = make(tmp_path)
+    run(home._refrescar())
+    run(home._refrescar())
+    assert [name for name, _ in mcp.calls].count("get_home_devices") == 1
+    assert mcp.writes() == []
+    run(home.parar())
+
+
+def test_sensor_collector_failure_does_not_affect_home(tmp_path, caplog):
+    home, mcp, _ = make(tmp_path)
+
+    def fail(*args):
+        raise RuntimeError("secret")
+
+    home.sensores = SimpleNamespace(ingest=fail, unavailable=fail)
+    run(home._refrescar())
+    assert run(home.estado()).mcp_ok
+    mcp.down = True
+    run(home._refrescar())
+    assert not run(home.estado()).mcp_ok
+    assert "secret" not in caplog.text
+    assert mcp.writes() == []
+    run(home.parar())
+
+
+def test_rule_refusals_and_safe_reasons(tmp_path):
+    from homemind.connectors.write_policy import Decision, WriteOutcome
+
+    now = datetime.now(UTC)
+    valid = Decision("rule", "operator", now - timedelta(seconds=1), now + timedelta(hours=1))
+    expired = Decision("rule", "operator", now - timedelta(hours=2), now - timedelta(hours=1))
+    for writes, grant, decision in (
+        (True, ("plug",), None),
+        (True, ("plug",), expired),
+        (False, ("plug",), valid),
+        (True, None, valid),
+        (True, ("lamp",), valid),
+    ):
+        home, mcp, _ = make(tmp_path, writes=writes, grant=grant)
+        if grant is None:
+            home._settings.mcp_write_grant_path.unlink(missing_ok=True)
+        result = run(home.tomada_por_regra(False, decision))
+        assert result.outcome is WriteOutcome.refused and not mcp.writes()
+        assert "P0" not in result.reason and "L0" not in result.reason
+    home, mcp, _ = make(tmp_path)
+    result = run(
+        home._escrever_regra("plug", [{"type": "brightness", "value": 5}], lambda d: True, valid)
+    )
+    assert result.outcome is WriteOutcome.refused and not mcp.writes()
+
+
+def test_rule_confirmed_unapplied_and_uncertain(tmp_path, monkeypatch):
+    import time
+
+    from homemind.connectors import mcp_home
+    from homemind.connectors.write_policy import Decision, WriteOutcome
+
+    monkeypatch.setattr(mcp_home, "_READBACK_GAP_S", 0)
+    now = datetime.now(UTC)
+    decision = Decision("rule", "operator", now - timedelta(seconds=1), now + timedelta(hours=1))
+    home, mcp, _ = make(tmp_path)
+    home._agora = lambda: now
+    result = run(home.lampada_por_regra(True, decision=decision))
+    assert result.ok and len(mcp.writes()) == 1 and result.reason is None
+    for stale, expected in ((False, WriteOutcome.failed), (True, WriteOutcome.unknown)):
+        fake = FakeMcp()
+        fake.ignore_writes = True
+        if stale:
+            fake.dev["L0"]["lastCommunicationTime"] = int((time.time() - 1200) * 1000)
+        home, _, _ = make(tmp_path, fake)
+        result = run(home.lampada_por_regra(True, decision=decision))
+        assert result.outcome is expected and len(fake.writes()) == 1
+        assert "L0" not in result.reason and "P0" not in result.reason
+    home, fake, _ = make(tmp_path)
+    home._agora = lambda: now
+    fake.die_after_write = True
+    result = run(home.lampada_por_regra(True, decision=decision))
+    assert result.outcome is WriteOutcome.unknown
+    assert "L0" not in result.reason and "P0" not in result.reason
+    assert run(home.lampada_por_regra(True, decision=decision)).outcome is WriteOutcome.refused
+    assert len(fake.writes()) == 1
+
+
+def test_rule_write_failing_before_send_is_failed_not_unknown(tmp_path, monkeypatch):
+    """Nada enviado => `failed` (não `unknown`): não bloqueia as regras como uma escrita incerta."""
+    from homemind.connectors import mcp_home
+    from homemind.connectors.write_policy import Decision, WriteOutcome
+
+    monkeypatch.setattr(mcp_home, "_READBACK_GAP_S", 0)
+    now = datetime.now(UTC)
+    decision = Decision("rule", "operator", now - timedelta(seconds=1), now + timedelta(hours=1))
+    fake = FakeMcp()
+    fake.down = True  # a ligação falha ANTES de qualquer escrita
+    home, _, _ = make(tmp_path, fake)
+    home._agora = lambda: now
+    result = run(home.lampada_por_regra(True, decision=decision))
+    assert result.outcome is WriteOutcome.failed
+    assert len(fake.writes()) == 0
+    assert "L0" not in (result.reason or "") and "P0" not in (result.reason or "")
+    # Ligação de volta e passado o cooldown: a regra pode escrever (não há bloqueio de incerteza).
+    fake.down = False
+    home._agora = lambda: now + timedelta(seconds=61)
+    again = run(home.lampada_por_regra(True, decision=decision))
+    assert again.outcome is WriteOutcome.confirmed and len(fake.writes()) == 1

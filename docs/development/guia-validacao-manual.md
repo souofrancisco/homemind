@@ -21,9 +21,10 @@ Roteiro dos testes a executar à mão. Os testes automáticos (`make check`, `ma
 | [C. Painel](#c-painel) | UI-01, UI-02 |
 | [D. Motor, regras e NVIDIA](#d-motor-regras-e-nvidia) | MOT-01, MOT-02, REG-01, NV-01, OFF-01 |
 | [E. MCP Altice](#e-mcp-altice) | MCP-01 … MCP-07 |
-| [F. Vídeo e visão](#f-vídeo-e-visão) | VID-01, VID-02, VID-03, YOLO-01, YOLO-02, POSE-01, TRK-01 |
+| [F. Vídeo e visão](#f-vídeo-e-visão) | PRES-01, PRES-02, VID-01, VID-02, VID-03, YOLO-01, YOLO-02, POSE-01, TRK-01 |
 | [G. Gestos e presença](#g-gestos-e-presença) | GES-01, GES-02, PRE-01 |
 | [H. Demo](#h-demo) | LAT-01, LAT-02, DEMO-01, PB-01, PRIV-01 |
+| [I. Presença (Conta Certa)](#i-presença-conta-certa) | PRW-01 … PRW-04, PRF-01 … PRF-04 |
 | [Folha de resultados](#folha-de-resultados) | tabela para preencher |
 
 ## Preparação comum
@@ -212,9 +213,24 @@ Operação detalhada em [mcp-demo.md](../integrations/mcp-demo.md); hipóteses p
 
 ## F. Vídeo e visão
 
-Backend no host com o extra de visão (ver README, «Visão real»).
+**Bloqueado por PRIV-02 #119:** não executar validações com câmara real, RTSP, pessoas ou clips de origem real. `GET /api/video` está desativado, `criar_fonte` recusa RTSP e a visão só aceita clips sintéticos allowlisted com perfil demo e FakeHome. Reabrir estas validações exige os controlos PRES-02/03 e revisão de produto/jurídica.
 
-### VID-01 — RTSP estável
+### PRES-01 — Câmara da porta (kit via app/link) e plano B
+- **Issue:** #105 · **Tipo:** REAL (kit) / SIMULADO (clip, telemóvel) · **Estado: NÃO EXECUTADO**
+- **Pré-requisitos:** `app/.env` com `VIDEO_SOURCE=<link RTSP partilhado pela app MEARI>` e `VIDEO_SOURCE_KIND=kit`; um utilizador com papel `operator`.
+- **Passos:** 1) arrancar o backend; 2) `GET /api/presence/camera/status` com o token do operador; 3) repetir com o link inválido e com a câmara desligada 15 s; 4) plano B: `VIDEO_SOURCE_KIND=phone` com o URL da app do telemóvel (IP Webcam / similar) e, sem rede, `VIDEO_SOURCE=data/porta.mp4` + `VIDEO_SOURCE_KIND=clip`.
+- **Esperado:** kit ligado: `source=kit`, `origin=real`, `camera_ok=true`, `fps>0` (2.ª consulta). Link inválido ou câmara desligada: `camera_ok=false`, sem `fps`, e **nenhum** estado de «casa vazia». Telemóvel e clip: `origin=simulated`. O URL nunca aparece na resposta, nos logs nem nos erros. Se a app MEARI não partilhar um stream utilizável, registar «kit sem stream» e usar o plano B.
+- **PASS** só com a evidência do kit (ou «kit sem stream» registado) e os dois planos B a funcionar.
+
+### PRES-02 — Contagem na soleira (YOLO + linha virtual)
+- **Issue:** #106 · **Tipo:** REAL com câmara / SIMULADO com clip · **Estado: NÃO EXECUTADO**
+- **Pré-requisitos:** PRES-01 a funcionar; `uv sync --extra visao` e pesos; `app/.env` com `PRESENCE_HOUSEHOLD_ID` (casa existente na base), `PRESENCE_DETETOR=homemind.features.presence.yolo:DetetorYoloPessoas`, `PRESENCE_DOOR_ROI` e `PRESENCE_DOOR_LINE`; `GET /api/presence/camera/status` com `door_mask_configured:true`.
+- **Passos:** 10 passagens combinadas (5 a entrar, 5 a sair, ritmos normais), 2 voltas atrás a meio da linha e uma passagem de duas pessoas lado a lado; contar à mão e comparar com os `presence.door_crossed` gravados (`domain_event`).
+- **Esperado:** sentido certo em cada passagem; voltas atrás sem evento; nenhuma imagem em disco (`find app/backend/data -type f` só mostra a base de dados). Se o sentido vier trocado, inverter `PRESENCE_DOOR_INSIDE_SIGN`.
+- **Evidência:** contagem certa/total registada **só se medida**; nenhum valor de precisão sem esta medição.
+- **PASS** só com a contagem registada e zero imagens em disco.
+
+### VID-01 — RTSP estável (BLOQUEADO)
 - **Issue:** #2 · **Tipo:** REAL
 - **Pré-requisitos:** `VIDEO_SOURCE=<rtsp>` em `app/.env`.
 - **Passos:** `cd app/backend && uv run --env-file ../.env python -m homemind.features.video.medir --minutos 10`.
@@ -222,26 +238,26 @@ Backend no host com o extra de visão (ver README, «Visão real»).
 - **Evidência:** linha final do resumo.
 - **PASS** com 0 quedas em 10 min.
 
-### VID-02 — Atraso câmara → ecrã
+### VID-02 — Atraso câmara → ecrã (BLOQUEADO)
 - **Issue:** #2, #25 · **Tipo:** REAL
 - **Passos:** pôr um cronómetro (telemóvel) em frente à câmara; fotografar o cronómetro real e o painel no mesmo plano, aos 0, 5 e 10 min.
 - **Esperado:** diferença < 1,5 s nas três fotografias.
 - **PASS** se as três forem < 1,5 s.
 
-### VID-03 — Queda e reconexão da câmara
+### VID-03 — Queda e reconexão da câmara (BLOQUEADO)
 - **Issue:** #3 · **Tipo:** REAL
 - **Passos:** com o vídeo no painel, desligar a câmara da corrente 15 s e voltar a ligar.
 - **Esperado:** `camera_ok:false` em ≤ 5 s e evento «Câmara indisponível»; a casa **não** entra em espera por causa disso; o vídeo volta sozinho e aparece «Câmara disponível».
 - **PASS** se recuperar sem reiniciar o backend e sem transições de presença falsas.
 
-### YOLO-01 — Objetos reconhecidos
+### YOLO-01 — Objetos reconhecidos (BLOQUEADO para captura de pessoas)
 - **Issue:** #4 · **Tipo:** REAL
 - **Pré-requisitos:** `uv sync --extra visao`, pesos descarregados, `VISAO_DETETOR=homemind.features.visao.detetor:DetetorYolo`.
 - **Passos:** mostrar à câmara caneca, livro e comando, um de cada vez, a 2–3 m, 10 s cada; observar as caixas no vídeo do painel.
 - **Esperado:** cada objeto com caixa e nome certo na maior parte do tempo. Se o livro falhar, repetir com `VISAO_LIVRO_COCO=39` (garrafa) ou `67` (telemóvel) e anotar a escolha.
 - **PASS** com os três objetos reconhecidos (indicar o objeto usado em vez do livro, se for o caso).
 
-### YOLO-02 — FPS de inferência
+### YOLO-02 — FPS de inferência (BLOQUEADO para fontes reais)
 - **Issue:** #4 · **Tipo:** REAL
 - **Pré-requisitos:** clip gravado da MEARI em `app/backend/data/clip.mp4`.
 - **Passos:**
@@ -315,9 +331,9 @@ Backend no host com o extra de visão (ver README, «Visão real»).
 - **Esperado:** 10/10. Uma falha reinicia a contagem.
 - **PASS** com 10 consecutivas.
 
-### PB-01 — Plano B
+### PB-01 — Plano B (apenas clip sintético)
 - **Issue:** #3, #28 · **Tipo:** SIMULADO
-- **Passos:** 1) `VIDEO_SOURCE=<clip MEARI>` e reiniciar: o clip corre em ciclo e gera gestos. 2) `HOME_BACKEND=fake`: executar a demo só com os cenários da página Câmara. 3) Cronometrar a troca do modo real para o plano B.
+- **Passos:** 1) `PROFILE=demo`, `HOME_BACKEND=fake`, `ENABLE_DEV_VIDEO_PREVIEW=true`, `VIDEO_SOURCE=<clip sintético allowlisted>` e detetor de teste; 2) executar a demo só com os cenários da página Câmara; 3) não ligar MCP nem fontes reais.
 - **Esperado:** ambos funcionam; o painel mostra SIMULADO e os eventos dos cenários levam `[SIMULADO]`; a troca demora < 1 min.
 - **PASS** se os dois caminhos funcionarem e estiverem identificados como simulação.
 
@@ -332,6 +348,58 @@ Backend no host com o extra de visão (ver README, «Visão real»).
   ```
 - **Esperado:** em `data/` só pesos, `rules.json`, `events.jsonl`, o grant e os clips/JSONL criados de propósito; eventos só com texto; `grep` sem resultados (`rtsp: 1`); `git status` sem `.env`, `data/`, clips, pesos ou `.mcp-auth`.
 - **PASS** se nada de imagem, URL ou segredo estiver em disco fora do previsto, nos logs ou no Git.
+
+## I. Presença (Conta Certa)
+
+Pistas por pessoa (PRES-03, **IMPLEMENTADO**). Pré-requisitos: backend no **anfitrião** ligado ao Wi-Fi do hub do kit (o contentor Docker não vê a ARP do anfitrião; ver [presence.md](../modules/presence.md)), `PRESENCE_WIFI_COLLECTION_ENABLED=true`, `PRESENCE_MATCH_SALT`, `PRESENCE_WIFI_MODE=ingest`, `PRESENCE_INGEST_TOKEN` e `PRESENCE_WIFI_SUBNET` em `app/.env`, e um telemóvel de teste cuja dona deu consentimento (telemóvel registado **e** `presence_opt_in` da membership a `true`). Nunca copiar MACs, IPs nem hashes para chats, issues ou prints. Rotas: `?household_id=<casa>` + `Authorization` de um inquilino.
+
+### PRW-01 — Telemóvel registado aparece
+- **Tipo:** REAL (varrimento da rede do hub) · **Issue:** #107
+- **Passos:** `make presence-wifi-scan` (noutra janela); registar o telemóvel (`POST /api/presence/devices`, `consent=true`, `wifi_address` = endereço Wi-Fi do telemóvel nessa rede); desligar e voltar a ligar o Wi-Fi do telemóvel; esperar um ciclo (30 s por omissão).
+- **Esperado:** um evento `presence.cue_recorded` com `source=wifi`, `state=in`, `origin=real`, em nome do morador; nenhuma pista dos outros aparelhos da rede (visitas, vizinhos) e nenhum MAC ou hash deles na base.
+- **PASS** se as três observações coincidirem.
+
+### PRW-02 — Opt-out imediato
+- **Tipo:** REAL · **Issue:** #107
+- **Passos:** `DELETE /api/presence/devices/{id}`; religar o Wi-Fi do telemóvel; esperar um ciclo.
+- **Esperado:** `204`; **nenhuma** pista nova; `GET /api/presence/devices` mostra `wifi_opt_in=false` e `revoked_at`.
+- **PASS** se não surgir nenhuma pista depois do `DELETE`.
+
+### PRW-03 — Wi-Fi desligado não é saída
+- **Tipo:** REAL · **Issue:** #107
+- **Passos:** com o telemóvel registado e visto, desligar o Wi-Fi do telemóvel 30 min.
+- **Esperado:** nenhum evento `presence.cue_recorded` com `state=out`; o Wi-Fi nunca produz `out`.
+- **PASS** com zero pistas `out`.
+
+### PRW-04 — Isolamento por papel
+- **Tipo:** REAL (API) · **Issue:** #107
+- **Passos:** repetir `GET /api/presence/devices` com a sessão do senhorio e do operador; sem `presence_opt_in` na membership, registar o telemóvel e voltar a ligá-lo ao Wi-Fi.
+- **Esperado:** `403 forbidden_role` em todas as rotas de presença para senhorio e operador; **nenhuma** pista Wi-Fi enquanto a membership não tiver `presence_opt_in=true`.
+- **PASS** se as duas observações coincidirem.
+
+### PRF-01 — Telemóvel a dormir mantém «em casa»
+- **Tipo:** REAL (Wi-Fi do hub) com porta SIMULADA · **Issue:** #108
+- **Passos:** com o telemóvel registado e visto (`GET /api/presence` → `in`), pô-lo em modo de poupança/sem Wi-Fi 10 min.
+- **Esperado:** continua `in` (sem `presence.changed`); nunca `out`.
+- **PASS** se o estado não mudar durante os 10 min.
+
+### PRF-02 — Saída pela porta + tolerância
+- **Tipo:** SIMULADO (a porta ainda não tem produtor real: PRES-02; publicar `presence.door_crossed` direção `out` por script/fixture) · **Issue:** #108
+- **Passos:** com o telemóvel visto (`in`), publicar a saída; esperar `PRESENCE_TOLERANCE_MIN` minutos (usar 20 para encurtar) sem pistas.
+- **Esperado:** antes do fim da tolerância `in` (confiança 0,5); depois `out` com `sources=["camera_door"]` e um `presence.changed`.
+- **PASS** se as duas fases coincidirem.
+
+### PRF-03 — Contradição gera pergunta, não acusação
+- **Tipo:** REAL (Wi-Fi) + SIMULADO (porta) · **Issue:** #108
+- **Passos:** com o Wi-Fi do telemóvel desligado, publicar uma saída simulada e esperar a tolerância (`out`); ligar o Wi-Fi do telemóvel sem passar a porta.
+- **Esperado:** `uncertain` com `reason=conflicting_cues` e um `presence.confirmation_needed` (só `id`, `resident_id`, `reason`, `expires_at`); a resposta «estás em casa?» (quando a APP-02 existir) resolve.
+- **PASS** se houver exatamente um pedido.
+
+### PRF-04 — Falha do Wi-Fi nunca vira «fora»
+- **Tipo:** REAL · **Issue:** #108
+- **Passos:** com o telemóvel registado, parar `make presence-wifi-scan`; esperar 3 intervalos; publicar uma saída pela porta; esperar a tolerância.
+- **Esperado:** `uncertain` com `reason=no_recent_cues` e um pedido de confirmação; **nunca** `out`.
+- **PASS** se não houver `out`.
 
 ---
 
@@ -362,6 +430,8 @@ Data: ________ · Testador(es): ________ · Hardware (GPU/CPU): ________ · Comm
 | MCP-05 | ⚠️ Tomada | | | | #11 |
 | MCP-06 | Consumo | | | valor bruto: ____ com carga de ____ W | #12 |
 | MCP-07 | ⚠️ Falhas e reconexão | | | | #11, #12 |
+| PRES-01 | Câmara da porta: kit e plano B | | | kit: ____ · FPS: ____ | #105 |
+| PRES-02 | Contagem na soleira | | | certas/total: ____ | #106 |
 | VID-01 | RTSP 10 min | | | quedas: ____ · FPS: ____ | #2 |
 | VID-02 | Atraso câmara → ecrã | | | 0/5/10 min: ____ / ____ / ____ s | #2 |
 | VID-03 | Reconexão da câmara | | | | #3 |
@@ -377,5 +447,13 @@ Data: ________ · Testador(es): ________ · Hardware (GPU/CPU): ________ · Comm
 | DEMO-01 | 10 demos seguidas | | | ____ / 10 | #28 |
 | PB-01 | Plano B | | | troca em ____ s | #3, #28 |
 | PRIV-01 | Privacidade | | | | #28 |
+| PRW-01 | Telemóvel registado aparece (Wi-Fi) | | | | #107 |
+| PRW-02 | Opt-out imediato | | | | #107 |
+| PRW-03 | Wi-Fi desligado não é saída | | | | #107 |
+| PRW-04 | Isolamento por papel; sem opt-in sem pista | | | | #107 |
+| PRF-01 | Telemóvel a dormir mantém «em casa» | | | | #108 |
+| PRF-02 | Saída pela porta + tolerância | | | | #108 |
+| PRF-03 | Contradição → pergunta | | | | #108 |
+| PRF-04 | Falha do Wi-Fi não vira «fora» | | | | #108 |
 
 **Pronto para a demo** quando: INS-01, AUTH-01, MOT-01, MOT-02, OFF-01, PB-01 e PRIV-01 têm PASS; DEMO-01 tem 10/10; e o guião (`demo-script.md`) só apresenta como REAL os testes REAL com PASS.

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from homemind.contracts import fixtures as fx
 from homemind.contracts.household import MembershipRole
+from homemind.core import access as access_module
 from homemind.core.access import (
     PERMISSIONS,
     Grant,
@@ -127,7 +128,7 @@ def test_privacy_invariants_of_the_matrix():
                 assert grant_for(O_, res, op) is Grant.none, (res, op)  # operador não vê pessoas
     assert grant_for(L, Resource.energy, Operation.read) is Grant.aggregate  # só totais
     assert grant_for(L, Resource.receipt, Operation.read) is Grant.aggregate
-    assert grant_for(T, Resource.presence, Operation.read) is Grant.household
+    assert grant_for(T, Resource.presence, Operation.read) is Grant.own
 
 
 def test_landlord_cannot_reach_presence_even_in_own_house(matrix_client):
@@ -250,6 +251,36 @@ def test_tenant_patches_only_own_membership(client, app):
     )
 
 
+def test_patch_rechecks_membership_in_the_write_transaction(client, app, monkeypatch):
+    """A revoke between FastAPI authorization and PATCH must cancel the write."""
+    membership_id = str(fx.memberships()[0].id)
+    original = access_module.resolve_access
+
+    async def revoke_after_access(db, sub, household_id, resource, op, now):
+        access = await original(db, sub, household_id, resource, op, now)
+        await db.run(
+            lambda conn: conn.execute(
+                "UPDATE membership SET status='ended', ends_on=? WHERE id=?",
+                (NOW.date().isoformat(), membership_id),
+            )
+        )
+        return access
+
+    monkeypatch.setattr(access_module, "resolve_access", revoke_after_access)
+    response = client.patch(
+        f"/api/households/{A}/memberships/{membership_id}",
+        json={"presence_opt_in": True},
+        headers=as_(ANA),
+    )
+    assert err(response) == (404, "household_not_found")
+    stored = app.state.db.run_sync(
+        lambda conn: conn.execute(
+            "SELECT presence_opt_in FROM membership WHERE id=?", (membership_id,)
+        ).fetchone()[0]
+    )
+    assert stored == 0
+
+
 def test_landlord_and_operator_cannot_change_consent(client):
     m = str(fx.memberships()[0].id)
     for sub in (LANDLORD, OPERATOR):
@@ -291,6 +322,22 @@ def test_membership_expiry_follows_the_household_clock(client, now):
     # Hugo (senhorio) continua; Eva continua; no dia seguinte ao fim de Fred nada muda para ele
     now["value"] = datetime(2027, 1, 1, tzinfo=UTC)
     assert client.get(f"/api/households/{B}", headers=as_(EVA)).status_code == 200
+
+
+def test_access_expires_at_midnight_in_household_timezone(client, app, now):
+    app.state.db.run_sync(
+        lambda conn: (
+            conn.execute("UPDATE household SET timezone='America/Los_Angeles' WHERE id=?", (B,)),
+            conn.execute("UPDATE membership SET ends_on='2026-11-17' WHERE id=?", (str(M_EVA),)),
+        )
+    )
+    now["value"] = datetime(2026, 11, 18, 7, 59, 59, tzinfo=UTC)
+    assert client.get(f"/api/households/{B}", headers=as_(EVA)).status_code == 200
+    now["value"] = datetime(2026, 11, 18, 8, 0, tzinfo=UTC)
+    assert err(client.get(f"/api/households/{B}", headers=as_(EVA))) == (
+        404,
+        "household_not_found",
+    )
 
 
 def test_same_person_has_different_roles_per_house(matrix_client):
