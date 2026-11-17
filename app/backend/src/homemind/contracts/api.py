@@ -4,7 +4,9 @@
 reais (ver `core/openapi_models.py`). Só entram DTOs e contratos públicos. Ficam de fora de
 propósito: `Device` (tem `external_ref`), `Resident` (tem `sub`), `Membership` (tem o
 `presence_opt_in` de terceiros), `ApplianceSignature`, `PresenceEvent`, `ConfirmationRequest`
-(lista de quem pode responder: payload interno P4→P3) e os eventos de domínio (`StoredEvent`
+(lista de quem pode responder: payload interno P4→P3), `PresenceDevice` (tem `match_key`),
+`PresenceConfirmationRequest`, `SensorReading`, `SafetyAlert` (chegam como `NotificationView`)
+e os eventos de domínio (`StoredEvent`
 inclui presença de pessoas). Chegam à app como DTOs filtrados por papel.
 """
 
@@ -61,6 +63,10 @@ OPENAPI_MODELS: tuple[type[BaseModel], ...] = (
     energy.EnergySummary,
     # presença (só moradores com opt-in e o próprio; nunca o senhorio)
     presence.PersonPresence,
+    presence.PresenceMeIn,
+    presence.HouseOccupancy,
+    presence.PresenceDeviceView,
+    presence.CameraStatus,
     # faturação
     billing.Attribution,
     billing.ElectricityBill,

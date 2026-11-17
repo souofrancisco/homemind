@@ -177,10 +177,15 @@ class ConsumptionEvent(ContractModel):
     location: LocationKind
     room_id: UUID | None = None
     cost_estimate: CostEstimate | None = None
+    # Dono do aparelho identificado (copiado de `Appliance.ownership`): presence usa-o como pista
+    # «o aparelho pessoal dele ligou». Só com aparelho identificado; não decide quem paga.
+    appliance_owner_resident_id: UUID | None = None
     provenance: Provenance
 
     @model_validator(mode="after")
     def _coherent(self) -> Self:
+        if self.appliance_owner_resident_id is not None and self.match.appliance_id is None:
+            raise ValueError("dono do aparelho sem aparelho identificado")
         if self.status is ConsumptionStatus.ongoing:
             if self.ended_at is not None:
                 raise ValueError("consumo a decorrer não tem ended_at")

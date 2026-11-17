@@ -39,6 +39,8 @@ class NotificationKind(StrEnum):
     peak_alert = "peak_alert"
     forgotten_appliance = "forgotten_appliance"
     security_alert = "security_alert"
+    comfort_alert = "comfort_alert"  # janela aberta com aquecimento (SAFE-01)
+    presence_check = "presence_check"  # «estás em casa?» (presence)
     saving_tip = "saving_tip"
     automation_proposal = "automation_proposal"
     agent_action = "agent_action"
@@ -93,6 +95,8 @@ class RefType(StrEnum):
     budget = "budget"
     automation = "automation"
     agent_action = "agent_action"
+    presence_check = "presence_check"  # `PresenceConfirmationRequest.id`
+    safety_alert = "safety_alert"  # `SafetyAlert.id`
 
 
 class NotificationRef(ContractModel):
@@ -179,6 +183,10 @@ class Notification(ContractModel):
             raise ValueError("ações sem quem possa responder")
         if self.kind is NotificationKind.confirmation_request and not self.expires_at:
             raise ValueError("pedido de confirmação exige expires_at")
+        if self.kind is NotificationKind.presence_check and (
+            self.scope is not NotificationScope.personal or not self.expires_at
+        ):
+            raise ValueError("«estás em casa?» é pessoal e exige expires_at")
         if (self.status is NotificationStatus.actioned) != (self.response is not None):
             raise ValueError("response exatamente quando o estado é actioned")
         if self.response and self.response.notification_id != self.id:
