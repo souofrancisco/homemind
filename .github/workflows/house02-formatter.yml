@@ -21,8 +21,8 @@ jobs:
         run: |
           set -euo pipefail
           cd app/backend
-          uv run ruff check --fix src/homemind/features/households/membership_flow.py src/homemind/features/households/router.py src/homemind/features/households/tests/test_membership_flow.py
-          uv run ruff format src/homemind/features/households/membership_flow.py src/homemind/features/households/router.py src/homemind/features/households/tests/test_membership_flow.py
+          uvx --from ruff==0.8.6 ruff check --fix src/homemind/features/households/membership_flow.py src/homemind/features/households/router.py src/homemind/features/households/tests/test_membership_flow.py
+          uvx --from ruff==0.8.6 ruff format src/homemind/features/households/membership_flow.py src/homemind/features/households/router.py src/homemind/features/households/tests/test_membership_flow.py
           cd ../..
           git diff -- app/backend/src/homemind/features/households/
       - name: Commit formatting to feature branch
