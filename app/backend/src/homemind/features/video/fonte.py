@@ -142,6 +142,8 @@ class _FonteThread:
                 ok, imagem = captura.read()
                 if ok:
                     lidos += 1
+                    if lidos == 1:
+                        log.info("câmara ligada: primeiro frame recebido")
                     with self._lock:
                         self._indice += 1
                         self._frame = FrameVideo(

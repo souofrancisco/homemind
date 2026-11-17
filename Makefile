@@ -56,8 +56,14 @@ mcp-up:  ## backend MCP isolado (porta 18080; sem frontend/volumes partilhados)
 mcp-down:  ## parar apenas o projeto MCP isolado
 	docker compose -p homemind-altice -f app/compose.mcp.yaml down
 
-MCP_DEMO := -p homemind-mcpdemo -f app/compose.yaml -f app/compose.mcp-demo.yaml
-mcp-demo:  ## demo completa; reutiliza containers/imagens (sem --build), não toca no Authentik se nada mudou
+# GPU só se o Docker tiver o runtime nvidia; sem ele a demo arranca em CPU.
+MCP_GPU := $(if $(shell docker info 2>/dev/null | grep -i 'runtimes:.*nvidia'),-f app/compose.gpu.yaml)
+MCP_DEMO := -p homemind-mcpdemo -f app/compose.yaml -f app/compose.mcp-demo.yaml $(MCP_GPU)
+mcp-demo:  ## demo completa com YOLO; reutiliza containers/imagens, não toca no Authentik se nada mudou
+	@[ "$$(docker image inspect -f '{{index .Config.Labels "homemind.extras"}}' homemind-mcpdemo-backend 2>/dev/null)" = visao ] \
+	  || { echo "a construir a imagem do backend com YOLO (só a 1.ª vez; pesado)…"; docker compose $(MCP_DEMO) build backend; }
+	@[ -f app/backend/data/modelos/yolo11s.pt ] && [ -f app/backend/data/modelos/yolo11s-pose.pt ] \
+	  || echo "AVISO: pesos YOLO em falta em app/backend/data/modelos (a demo arranca sem deteções; ver features/visao/README.md)"
 	docker compose $(MCP_DEMO) up -d
 	@app/infra/mcp-demo-check.sh heal
 	docker compose $(MCP_DEMO) up -d --wait

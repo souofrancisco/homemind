@@ -3,7 +3,13 @@
 # O frontend não muda: continua a falar com o mesmo backend, agora com HOME_BACKEND=mcp.
 services:
   backend:
+    build:
+      args:
+        EXTRAS: visao  # YOLO11 + pose + ByteTrack só nesta imagem; `make dev` fica leve
     environment:
+      # Visão ligada por omissão; falhas do YOLO só desligam as deteções (vídeo e MCP continuam).
+      VISAO_DETETOR: homemind.features.visao.detetor:DetetorYolo
+      VISAO_PASTA_MODELOS: /srv/modelos
       HOME_BACKEND: mcp
       MCP_TOKEN_PATH: /srv/mcp-auth/tokens.json
       MCP_WRITE_GRANT_PATH: /srv/data/mcp-write-grant.json
@@ -13,3 +19,10 @@ services:
         target: /srv/mcp-auth
         bind:
           create_host_path: false
+      # Pesos YOLO do host (app/backend/data/modelos, ignorados pelo Git): sem downloads no arranque.
+      - type: bind
+        source: ./backend/data/modelos
+        target: /srv/modelos
+        read_only: true
+        bind:
+          create_host_path: true

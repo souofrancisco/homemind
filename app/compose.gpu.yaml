@@ -1,0 +1,11 @@
+# GPU NVIDIA para a demo. O Makefile só inclui este ficheiro se o Docker tiver o runtime `nvidia`;
+# sem GPU a visão corre em CPU (VISAO_DEVICE=auto escolhe CUDA > MPS > CPU).
+services:
+  backend:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

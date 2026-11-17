@@ -73,8 +73,31 @@ class ThreadVisao:
             self._thread.join(timeout=2.0)
             self._thread = None
 
+    def _preparar(self) -> bool:
+        """Carrega os modelos (se o detetor os tiver). Falhar aqui só desliga a visão: o vídeo e o
+        motor continuam."""
+        preparar = getattr(self.detetor, "preparar", None)
+        if preparar is None:
+            return True
+        try:
+            preparar()
+        except (
+            Exception
+        ) as e:  # pesos/dependências em falta: sem traceback, a causa vem na mensagem
+            log.error(
+                "YOLO indisponível (%s: %s); vídeo e MCP continuam sem deteções",
+                type(e).__name__,
+                e,
+            )
+            return False
+        log.info("YOLO carregado (device=%s)", getattr(self.detetor, "device", "?"))
+        return True
+
     def _ciclo(self) -> None:
+        if not self._preparar():
+            return
         ultimo: int | None = None
+        com_deteccoes = False
         while not self._parar.is_set():
             frame = self.fonte.ultimo_frame()
             if frame is None or frame.indice == ultimo:
@@ -90,5 +113,14 @@ class ThreadVisao:
                 log.exception("falha a processar frame")
                 continue
             self.frames += 1
+            if self.frames == 1:
+                log.info("inferência ativa: primeiro frame real processado")
+            if not com_deteccoes and (det.pessoas or det.objetos):
+                com_deteccoes = True
+                log.info(
+                    "deteções disponíveis: %d pessoa(s), %d objeto(s)",
+                    len(det.pessoas),
+                    len(det.objetos),
+                )
             for evento in eventos:
                 self.publicador.publicar(evento)

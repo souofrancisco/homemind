@@ -70,4 +70,7 @@ fixado no extra para o ultralytics não o tentar instalar com `pip` em runtime.
 ## Anotações na página Câmara
 
 - `GET /api/video` desenha sobre o frame (caixa, nome PT, confiança, esqueleto) com a última deteção (≤ 1 s; senão vídeo cru). Inferência única na thread de visão; cada espectador só desenha. Se o detetor falhar, o vídeo continua sem anotações.
-- **YOLO só corre com o backend no host** (`make auth` + `uv sync --extra visao` + `uvicorn`, ver `docs/estado-para-amanha.md`). A imagem Docker (`make dev`) não inclui `ultralytics`: aí o vídeo aparece sem anotações (log: `visão desligada`).
+- **`make mcp-demo` já liga o YOLO** sem passos extra: a imagem do backend da demo é construída com o extra `visao` (`EXTRAS=visao`; a 1.ª vez é pesada, depois reutiliza-se; `make dev` não o inclui), `VISAO_DETETOR` vem ligado e os pesos são o bind mount `app/backend/data/modelos` → `/srv/modelos` (só leitura, sem downloads). CPU por omissão; GPU NVIDIA só se o Docker tiver o runtime `nvidia` (`app/compose.gpu.yaml`, incluído pelo Makefile).
+- Pesos em falta ou YOLO a falhar: log `YOLO indisponível (…)`; vídeo e MCP continuam sem deteções.
+- Logs por ordem: `câmara ligada` → `YOLO carregado (device=…)` → `inferência ativa` → `deteções disponíveis` (esta só quando há pessoa/objeto). Ver com `make mcp-demo-logs`.
+- Sem Docker: `make auth` + `uv sync --extra visao` + `uvicorn` no host (ver `docs/estado-para-amanha.md`).

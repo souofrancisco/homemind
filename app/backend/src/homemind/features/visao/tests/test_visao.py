@@ -124,3 +124,16 @@ def test_ultima_deteccao_expira():
     assert thread.ultima_deteccao(idade_max_s=5.0) is not None
     time.sleep(0.05)
     assert thread.ultima_deteccao(idade_max_s=0.01) is None
+
+
+def test_detetor_que_nao_carrega_desliga_so_a_visao():
+    class SemPesos:
+        def preparar(self):
+            raise FileNotFoundError("pesos YOLO em falta")
+
+        def detetar(self, frame):
+            raise AssertionError("não devia ser chamado")
+
+    t = ThreadVisao(None, SemPesos(), None, None)  # type: ignore[arg-type]
+    t._ciclo()  # regressa sem usar a fonte nem rebentar
+    assert t.frames == 0
