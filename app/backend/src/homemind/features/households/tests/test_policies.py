@@ -10,20 +10,27 @@ from homemind.contracts.billing import AttributionMethod, AttributionTarget, ass
 from homemind.contracts.common import Audit, replace, stable_id
 from homemind.contracts.domain_events import EnergyConsumptionClosed
 from homemind.contracts.energy import LocationKind
-from homemind.contracts.household import (
-    CommonAreaRule, Membership, MembershipRole, MembershipStatus,
-)
+from homemind.contracts.household import CommonAreaRule, Membership, MembershipRole, MembershipStatus
 from homemind.contracts.notification import NotificationRef, NotificationResponse, RefType
 from homemind.contracts.policy import PolicyReason, PolicyStatus, PolicyVersion
 from homemind.core.db import Database, migrate
 from homemind.core.events import EventBus
 from homemind.features.households.policies import (
-    PolicyConflictError, PolicyExpiredError, apply_response, as_attribution,
-    confirmation_intent, expire_decision, resolve_policy,
+    PolicyConflictError,
+    PolicyExpiredError,
+    apply_response,
+    as_attribution,
+    confirmation_intent,
+    expire_decision,
+    resolve_policy,
 )
 from homemind.features.households.policy_store import (
-    append_policy, ensure_initial_policy, expire_and_store, load_decision,
-    policy_at, resolve_and_store, respond_and_store,
+    append_policy,
+    expire_and_store,
+    load_decision,
+    policy_at,
+    resolve_and_store,
+    respond_and_store,
 )
 from homemind.features.households.repo import seed_demo
 
@@ -137,7 +144,10 @@ def test_ended_tenant_keeps_historical_room_and_tenant_change_is_respected(db):
 
 
 def test_uncertain_room_and_unverified_location_never_assign(db):
-    assert decision(db, episode(fx.ROOM_ANA), verified=False).reason is PolicyReason.location_unverified
+    assert (
+        decision(db, episode(fx.ROOM_ANA), verified=False).reason
+        is PolicyReason.location_unverified
+    )
     unknown = replace(episode(), location=LocationKind.unknown, room_id=None)
     assert decision(db, unknown).status is PolicyStatus.pending
     unknown_room = episode(stable_id("room", "missing"))
@@ -162,7 +172,10 @@ def test_common_ask_threshold_missing_cost_and_open_episode(db):
     assert decision(db, policy=requested).reason is PolicyReason.awaiting_confirmation
     without_cost = replace(episode(), cost_estimate=None)
     assert decision(db, without_cost, policy=requested).reason is PolicyReason.cost_unknown
-    assert decision(db, fx.consumption(), policy=requested).reason is PolicyReason.consumption_ongoing
+    assert (
+        decision(db, fx.consumption(), policy=requested).reason
+        is PolicyReason.consumption_ongoing
+    )
     discarded = replace(episode(), status="discarded")
     assert decision(db, discarded, policy=requested).reason is PolicyReason.consumption_discarded
 
@@ -249,7 +262,10 @@ def test_repository_duplicate_and_first_reply_wins(db):
 
     a = threading.Thread(target=attempt, args=("mine", fx.CARLA))
     b = threading.Thread(target=attempt, args=("everyone", fx.BRUNO))
-    a.start(); b.start(); a.join(); b.join()
+    a.start()
+    b.start()
+    a.join()
+    b.join()
     assert sorted(x[0] for x in results) == ["409", "ok"]
     final = db.run_sync(lambda conn: load_decision(conn, fx.HOUSEHOLD, fx.CONSUMPTION))
     assert final.revision == 2 and final.decision.status is PolicyStatus.confirmed
