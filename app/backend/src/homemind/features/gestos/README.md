@@ -86,7 +86,8 @@ cd app/backend
   --esperar caneca=4,livro=3,comando=3 --gesto-janela-s 1.2 --gesto-cooldown-s 3
 ```
 
-- Fontes exclusivas: `--jsonl FICHEIRO` (funcional) ou `--video CLIP` (**pendente**: sai com código 2 e «Detetor real ainda não disponível (P1)»; ponto de extensão `_frames_de_video` em `afinador.py`). `--gravar-jsonl SAIDA` só com `--video`.
+- Fontes exclusivas: `--jsonl FICHEIRO` ou `--video CLIP --detetor modulo:Classe`. `--detetor` é obrigatório com `--video` (import dinâmico, instancia sem argumentos, exige `detetar`); sem ele, ou se não importar, sai com código 2 e «Detetor real ainda não disponível (P1, issue #4): passa --detetor modulo:Classe». `--gravar-jsonl SAIDA` só com `--video` (grava em streaming, só `FrameDeteccoes`).
+- `--video` lê o clip **sequencialmente**, todos os frames, com `abrir_clip` de `features/video/fonte.py` (cv2 só é importado neste modo). `t` = tempo do clip (`CAP_PROP_POS_MSEC`; se vier 0/inválido, `indice/fps`), estritamente crescente. A imagem nunca é guardada nem escrita. O resumo acrescenta fps do clip e ms médios de `detetar` por frame. Clip inexistente/ilegível/vazio: código 2.
 - Overrides por flag para todos os campos: `--gesto-*` (`distancia-max-ombros`, `confianca-min`, `janela-s`, `fracao-min`, `min-frames`, `cooldown-s`, `intervalo-max-s`) e `--presenca-*` (`ausencia-s`, `frames-regresso`, `intervalo-max-s`), partindo de `core/config.py`.
 - Imprime cada evento (`t` relativo ao 1.º frame, `hora` ISO, tipo, classe/`ha_alguem`) e um resumo: frames, duração, fps médio e mínimo (pior intervalo), gestos por classe, transições de presença, parâmetros.
 - `--esperar caneca=4,livro=3,comando=3[,presenca=N]`: código 1 com a diferença impressa se não bater; 0 se bater. Erro de leitura/fonte: código 2. `presenca=N` conta **todas** as transições (a 1.ª, a entrada inicial, incluída).
@@ -99,13 +100,33 @@ JSONL de clips reais pode conter keypoints de pessoas: manter fora do Git em `da
 - `ProcessadorObjectOS` é partilhado por thread de visão e afinador; sem lock (uma só thread chama).
 - Frames ignorados por `indice` não contam para o resumo de eventos, mas contam para frames/fps do afinador.
 - `--esperar` só compara as chaves indicadas.
-- `--video`: liga-se em `_frames_de_video` (`afinador.py`); o afinador chamará o `Detetor` real de P1 sobre o clip e passará as `FrameDeteccoes` ao mesmo processador; assume `Detetor.detetar(FrameVideo) -> FrameDeteccoes` do contrato.
+- `--video`: assume que o Detetor de P1 cumpre `Detetor.detetar(FrameVideo) -> FrameDeteccoes`, é construível sem argumentos (modelos e dispositivo vêm de `Settings`) e é chamado numa só thread, frame a frame. Testado com `DetetorDeClip` SIMULADO (`tests/_fakes.py`) e um clip MJPG sintético.
+
+### Validação no clip real (quando a #4 existir)
+1. **Gravar o clip** (consentimento de quem aparece; fora do Git, p. ex. `app/backend/data/clip.mp4`): 10 levantamentos (4 caneca, 3 livro, 3 comando), 3 «beber» (objeto à boca, sem levantar ao pulso) e uma saída > 3 s com regresso.
+2. **Correr** (de `app/backend`; `<modulo P1>:<Classe>` é o Detetor real):
+```bash
+python -m homemind.features.gestos.afinador --video data/clip.mp4 --detetor <modulo P1>:<Classe> \
+  --gravar-jsonl data/clip.jsonl --esperar caneca=4,livro=3,comando=3,presenca=3
+```
+   `presenca=3` = entrada inicial + saída + regresso. O JSONL (keypoints, sem imagens) fica em `data/`, fora do Git.
+3. **Afinar** sem voltar a correr a visão: `--jsonl data/clip.jsonl` com `--gesto-*` / `--presenca-*` (ex. `--gesto-distancia-max-ombros 0.7 --gesto-fracao-min 0.75`) até dar 10/10 e 0 «beber».
+4. **Fixar** os valores em `.env` (`GESTO_*`, `PRESENCA_*`, nomes em `core/config.py`).
+
+Integração na thread de visão (issue #28, P1):
+```python
+proc = ProcessadorObjectOS.de_settings(get_settings())
+pub = PublicadorFila(engine.loop, engine.fila)
+# por frame novo:
+for ev in proc.processar(detetor.detetar(fv)):
+    pub.publicar(ev)
+```
 
 ### Pendente de integração
 | Pendente | Quem |
 |---|---|
-| `Detetor` real + `FonteVideo` de clip -> implementar `_frames_de_video` / `--video` | P1 |
-| Validar 10/10 gestos e 0 «beber» no clip MEARI real (gravar JSONL com `--gravar-jsonl`, afinar limiares) | P1 + P2 |
+| `Detetor` real (#4), construível sem argumentos, para usar em `--detetor modulo:Classe` (o `--video` do afinador já existe) | P1 |
+| Gravar o clip real e validar 10/10 gestos e 0 «beber» (secção abaixo), fixar limiares em `.env` | P1 + P2 |
 | Instanciar `ProcessadorObjectOS.de_settings(get_settings())` na thread de visão e chamar `publicar` por evento | P1 |
 | Ligar `PublicadorFila(engine.loop, engine.fila)` (ou `engine.publicar_de_thread`) ao arranque da thread de visão, depois de `engine` | P1 |
 

@@ -81,7 +81,7 @@ def test_override_de_presenca(jsonl, capsys):
 
 def test_video_sem_detetor_real_devolve_2(capsys):
     assert main(["--video", "clip.mp4"]) == 2
-    assert "Detetor real ainda não disponível (P1)" in capsys.readouterr().err
+    assert "Detetor real ainda não disponível (P1, issue #4)" in capsys.readouterr().err
 
 
 def test_fontes_mutuamente_exclusivas(jsonl):

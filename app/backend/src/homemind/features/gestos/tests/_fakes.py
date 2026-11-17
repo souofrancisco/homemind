@@ -3,6 +3,7 @@
 import threading
 import time
 from collections.abc import Iterable, Iterator
+from datetime import timedelta
 from typing import Literal
 
 from homemind.contracts.eventos import ProcessadorEventos, PublicadorEventos
@@ -191,3 +192,24 @@ class ThreadVisaoFalsa:
                     publicador.publicar(evento)
         except BaseException as e:  # noqa: BLE001
             self.erro = e
+
+
+class DetetorDeClip:
+    """Detetor SIMULADO para o afinador `--video`: ignora a imagem e devolve, pelo `indice`,
+    uma pessoa sempre presente que levanta uma caneca nos índices 20-39 (2 s a 10 fps)."""
+
+    def __init__(self) -> None:
+        self._base = next(
+            iter(sequencia_simulada(1, classe="caneca", levantado=True, objeto_no_pulso=True))
+        )
+        self._repouso = next(iter(sequencia_simulada(1, classe="caneca")))
+
+    def detetar(self, frame: FrameVideo) -> FrameDeteccoes:
+        base = self._base if 20 <= frame.indice < 40 else self._repouso
+        return base.model_copy(
+            update={
+                "indice": frame.indice,
+                "t": frame.t,
+                "hora": base.hora + timedelta(seconds=frame.t),
+            }
+        )
