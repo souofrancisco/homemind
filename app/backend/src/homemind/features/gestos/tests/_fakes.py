@@ -75,3 +75,33 @@ def segmento(
 def encadear(*partes: Iterable[FrameDeteccoes]) -> Iterator[FrameDeteccoes]:
     for p in partes:
         yield from p
+
+
+def segmento_presenca(
+    duracao_s: float,
+    com_pessoa: bool,
+    *,
+    fps: float = 10.0,
+    t0: float = 0.0,
+    indice0: int = 0,
+) -> list[FrameDeteccoes]:
+    """Frames de `duracao_s` a `fps` só com (ou sem) pessoa; sem objetos."""
+    n = round(duracao_s * fps)
+    return list(sequencia_simulada(n, fps=fps, com_pessoa=com_pessoa, t0=t0, indice0=indice0))
+
+
+def plano_presenca(
+    passos: Iterable[tuple[float, bool | None]], *, fps: float = 10.0
+) -> list[FrameDeteccoes]:
+    """Encadeia (duração_s, pessoa) continuando t e índice; `None` = buraco sem frames."""
+    frames: list[FrameDeteccoes] = []
+    t, i = 0.0, 0
+    for dur, com_pessoa in passos:
+        if com_pessoa is None:
+            t += dur
+            continue
+        seg = segmento_presenca(dur, com_pessoa, fps=fps, t0=t, indice0=i)
+        frames += seg
+        t += len(seg) / fps
+        i += len(seg)
+    return frames
