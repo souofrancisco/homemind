@@ -1,4 +1,5 @@
 """Contrato da DEMO-01: zero hardware, idempotência, isolamento e resultados de referência."""
+
 from __future__ import annotations
 
 import os
@@ -50,8 +51,10 @@ def test_presence_is_anonymous_and_confirmation_is_human():
 def test_identified_ambiguous_unknown_do_not_become_identity():
     closed = [e.data for e in events() if e.type == "energy.consumption_closed"]
     assert [c.match.outcome for c in closed] == [
-        MatchOutcome.identified, MatchOutcome.identified,
-        MatchOutcome.unknown, MatchOutcome.ambiguous,
+        MatchOutcome.identified,
+        MatchOutcome.identified,
+        MatchOutcome.unknown,
+        MatchOutcome.ambiguous,
     ]
     assert closed[2].match.appliance_id is None
     assert closed[3].match.appliance_id is None
@@ -61,9 +64,9 @@ def test_identified_ambiguous_unknown_do_not_become_identity():
 
 def test_sensor_failure_is_not_0_w_and_never_requires_hardware():
     last = next(
-        e for e in events()
-        if e.type == "energy.reading_recorded"
-        and e.data.id == stable_id("demo-reading", "missing")
+        e
+        for e in events()
+        if e.type == "energy.reading_recorded" and e.data.id == stable_id("demo-reading", "missing")
     )
     assert last.data.status is ReadingStatus.missing
     assert last.data.power_w is None
@@ -124,16 +127,20 @@ def test_foreign_household_is_not_erased(store):
     db = Database(store.path)
     db.open()
     foreign = stable_id("household", "other-not-demo")
-    db.run_sync(lambda conn: insert_household(
-        conn, replace(fx.household(), id=foreign, name="Casa protegida"),
-    ))
+    db.run_sync(
+        lambda conn: insert_household(
+            conn,
+            replace(fx.household(), id=foreign, name="Casa protegida"),
+        )
+    )
     db.close()
     with pytest.raises(DemoSafetyError):
         store.reset()
     with sqlite3.connect(store.path) as conn:
-        assert conn.execute(
-            "SELECT count(*) FROM household WHERE id=?", (str(foreign),)
-        ).fetchone()[0] == 1
+        assert (
+            conn.execute("SELECT count(*) FROM household WHERE id=?", (str(foreign),)).fetchone()[0]
+            == 1
+        )
 
 
 def test_symlink_and_hardlink_are_never_reset(store, tmp_path):
