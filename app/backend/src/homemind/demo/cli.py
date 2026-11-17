@@ -61,7 +61,8 @@ class DemoStore:
         if any(Path(str(self.path) + suffix).exists() for suffix in ("-wal", "-shm")):
             raise DemoSafetyError("SQLite WAL/SHM presente; parar processos antes do reset")
         try:
-            with closing(sqlite3.connect(f"file:{self.path}?mode=ro", uri=True)) as conn:
+            # immutable evita que a própria validação crie ficheiros -wal/-shm.
+            with closing(sqlite3.connect(f"file:{self.path}?mode=ro&immutable=1", uri=True)) as conn:
                 conn.execute("PRAGMA query_only=ON")
                 marker = conn.execute("SELECT token FROM demo_marker WHERE id=1").fetchone()
                 houses = conn.execute("SELECT id, source_kind FROM household").fetchall()
