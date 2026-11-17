@@ -62,9 +62,9 @@ Resíduo 210 kWh = 33,60 €; base = (24 € + 33,60 €) ÷ 4 = 14,40 € por p
 
 O sumário executivo cita 21,20 €; o corpo do documento (§6.2 e §7.1) cita 45,12 / 29,76 / 24,64 / 20,48 €. Os dois conjuntos somam 120,00 € e são **o mesmo algoritmo com dados diferentes**: ambos são testes obrigatórios. Para o MVP vale o A (usa a sala e as máquinas confirmadas na aplicação); o B é a versão mínima. **Os valores são ilustrativos do PDF, não resultados nossos.**
 
-**Fixture C — arredondamento:** 100,00 € repartidos por 3 moradores iguais → 33,34 / 33,33 / 33,33 (o cêntimo vai para o `resident_id` menor: com os ids das fixtures é o **Bruno**; `fx.bill_c()` põe-no na Ana, o que só difere na ordem).
+**Fixture C — arredondamento:** 100,00 € repartidos por 3 moradores iguais → 33,34 / 33,33 / 33,33. O cêntimo extra vai a **sorteio reproduzível** (D-34): em `fx.bill_c()` calha à Carla.
 
-**Arredondamento implementado:** cada componente (termo fixo, consumo individual, resíduo) reparte-se em cêntimos inteiros pelo maior resto, com empates para o `resident_id` menor. Cada linha do recibo é inteira, as linhas somam o valor de cada morador e `Σ = total` exatamente. Consumos sem atribuição ativa (pergunta pendente, ambíguos, a decorrer) ficam no resíduo: nunca criam dívida.
+**Arredondamento implementado:** cada componente (termo fixo, consumo individual, resíduo) reparte-se em cêntimos inteiros pelo maior resto, com empates resolvidos por sorteio reproduzível (D-34: `draw_order`, semente = casa + mês da fatura). Cada linha do recibo é inteira, as linhas somam o valor de cada morador e `Σ = total` exatamente. Consumos sem atribuição ativa (pergunta pendente, ambíguos, a decorrer) ficam no resíduo: nunca criam dívida.
 
 ## Orçamentos (P0 → P1)
 
@@ -93,8 +93,11 @@ Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `
 |---|---|
 | `features/billing/attribution.py`: primeira decisão (quarto → morador; comum → perguntar/igual) | IMPLEMENTADO (puro, sem persistência) |
 | `features/billing/allocation.py`: repartição + arredondamento + recibo por linhas | IMPLEMENTADO (puro, sem persistência) |
-| Votação da regra B (D-32) | PLANEADO: falta alterar o contrato `Notification` (P3/P5) |
-| Entrada da fatura (BILL-01), fecho e persistência (BILL-04), orçamentos, alertas | PLANEADO |
+| Votação da regra B (D-32) | IMPLEMENTADO no contrato (`confirmation_outcome`); consumo do `outcome` em billing: PLANEADO |
+| Entrada da fatura (BILL-01): `BillIn` → pré-visualização → rascunho em `billing_bill` (migração `0100`), `billing.bill_created`, leitura por papel | IMPLEMENTADO (`features/billing/{bills,router}.py`) |
+| Fecho e persistência das alocações (BILL-04), orçamentos, alertas | PLANEADO |
+
+Validação da fatura (PROPOSTA de limiares, ajustáveis em `bills.py`): preço médio 0,01–1,00 €/kWh (apanha erros de unidades), período ≤ 62 dias e já terminado, tarifa declarada opcional que tem de fechar com `total − fixa` (folga de 1 %, mínimo 5 cêntimos). Foto/PDF lido por LLM fica para depois e passará pela mesma pré-visualização.
 
 ## Ficheiros novos previstos
 

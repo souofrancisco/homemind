@@ -6,16 +6,19 @@
     valor_i          = fixa ÷ N + resíduo × preço ÷ N + individual_i × preço
 
 Arredondamento: cada componente (fixa, individual, resíduo) é repartida em cêntimos inteiros
-pelo método do maior resto, com empates para o `resident_id` menor. Assim cada linha do recibo
-é um inteiro, as linhas somam o valor de cada morador e `Σ valor_i = total` exatamente.
+pelo método do maior resto. Empates (ex.: 100 € por 3) resolvem-se por SORTEIO reproduzível
+(D-34): ordem pseudo-aleatória com semente na casa e no mês da fatura. Cada mês calha a alguém
+diferente, mas recalcular (ou rever) a mesma fatura dá sempre o mesmo recibo. Cada linha do
+recibo é um inteiro, as linhas somam o valor de cada morador e `Σ valor_i = total` exatamente.
 
 Consumos sem atribuição ativa (pergunta pendente, ambíguos, a decorrer) não criam dívida:
 ficam no resíduo, dividido por igual. Os moradores são os ativos no período da fatura (entradas
 e saídas fazem-se no fim do mês; não há repartição por dias).
 """
 
+import hashlib
 from collections import defaultdict
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 from math import floor
@@ -65,8 +68,13 @@ def shares_from_attributions(
     return out
 
 
-def largest_remainder[K: Hashable](total: int, weights: Mapping[K, Fraction | int]) -> dict[K, int]:
-    """Reparte `total` cêntimos em proporção aos pesos; soma exata; empates → chave menor."""
+def largest_remainder[K: Hashable](
+    total: int,
+    weights: Mapping[K, Fraction | int],
+    tiebreak: Callable[[K], object] | None = None,
+) -> dict[K, int]:
+    """Reparte `total` em proporção aos pesos; soma exata. Empates: menor `tiebreak(chave)`
+    (omissão: a própria chave)."""
     if total < 0 or any(w < 0 for w in weights.values()):
         raise ValueError("total e pesos não negativos")
     soma = sum(weights.values())
@@ -77,9 +85,16 @@ def largest_remainder[K: Hashable](total: int, weights: Mapping[K, Fraction | in
     quotas = {k: Fraction(total) * w / soma for k, w in weights.items()}
     out = {k: floor(q) for k, q in quotas.items()}
     falta = total - sum(out.values())
-    for k in sorted(weights, key=lambda k: (-(quotas[k] - out[k]), k))[:falta]:
+    order = tiebreak or (lambda k: k)
+    for k in sorted(weights, key=lambda k: (-(quotas[k] - out[k]), order(k)))[:falta]:
         out[k] += 1
     return out
+
+
+def draw_order(bill: ElectricityBill) -> Callable[[UUID], str]:
+    """Sorteio reproduzível dos empates (D-34): hash(casa, mês da fatura, morador)."""
+    seed = f"{bill.household_id}/{bill.period.start.isoformat()}"
+    return lambda r: hashlib.sha256(f"{seed}/{r}".encode()).hexdigest()
 
 
 def allocate(
@@ -92,6 +107,7 @@ def allocate(
         raise BillInconsistentError("fatura sem moradores ativos")
     ids = sorted(residents)
     equal = dict.fromkeys(ids, 1)
+    draw = draw_order(bill)
 
     # kWh por morador e proveniência: próprios e parte (igual) de cada consumo comum.
     own: dict[UUID, dict[Provenance, int]] = {r: defaultdict(int) for r in ids}
@@ -100,7 +116,7 @@ def allocate(
         if s.energy_wh < 0:
             raise BillInconsistentError("energia negativa")
         if s.resident_id is None:
-            for r, wh in largest_remainder(s.energy_wh, equal).items():
+            for r, wh in largest_remainder(s.energy_wh, equal, draw).items():
                 common[r][s.provenance] += wh
         elif s.resident_id in residents:
             own[s.resident_id][s.provenance] += s.energy_wh
@@ -116,10 +132,10 @@ def allocate(
     energy = bill.energy_cents
     exact = {r: Fraction(energy * wh[r], bill.total_wh) for r in ids}
     pool = _round(sum(exact.values(), Fraction(0)))  # ≤ energy, porque Σ wh ≤ total_wh
-    individual = largest_remainder(pool, exact)
-    residual = largest_remainder(energy - pool, equal)
-    fixed = largest_remainder(bill.fixed_cents, equal)
-    residual_wh_share = largest_remainder(residual_wh, equal)
+    individual = largest_remainder(pool, exact, draw)
+    residual = largest_remainder(energy - pool, equal, draw)
+    fixed = largest_remainder(bill.fixed_cents, equal, draw)
+    residual_wh_share = largest_remainder(residual_wh, equal, draw)
     residual_prov = _residual_provenance(bill, shares)
 
     out = []
