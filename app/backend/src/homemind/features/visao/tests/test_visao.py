@@ -2,6 +2,7 @@
 
 import asyncio
 import threading
+import time
 
 import pytest
 
@@ -101,3 +102,25 @@ def test_detetor_invalido(especificacao):
 def test_detetor_por_especificacao():
     d = carregar_detetor("homemind.features.gestos.tests._fakes:DetetorDeClip")
     assert callable(d.detetar)
+
+
+def test_ultima_deteccao_expira():
+    class DetetorFixo(DetetorDeClip):
+        pass
+
+    thread = ThreadVisao(
+        FonteSimulada(5),
+        DetetorFixo(),
+        ProcessadorObjectOS(),
+        type("L", (), {"publicar": lambda s, e: None})(),
+    )
+    assert thread.ultima_deteccao() is None
+    thread.iniciar()
+    for _ in range(100):
+        if thread.frames >= 5:
+            break
+        time.sleep(0.02)
+    thread.parar()
+    assert thread.ultima_deteccao(idade_max_s=5.0) is not None
+    time.sleep(0.05)
+    assert thread.ultima_deteccao(idade_max_s=0.01) is None

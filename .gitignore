@@ -10,6 +10,9 @@ credentials*.json
 *.sqlite
 *.sqlite3
 data/
+# pesos de modelos (descarregados localmente, nunca versionar)
+*.pt
+*.onnx
 # clips de demo (podem conter pessoas): nunca versionar
 app/clips/
 # python
