@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from homemind.connectors.mcp_home import McpHome, _lamp_state
+from homemind.connectors.mcp_home import McpHome, _lamp_state, _rgb_confere
 from homemind.connectors.write_grant import write_grant
 from homemind.core.config import get_settings
 
@@ -33,6 +33,10 @@ def _confirm(what: str, lines: list[str]) -> None:
         != f"AUTORIZO {what.upper()}"
     ):
         raise SystemExit("Não autorizado; nada foi alterado.")
+
+
+def _escalar(e: Any) -> tuple[int, int, int]:
+    return e.rgb or (255, 255, 255)
 
 
 async def verify_lamp(home: McpHome) -> dict[str, Any]:
@@ -53,7 +57,7 @@ async def verify_lamp(home: McpHome) -> dict[str, Any]:
 
     def aplicado(d: dict) -> bool:
         s = _lamp_state(d)
-        return s.ligada is True and s.rgb == (255, 0, 0) and s.brilho == 40
+        return s.ligada is True and _rgb_confere(d, (255, 0, 0)) and s.brilho == 40
 
     result: dict[str, Any] = {"initial": inicial.model_dump(mode="json")}
     result["applied_confirmed"] = await home._escrever("lamp", test, aplicado)
@@ -70,7 +74,10 @@ async def verify_lamp(home: McpHome) -> dict[str, Any]:
 
     def restaurado(d: dict) -> bool:
         s = _lamp_state(d)
-        return s.ligada is inicial.ligada and (not inicial.ligada or s.rgb == inicial.rgb)
+        return s.ligada is inicial.ligada and (
+            not inicial.ligada
+            or (s.brilho == inicial.brilho and _rgb_confere(d, _escalar(inicial)))
+        )
 
     result["restored_confirmed"] = await home._escrever("lamp", restore, restaurado)
     result["final"] = (await home.estado()).lampada.model_dump(mode="json")

@@ -90,9 +90,18 @@ class FakeMcp:
             return ok(self.dev[args["deviceId"]])
         if self.explicit_error:
             return SimpleNamespace(isError=True, structuredContent=None, content=[])
-        caps = {c["type"]: c for c in self.dev[args["deviceId"]]["capabilities"]}
+        dev = self.dev[args["deviceId"]]
+        caps = {c["type"]: c for c in dev["capabilities"]}
         body = dict(args["body"])
-        caps[body.pop("type")].update(body)
+        kind = body.pop("type")
+        if kind == "color_rgb":
+            dev["base"] = (body["redValue"], body["greenValue"], body["blueValue"])
+        else:
+            caps[kind].update(body)
+        if "base" in dev:  # lâmpada real: color_rgb devolvido = cor × brilho/100
+            b = caps["brightness"]["value"]
+            for k, c in zip(("redValue", "greenValue", "blueValue"), dev["base"], strict=True):
+                caps["color_rgb"][k] = round(c * b / 100)
         return ok({})
 
     def writes(self):
@@ -157,6 +166,7 @@ def test_readback_reflects_device_values(tmp_path):
     home, mcp, _ = make(tmp_path)
     run(home.definir_lampada(True, "vermelho", 50))
     lamp = run(home.estado()).lampada
+    # RGB devolvido (128,0,0) a 50% normaliza para a cor pedida; o nome é derivado dele
     assert (lamp.ligada, lamp.rgb, lamp.brilho, lamp.cor) == (True, (255, 0, 0), 50, "vermelho")
 
 

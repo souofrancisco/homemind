@@ -38,10 +38,13 @@ _WRITABLE = {"lamp": {"power", "brightness", "color_rgb"}, "plug": {"power"}}
 _POLL_SECONDS = 5
 _READ_TIMEOUT_S = 8
 _OPEN_TIMEOUT_S = 10
-_WRITE_TIMEOUT_S = 10
+_WRITE_TIMEOUT_S = 14
+_READBACK_RETRIES = 5
+_READBACK_GAP_S = 0.5
 _INVENTORY_EVERY_POLLS = 12  # volta a descobrir dispositivos de ~60 s a ~60 s
 _STALE_S = 30  # leitura de consumo mais antiga que isto deixa de ser devolvida
 _POWER = {"on": True, "off": False}  # qualquer outro valor = desconhecido
+_RGB_TOL = 3  # arredondamentos do brilho; o RGB devolvido vem escalado por ele
 _UNIT_FACTOR = {"W": 1.0, "w": 1.0, "mW": 0.001, "milliwatt": 0.001}
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[Any]]
@@ -141,21 +144,42 @@ def _rgb(capability: dict[str, Any] | None) -> tuple[int, int, int] | None:
 def _color_name(rgb: tuple[int, int, int] | None) -> Cor | None:
     if rgb is None:
         return None
-    return next((n for n, v in CORES.items() if v == rgb), None)  # type: ignore[return-value]
+    return next(
+        (
+            n
+            for n, v in CORES.items()
+            if all(abs(a - b) <= _RGB_TOL for a, b in zip(v, rgb, strict=True))
+        ),
+        None,
+    )  # type: ignore[return-value]
+
+
+def _brilho(device: dict[str, Any]) -> int | None:
+    value = _capabilities(device).get("brightness", {}).get("value")
+    if isinstance(value, bool) or not isinstance(value, int | float) or not 1 <= value <= 100:
+        return None
+    return int(value)
+
+
+def _normalizar(rgb: tuple[int, int, int] | None, brilho: int | None):
+    """A lâmpada real devolve `color_rgb` já escalado pelo brilho (RGB × brilho/100)."""
+    if rgb is None or brilho is None:
+        return rgb
+    return tuple(min(255, round(c * 100 / brilho)) for c in rgb)
+
+
+def _rgb_confere(device: dict[str, Any], esperado: tuple[int, int, int]) -> bool:
+    """Compara com o valor efetivamente devolvido, escalado pelo brilho devolvido."""
+    raw, brilho = _rgb(_capabilities(device).get("color_rgb")), _brilho(device)
+    if raw is None or brilho is None:
+        return False
+    return all(abs(r - e * brilho / 100) <= _RGB_TOL for r, e in zip(raw, esperado, strict=True))
 
 
 def _lamp_state(device: dict[str, Any]) -> EstadoLampada:
-    caps = _capabilities(device)
-    rgb = _rgb(caps.get("color_rgb"))
-    brightness = caps.get("brightness", {}).get("value")
-    if not isinstance(brightness, int | float) or not 1 <= brightness <= 100:
-        brightness = None
-    return EstadoLampada(
-        ligada=_power(device),
-        cor=_color_name(rgb),
-        rgb=rgb,
-        brilho=int(brightness) if brightness is not None else None,
-    )
+    brilho = _brilho(device)
+    rgb = _normalizar(_rgb(_capabilities(device).get("color_rgb")), brilho)
+    return EstadoLampada(ligada=_power(device), cor=_color_name(rgb), rgb=rgb, brilho=brilho)
 
 
 def _plug_consumption(device: dict[str, Any]) -> float | None:
@@ -312,14 +336,15 @@ class McpHome:
         if brilho is not None:
             changes.append({"type": "brightness", "value": brilho})
 
-        def confirmado(casa: EstadoLampada) -> bool:
+        def confirmado(d: dict[str, Any]) -> bool:
+            casa = _lamp_state(d)
             return (
                 casa.ligada is ligada
-                and (cor is None or casa.rgb == CORES[cor])
+                and (cor is None or _rgb_confere(d, CORES[cor]))
                 and (brilho is None or casa.brilho == brilho)
             )
 
-        return await self._escrever("lamp", changes, lambda d: confirmado(_lamp_state(d)))
+        return await self._escrever("lamp", changes, confirmado)
 
     async def definir_tomada(self, ligada: bool) -> bool:
         return await self._escrever(
@@ -327,6 +352,12 @@ class McpHome:
             [{"type": "power", "value": "on" if ligada else "off"}],
             lambda d: _power(d) is ligada,
         )
+
+    async def listar_ferramentas(self) -> list[dict[str, Any]]:
+        """`tools/list` pela sessão partilhada (só leitura), para o endpoint de descoberta."""
+        async with self._lock:
+            res = await self._con.executar(lambda s: s.list_tools(), _READ_TIMEOUT_S)
+        return [t.model_dump(mode="json", exclude_none=True) for t in res.tools]
 
     async def ler_consumo(self) -> float | None:
         """Watts confirmados do cache; None se desconhecidos, sem unidade ou antigos."""
@@ -512,7 +543,15 @@ class McpHome:
                 if res.isError:
                     erro = "MCP recusou a alteração"
                     break
-            return await self._detalhes(session, device_id)  # releitura na mesma sessão
+            # Releitura na mesma sessão. O estado pode demorar a refletir-se na cloud: só se
+            # repetem LEITURAS (nunca a escrita) até confirmar ou esgotar as tentativas.
+            leitura = await self._detalhes(session, device_id)
+            for _ in range(_READBACK_RETRIES):
+                if erro or confirmado(leitura):
+                    break
+                await asyncio.sleep(_READBACK_GAP_S)
+                leitura = await self._detalhes(session, device_id)
+            return leitura
 
         async with self._lock:
             try:

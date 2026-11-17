@@ -46,10 +46,6 @@ def needs_login(exc: BaseException) -> bool:
     return isinstance(exc, BaseExceptionGroup) and any(needs_login(e) for e in exc.exceptions)
 
 
-# Uma sessão MCP de cada vez neste processo: renovações do token nunca correm em simultâneo.
-_SESSION_LOCK = asyncio.Lock()
-
-
 class JsonTokenStorage:
     """Persist OAuth tokens and the fixed client registration in a mode-0600 file.
 
@@ -343,13 +339,6 @@ def create_oauth_provider(
 
 @asynccontextmanager
 async def altice_session(*, interactive: bool = False) -> AsyncIterator[ClientSession]:
-    async with _SESSION_LOCK:
-        async with _open_session(interactive) as session:
-            yield session
-
-
-@asynccontextmanager
-async def _open_session(interactive: bool) -> AsyncIterator[ClientSession]:
     settings = get_settings()
     provider, storage = create_oauth_provider(interactive=interactive)
     headers = {

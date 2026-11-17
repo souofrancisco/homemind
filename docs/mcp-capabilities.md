@@ -113,10 +113,29 @@ carga conhecida (ex.: 60 W) e comparar `instantPower` com `instantVoltage × ins
 Confirmada a unidade, basta acrescentá-la em `_UNIT_FACTOR` (`mcp_home.py`); o polling,
 timestamp e limpeza em falha já estão implementados.
 
+## Verificação física da lâmpada (#10/#11) — 2026-11-17, BLOQUEADA
+
+Executada com autorização explícita do operador (`make mcp-verify what=lamp`, grant privado de
+2 min só para a lâmpada), estado inicial restaurado no fim. Resultado:
+
+- Descoberta inequívoca: 1 lâmpada RGB e 1 tomada (por capabilities, sem IDs).
+- `update_device_capabilities` devolveu `{"message": "device updated"}` (`isError=false`) para
+  `color_rgb` e `brightness`; a lâmpada **física não mudou** e a releitura (até 12 s) manteve o estado
+  inicial. Numa tentativa anterior a releitura chegou a mostrar a alteração (RGB×brilho) durante ~12 s
+  e depois voltou ao inicial. `lastCommunicationTime` da lâmpada tinha ~3 min.
+- O `McpHome` comportou-se como desenhado: **não** deu a escrita como sucesso («estado final não
+  corresponde ao pedido») e o restauro ficou confirmado. Não há evidência de controlo físico: #10 e
+  #11 mantêm-se por fechar.
+- A confirmar com os mentores/hardware: se a lâmpada está acessível pela cloud (ligação Wi-Fi,
+  reset/pareamento), se `workMode` tem de ser `colour`/`white`, e se `update_device_capabilities`
+  é assíncrono (ack ≠ aplicado).
+- Observado: o `color_rgb` lido vem **escalado pelo brilho** (RGB × brilho/100). O `McpHome` confirma
+  a cor contra o RGB escalado e publica o RGB normalizado (cor a 100 %), como o FakeHome.
+
 ## Limites da evidência
 
-- Leituras de `get_home_devices` e `get_device_details` foram efetuadas. Escritas: ver
-  `docs/mcp-demo.md` §5 e o registo de verificação física abaixo, quando executada.
+- Leituras de `get_home_devices` e `get_device_details` foram efetuadas. Escritas: ver a
+  verificação física acima (sem efeito físico confirmado); a tomada não foi testada.
 - A unidade de `instantPower` não consta no schema/resposta observados. Consumo em watts não está
   validado.
 - `get_home_devices` e `get_device_details` devolvem as mesmas capabilities (comparado em leitura).

@@ -16,8 +16,8 @@ make mcp-doctor     # initialize + tools/list no MCP real; não escreve nada
 ```
 
 O backend nunca abre browser: com sessão expirada/revogada fica `mcp_ok=false` com o aviso
-«Sessão OAuth MCP expirada; execute make mcp-login no host». O access token renova sozinho; o
-refresh é serializado por processo e por `flock` entre host e container. Os tokens vivem numa
+«Sessão OAuth MCP expirada; execute make mcp-login no host». O access token renova sozinho; no backend há uma única sessão MCP (todas as chamadas, incluindo
+`/api/mcp/tools`, passam por ela) e o ficheiro de tokens é protegido por `flock` entre host e container. Os tokens vivem numa
 **diretoria** montada no container (o `os.replace` atómico falha com bind mount de um ficheiro);
 o utilizador `app` do container é uid 1000 — a diretoria tem de ser desse uid.
 
@@ -77,7 +77,8 @@ funcionar. O FakeHome é independente do MCP.
 | `/api/off` com `partial_failure` / `mcp_unavailable` | um / nenhum dispositivo confirmado desligado (a mensagem diz porquê) |
 | `ligada: null` | `power` devolvido ≠ `on`/`off`: desconhecido |
 
-Escritas de resultado incerto (timeout) nunca são repetidas: só se relê. Um gesto com falha física
+Escritas de resultado incerto (timeout) nunca são repetidas: só se relê (até 5 releituras, 0,5 s,
+porque a cloud pode demorar a refletir o estado). Um gesto com falha física
 não ativa o modo nem contabiliza poupança.
 
 ## 8. Latência (medida no MCP real)
