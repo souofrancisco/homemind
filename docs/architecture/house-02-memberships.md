@@ -1,6 +1,6 @@
 # HOUSE-02 (#85) — Identidade, associação e memberships
 
-Estado: implementado na branch feat/house-02-memberships; revisão e testes CI necessários antes do merge.
+Estado: implementado na branch feat/house-02-memberships; aguardando review do PR #143. A aceitação real fica desativada até configurar e validar email verificado no Authentik.
 Dono: P5. F0 mantém-se: Authentik com OIDC/PKCE, modelos de domínio de
 contracts/household.py, SQLite, core/access.py (matriz única PERMISSIONS).
 
@@ -48,26 +48,67 @@ Referências oficiais consultadas:
 - FastAPI — dependencies: https://fastapi.tiangolo.com/reference/dependencies/
 - Authentik — provider OIDC e scopes: https://docs.goauthentik.io/add-secure-apps/providers/oauth2/
 - Authentik — verificação efetiva de email: https://docs.goauthentik.io/add-secure-apps/providers/oauth2/verify-email-address/
+- Authentik — serializer de access tokens (`uid`/`azp`): https://github.com/goauthentik/authentik/blob/main/authentik/providers/oauth2/id_token.py
 - OWASP — multi-tenant security: https://cheatsheetseries.owasp.org/cheatsheets/Multi_Tenant_Security_Cheat_Sheet.html
 - OWASP — authorization: https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html
 
-## Pré-condição de segurança: email_verified
+## Pré-condição de segurança: Authentik e email verificado
 
-O token de acesso assinado e válido tem de incluir email e
-email_verified=true para aceitar um convite. O backend **não aceita**
-email_verified omitido ou false; não deriva este valor do domínio do
-email nem confia em parâmetros enviados pelo cliente. Desde Authentik
-2025.10, o mapping padrão de email devolve false, por não provar que o
-endereço é verificado. Por isso o administrador deve implementar o fluxo
-de verificação de email recomendado na documentação oficial e substituir
-o mapping do scope email pelo que devolve o estado realmente verificado.
-NÃO configurar email_verified=true incondicionalmente.
+O backend exige um **access token** válido com `email` e
+`email_verified=true` para aceitar um convite. Não deriva verificação do
+domínio do email e não confia em parâmetros enviados pelo cliente.
 
-**Gate de integração:** confirmar que o access token (não apenas o ID
-token) inclui email e email_verified=true depois de email validado.
-Sem esta configuração, os convites são emitidos mas nenhuma aceitação
-ocorre; é uma falha segura e intencional, não um modo demo que contorna
-a validação. A UI de verificação/onboarding é HOUSE-05.
+**Configuração verificada no repositório:** `app/compose.yaml` fixa
+Authentik `2026.8.5`. O blueprint `app/infra/authentik/homemind.yaml`
+atribui os mappings padrão `openid`, `profile`, `email` e
+`offline_access`, mas não configura SMTP, um Email Stage de confirmação
+nem um mapping que compare o endereço atual com um endereço confirmado.
+O fluxo de login definido no blueprint contém identificação, password,
+validação MFA e login; não contém etapa de verificação de email. Desde
+Authentik 2025.10 o mapping padrão já não prova que o endereço foi
+confirmado. **Logo, a verificação real de email não está operacional por
+esta configuração.** O backend recusa a aceitação enquanto o claim faltar
+ou for false.
+
+**Configuração necessária pelo responsável Authentik antes de ativar
+aceitações:**
+
+1. Configurar envio de email (SMTP) e um Email Stage obrigatório no fluxo
+   de enrollment ou autenticação, antes do User Login, para confirmar o
+   endereço guardado na conta.
+2. Guardar o endereço confirmado num atributo de utilizador, por exemplo
+   `email_verified_address`, apenas depois do token de confirmação ser
+   validado; limpar esse atributo sempre que `user.email` mudar, inclusive
+   alterações administrativas ou sincronização de fonte.
+3. Criar um OAuth2/OIDC scope mapping próprio para `email`, devolver
+   `email` e comparar com o atributo confirmado, e substituir o mapping
+   padrão `email` do provider. Expressão base:
+
+       email = request.user.email
+       verified_address = request.user.attributes.get("email_verified_address")
+       return {"email": email, "email_verified": bool(email and verified_address == email)}
+
+   Nunca definir o claim como `true` incondicionalmente.
+4. Obter tokens por login real e confirmar que o **access token** assinado
+   contém o email esperado e `email_verified=true` só após confirmação;
+   confirmar também que uma alteração de endereço devolve `false` até nova
+   verificação. A aceitação real deve continuar a falhar fechada até estas
+   verificações passarem.
+
+O backend também rejeita ID tokens. No Authentik fixado, ID token e access
+token usam o mesmo issuer, audience, assinatura e tipo JOSE. O serializer
+de access token do Authentik acrescenta `uid` e `azp`; ambos são exigidos
+pelo backend como discriminadores específicos do provedor. Esta
+dependência tem de ser revalidada se a versão ou o provider forem
+alterados; tokens sem os dois claims recebem 401. O teste automatizado
+assina JWTs **falsos** com uma chave RSA local e verifica este contrato; não
+é uma validação de tokens emitidos pelo Authentik real.
+
+**Estado de integração real:** não foi possível executar login nem obter
+tokens reais do Authentik neste ambiente. Os convites podem ser criados,
+mas a aceitação só será ativável após os passos acima e uma validação
+manual real. Não alterar `email_verified` para fazer o teste passar. A UI
+de verificação/onboarding continua em HOUSE-05.
 
 ## Endpoints
 
@@ -127,6 +168,11 @@ vez. O backend não faz delivery de emails; HOUSE-05 implementa a UI.
 Um convite tem 72 horas de duração. O token é aleatório com 256 bits,
 guardado apenas com SHA-256. O alvo é o email normalizado, persistido
 internamente: é dado pessoal, sujeito a política de retenção (PRIV-01).
+Não há rate limit específico: a rota exige primeiro um access token
+Authentik válido e a entropia de 256 bits torna impraticável adivinhar o
+código. Antes de expor a API a tráfego público, o responsável de operação
+deve também limitar abuso por utilizador/IP no gateway e monitorizar
+respostas 404/409 sem registar os códigos ou emails.
 Não há cleanup automático de reservas expiradas; a tabela pode ser
 expurgada por um processo de retenção posterior sem apagar memberships
 contratuais. A revogação é imediata pelo estado ended, mesmo se a data

@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from threading import Barrier
 from types import SimpleNamespace
 from uuid import UUID
 
 import jwt
+import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
+from fastapi import HTTPException
 
 from homemind.contracts import fixtures as fx
 from homemind.core.access import Operation, Resource, resolve_access
@@ -97,16 +102,16 @@ def test_invitation_is_one_use_and_restores_context(client, app):
     assert issued.status_code == 201, issued.text
     data = issued.json()
     assert set(data) == {"invitation_id", "code", "expires_at"}
-    assert len(data["code"]) >= 40
-    assert (
-        app.state.db.run_sync(
-            lambda c: c.execute(
-                "SELECT token_sha256 FROM membership_invitation WHERE id=?",
-                (data["invitation_id"],),
-            ).fetchone()[0]
+    assert len(base64.urlsafe_b64decode(data["code"] + "=" * (-len(data["code"]) % 4))) == 32
+    stored_invitation = app.state.db.run_sync(
+        lambda c: dict(
+            c.execute(
+                "SELECT * FROM membership_invitation WHERE id=?", (data["invitation_id"],)
+            ).fetchone()
         )
-        == hashlib.sha256(data["code"].encode()).hexdigest()
     )
+    assert stored_invitation["token_sha256"] == hashlib.sha256(data["code"].encode()).hexdigest()
+    assert data["code"] not in stored_invitation.values()
     # Convite pendente não autoriza nada, e os inquilinos não o veem na lista.
     assert client.get("/api/me/context", headers=verified()).json()["resident"] is None
     assert error(client.get(f"/api/households/{HOUSE_A}", headers=verified())) == (
@@ -125,8 +130,43 @@ def test_invitation_is_one_use_and_restores_context(client, app):
     ctx = client.get("/api/me/context", headers=verified()).json()
     assert ctx["resident"]["display_name"] == "Novo morador"
     assert len(ctx["memberships"]) == 1
-    assert "auth_subject" not in str(accepted.json()) + str(ctx)
-    assert "token" not in str(accepted.json()) + str(ctx)
+    landlord_members = client.get(
+        f"/api/households/{HOUSE_A}/members", headers=as_("sub-senhorio")
+    ).json()
+    public_data = str(accepted.json()) + str(ctx) + str(landlord_members)
+    assert all(
+        field not in public_data for field in ("auth_subject", "target_email", "token_sha256")
+    )
+    assert data["code"] not in public_data
+
+
+def test_simultaneous_acceptance_redeems_invitation_once(client):
+    room = create_room(client)
+    token = invite(client, room).json()["code"]
+    barrier = Barrier(2)
+
+    def accept_at_once(_):
+        barrier.wait()
+        return accept(client, token)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(accept_at_once, range(2)))
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    conflict = next(response for response in responses if response.status_code == 409)
+    assert error(conflict) == (409, "invitation_used")
+
+
+def test_simultaneous_invites_reserve_a_room_once(client):
+    room = create_room(client)
+    barrier = Barrier(2)
+
+    def issue_at_once(email):
+        barrier.wait()
+        return invite(client, room, email=email)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(issue_at_once, ("one@example.test", "two@example.test")))
+    assert sorted(response.status_code for response in responses) == [201, 409]
 
 
 def test_invalid_expired_unverified_and_wrong_account(client, now):
@@ -145,8 +185,9 @@ def test_invalid_expired_unverified_and_wrong_account(client, now):
     assert accept(client, token, verified(email="guest@example.test")).status_code == 200
     next_room = create_room(client, name="Outra suite")
     future = invite(client, next_room)
-    now["value"] = NOW + timedelta(hours=73)
+    now["value"] = NOW + timedelta(hours=72)
     assert error(accept(client, future.json()["code"])) == (404, "invitation_not_found")
+    assert invite(client, next_room, email="new-guest@example.test").status_code == 201
 
 
 def test_invite_rejects_role_escalation_and_cross_house_room(client):
@@ -289,7 +330,35 @@ def test_401_and_privileged_contracts_cannot_be_self_assigned(client):
     ) == (403, "forbidden_role")
 
 
-def test_same_verified_oidc_identity_used_by_http_and_future_ws(client, app, monkeypatch):
+def test_acceptance_never_activates_a_privileged_membership(client, app):
+    room = create_room(client)
+    issued = invite(client, room)
+    membership_id = app.state.db.run_sync(
+        lambda conn: conn.execute(
+            "SELECT membership_id FROM membership_invitation WHERE id=?",
+            (issued.json()["invitation_id"],),
+        ).fetchone()[0]
+    )
+    # Simula uma associação administrativa incorreta; o fluxo público não deve ativá-la.
+    app.state.db.run_sync(
+        lambda conn: conn.execute(
+            "UPDATE membership SET role='landlord', room_id=NULL WHERE id=?", (membership_id,)
+        )
+    )
+    assert error(accept(client, issued.json()["code"])) == (404, "invitation_not_found")
+
+
+def test_invitation_rejects_occupied_rooms_and_existing_pending_invites(client):
+    assert error(invite(client, str(fx.ROOM_ANA))) == (409, "membership_conflict")
+    room = create_room(client, name="Quarto reservado")
+    assert invite(client, room).status_code == 201
+    assert error(invite(client, room, email="another@example.test")) == (
+        409,
+        "membership_conflict",
+    )
+
+
+def test_fake_authentik_access_token_is_distinguished_from_id_token(client, app, monkeypatch):
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     settings = SimpleNamespace(oidc_issuer="https://issuer.invalid/app/", oidc_client_id="homemind")
 
@@ -299,15 +368,21 @@ def test_same_verified_oidc_identity_used_by_http_and_future_ws(client, app, mon
 
     monkeypatch.setattr(auth, "get_settings", lambda: settings)
     monkeypatch.setattr(auth, "_jwks", lambda: Keys())
+    access_claims = {
+        "sub": "sub-ana",
+        "iss": settings.oidc_issuer,
+        "aud": settings.oidc_client_id,
+        "iat": int(datetime.now(UTC).timestamp()),
+        "exp": int(datetime.now(UTC).timestamp()) + 3600,
+        "email": "ana@example.test",
+        "email_verified": True,
+        # Authentik 2026.8.5 adds these fields only to access tokens.
+        "azp": settings.oidc_client_id,
+        "uid": "access-token-id",
+        "scope": "openid profile email",
+    }
     token = jwt.encode(
-        {
-            "sub": "sub-ana",
-            "iss": settings.oidc_issuer,
-            "aud": settings.oidc_client_id,
-            "exp": int(datetime.now(UTC).timestamp()) + 3600,
-            "email": "ana@example.test",
-            "email_verified": True,
-        },
+        access_claims,
         key,
         algorithm="RS256",
     )
@@ -320,3 +395,20 @@ def test_same_verified_oidc_identity_used_by_http_and_future_ws(client, app, mon
     assert client.get("/api/me/context", headers=as_("sub-ana")).json()["resident"]["id"] == (
         str(access.resident_id)
     )
+
+    id_token = jwt.encode(
+        {
+            **{k: v for k, v in access_claims.items() if k not in {"uid", "scope", "azp"}},
+            "nonce": "oidc-login-nonce",
+        },
+        key,
+        algorithm="RS256",
+    )
+    with pytest.raises(HTTPException) as error:
+        auth.validate_access_token(id_token)
+    assert error.value.status_code == 401
+
+    malformed_claims = jwt.encode({**access_claims, "groups": "not-a-list"}, key, algorithm="RS256")
+    with pytest.raises(HTTPException) as error:
+        auth.validate_access_token(malformed_claims)
+    assert error.value.status_code == 401

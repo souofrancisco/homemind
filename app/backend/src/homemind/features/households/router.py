@@ -32,6 +32,7 @@ from homemind.core.access import (
     HouseholdAccess,
     Operation,
     Resource,
+    find_membership,
     require_access,
 )
 from homemind.features.auth.service import CurrentUser
@@ -154,22 +155,31 @@ class MembershipPatch(ContractModel):
 
 @router.patch("/households/{household_id}/memberships/{membership_id}")
 async def patch_membership(
-    membership_id: UUID, body: MembershipPatch, access: MemberWriteAccess, db: DbDep
+    membership_id: UUID,
+    body: MembershipPatch,
+    access: MemberWriteAccess,
+    user: CurrentUser,
+    db: DbDep,
+    clock: ClockDep,
 ) -> MembershipSelfView:
-    if access.role is not MembershipRole.tenant:  # o senhorio não decide o consentimento alheio
-        raise HTTPException(403, {"code": "forbidden_role", "message": "Sem permissão"})
-
     def update(conn):
+        # A guarda FastAPI corre antes do handler e não partilha a transação com esta escrita.
+        # Revalidar a identidade, o papel e a vigência aqui evita usar um grant revogado entretanto.
+        current = find_membership(conn, user.sub, access.household_id, clock())
+        if current is None:
+            return "missing"
+        if current["role"] != MembershipRole.tenant.value:
+            return "forbidden"
         row = conn.execute(
             "SELECT id, resident_id FROM membership WHERE id = ? AND household_id = ?",
             (str(membership_id), str(access.household_id)),
         ).fetchone()
         if row is None:
             return "missing"
-        if row["id"] != str(access.membership_id):  # nunca a membership de outro
+        if row["id"] != str(current["id"]):  # nunca a membership de outro
             return "forbidden"
         conn.execute(
-            "UPDATE membership SET presence_opt_in = ? WHERE id = ?",
+            "UPDATE membership SET presence_opt_in = ? WHERE id = ? AND status = 'active'",
             (int(body.presence_opt_in), row["id"]),
         )
         return conn.execute(

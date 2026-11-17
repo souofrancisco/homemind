@@ -73,6 +73,15 @@ def issue_invitation(
         _fail(404, "room_not_found", "Quarto não encontrado")
     if body.ends_on is not None and body.ends_on < body.starts_on:
         _fail(400, "invalid_request", "Datas contratuais inválidas")
+    occupied = conn.execute(
+        "SELECT 1 FROM membership m LEFT JOIN membership_invitation i"
+        " ON i.membership_id=m.id WHERE m.household_id=? AND m.room_id=?"
+        " AND m.role='tenant' AND (m.status='active' OR (m.status='invited'"
+        " AND i.redeemed_at IS NULL AND i.revoked_at IS NULL AND i.expires_at>?)) LIMIT 1",
+        (str(house), str(body.room_id), now.astimezone(UTC).isoformat()),
+    ).fetchone()
+    if occupied is not None:
+        _fail(409, "membership_conflict", "Quarto já ocupado ou com convite pendente")
     email = body.email.strip().casefold()
     if not email or len(email) > 254:
         _fail(400, "invalid_request", "Email inválido")
@@ -125,7 +134,8 @@ def accept_invitation(
         " m.status, m.ends_on, r.auth_subject AS reserved_subject, h.timezone"
         " FROM membership_invitation i JOIN membership m ON m.id=i.membership_id"
         " JOIN resident r ON r.id=m.resident_id"
-        " JOIN household h ON h.id=m.household_id WHERE i.token_sha256=?",
+        " JOIN household h ON h.id=m.household_id"
+        " WHERE i.token_sha256=? AND m.role='tenant'",
         (hashlib.sha256(token.encode()).hexdigest(),),
     ).fetchone()
     if row is None or row["revoked_at"] is not None:
