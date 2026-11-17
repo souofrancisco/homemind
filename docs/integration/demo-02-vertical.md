@@ -81,8 +81,8 @@ Mantido: é um diagnóstico técnico sem equivalente no API atual e útil para e
 
 PR #141 e #144 continuam fora da `main`. Não foi copiado código para DEMO-02.
 
-- #141 foi combinado com a `origin/main` num worktree de auditoria e `make check` passou: 1041 testes, 1 ignorado, lint, geração OpenAPI/TS, build frontend e Compose config. Demonstra compatibilidade de build, não integração de notificações/faturas/recibos.
-- #144 foi testado em worktree próprio sobre `origin/main`. A união dos alvos `.PHONY` do Makefile foi resolvida só nesse worktree de teste; `make check` passou: 1054 testes, 1 ignorado e restantes passos de lint/build/Compose. O conflito de Makefile deve ser resolvido no PR #144 antes do merge. A aprovação do check não prova o fluxo de energia Conta Certa.
+- #141 foi combinado com a `origin/main` em `76c16ce` num worktree de auditoria e `make check` passou: 1212 testes, 1 ignorado, lint, geração OpenAPI/TS, build frontend e Compose config. Demonstra compatibilidade de build, não integração de notificações/faturas/recibos. O build emite o aviso Vite de chunk >500 kB.
+- #144 foi combinado com a `origin/main` em worktree próprio. A união dos alvos `.PHONY` do Makefile foi resolvida só nesse worktree de teste; `make check` passou: 1225 testes, 1 ignorado e restantes passos de lint/build/Compose. O conflito de Makefile deve ser resolvido no PR #144 antes do merge. A aprovação do check não prova o fluxo de energia Conta Certa.
 
 ## 6. Testes e evidência desta revisão
 
