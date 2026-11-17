@@ -221,16 +221,6 @@ def active_tenants(conn: sqlite3.Connection, household_id: UUID, now: datetime) 
     return [UUID(r[0]) for r in rows]
 
 
-def sharing_tenants(conn: sqlite3.Connection, household_id: UUID, now: datetime) -> set[UUID]:
-    """Moradores ativos que partilham o seu estado com os colegas (`presence_opt_in`)."""
-    active = set(active_tenants(conn, household_id, now))
-    rows = conn.execute(
-        "SELECT resident_id FROM membership WHERE household_id = ? AND presence_opt_in = 1",
-        (str(household_id),),
-    ).fetchall()
-    return {UUID(r[0]) for r in rows} & active
-
-
 def membership_start(conn: sqlite3.Connection, household_id: UUID, resident_id: UUID) -> datetime:
     row = conn.execute(
         "SELECT starts_on FROM membership WHERE household_id = ? AND resident_id = ?"

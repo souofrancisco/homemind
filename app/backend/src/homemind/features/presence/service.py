@@ -390,18 +390,11 @@ class PresenceService:
             await self.bus.publish(ev)  # idempotente: só acorda os consumidores
         return len(events)
 
-    async def states_visible_to(
-        self, household_id: UUID, resident_id: UUID
-    ) -> list[PersonPresence]:
-        """O próprio, mais os colegas que partilham o seu estado (`Membership.presence_opt_in`)."""
+    async def own_state(self, household_id: UUID, resident_id: UUID) -> PersonPresence:
+        """Só o próprio morador vê o seu estado (nem colegas, nem senhorio). Os outros módulos
+        (regra C da P4) recebem-no por eventos."""
         now = self.clock()
-
-        def run(conn: sqlite3.Connection) -> list[PersonPresence]:
-            visible = repo.sharing_tenants(conn, household_id, now) - {resident_id}
-            ordered = [resident_id, *sorted(visible, key=str)]
-            return [self.current_state(conn, household_id, r, now) for r in ordered]
-
-        return await self.db.run(run)
+        return await self.db.run(lambda c: self.current_state(c, household_id, resident_id, now))
 
     # --- observações Wi-Fi ------------------------------------------------------------------
 

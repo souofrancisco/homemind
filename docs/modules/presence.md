@@ -50,7 +50,7 @@ Regras de fusão (PDF §6.8): presença no Wi-Fi conta muito, ausência conta po
 | Rota | Efeito |
 |---|---|
 | `PUT /api/presence/me` | `PresenceMeIn` (`in`/`out`) → `PresenceEvent(source=manual)` em `presence.cue_recorded`; devolve o `PersonPresence` fundido |
-| `GET /api/presence` | o meu `PersonPresence` (primeiro) e o dos colegas com `Membership.presence_opt_in` (PRES-04) |
+| `GET /api/presence` | o **meu** `PersonPresence` (PRES-04); mais ninguém o vê |
 | `GET /api/presence/devices` | os **meus** telemóveis (`PresenceDeviceView`) |
 | `POST /api/presence/devices` | regista um telemóvel: `{label, wifi_address, consent: true}`; só guarda o hash; `409` se já registado ou acima de 5; `503` sem `PRESENCE_MATCH_SALT` |
 | `DELETE /api/presence/devices/{id}` | opt-out: deixa de ser reconhecido de imediato e o hash é **apagado** (idempotente) |
@@ -84,9 +84,11 @@ Regras de fusão (PDF §6.8): presença no Wi-Fi conta muito, ausência conta po
 
 **Saídas.** `presence.changed` (`PersonPresence`) só quando o estado ou a razão mudam; `presence.confirmation_needed` (`PresenceConfirmationRequest`: só `id`, `resident_id`, `reason`, `expires_at`, validade 30 min) quando há dúvida, no máximo um por morador por 30 min (`presence_confirmation`). P3 transforma-o em notificação pessoal «estás em casa?» (APP-02, **PLANEADO**); a resposta volta por `notification.responded`.
 
-**API.** `GET /api/presence?household_id=`: o próprio e os colegas com `Membership.presence_opt_in`; senhorio e operador `403`. **Privacidade:** nada de imagens; o senhorio nunca vê presença nem horários; as pistas e os estados só têm origem em Wi-Fi/aparelho/declaração/porta anónima.
+**API.** `GET /api/presence?household_id=` devolve **só o próprio** `PersonPresence` (decisão do dono, alinhada com o PRIV-02 #146: nem colegas, mesmo com `presence_opt_in`); senhorio e operador `403`. Os outros módulos (regra C da P4) recebem o estado por eventos `presence.changed`. **Privacidade:** nada de imagens; o senhorio nunca vê presença nem horários; as pistas e os estados só têm origem em Wi-Fi/aparelho/declaração/porta anónima.
 
 **Provenance.** `simulated` se qualquer entrada for simulada; `inferred` quando decide a porta ou o tempo; `measured` só quando o estado vem só de uma declaração (P-19).
+
+**Decisões para a demo (aceites pelo dono).** Varrimento Wi-Fi parado (3 intervalos) com telemóvel registado → pergunta (`uncertain/no_recent_cues`), nunca `out`; saída anónima com vários moradores `in` e sem Wi-Fi → pergunta; único `in` → a saída atribui-se-lhe (limite: uma visita a sair engana-o até à PRES-05).
 
 **Limites assumidos.** Com vários moradores em casa e sem Wi-Fi uma saída pela porta nunca fica atribuída (pergunta-se). Um telemóvel que fica em casa com o dono «fora» e Wi-Fi ativo mantém a dúvida (volta a perguntar de 30 em 30 min). A fusão lê as pistas das últimas 48 h. Os parâmetros (0,6; 0,5; 120 s; 30 min) **não estão medidos**: valores iniciais.
 

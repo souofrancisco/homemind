@@ -23,6 +23,7 @@ from homemind.features.presence.tests.conftest import (
     A,
     as_,
     cues,
+    set_presence_opt_in,
 )
 from homemind.features.presence.wifi import match_key
 
@@ -78,7 +79,7 @@ def put_me(client, sub, state, household=A):
     return r.json()
 
 
-def get_all(client, sub, household=A):
+def get_own(client, sub, household=A):
     r = client.get(f"/api/presence?household_id={household}", headers=as_(sub))
     assert r.status_code == 200, r.text
     return r.json()
@@ -114,7 +115,7 @@ def consumption_started(client, clock, *, started_ago, cid="aquecedor", owner=fx
 
 
 def state_of(client, sub=BRUNO):
-    own = get_all(client, sub)[0]
+    own = get_own(client, sub)
     return own["state"], own.get("reason"), own
 
 
@@ -346,24 +347,20 @@ def test_outsiders_and_anonymous(client):
     assert client.get(f"/api/presence?household_id={A}").status_code == 401
 
 
-def test_colleagues_only_if_they_share_their_state(client, clock):
+def test_each_resident_sees_only_their_own_state_even_if_a_colleague_opted_in(client, clock):
     put_me(client, BRUNO, "in")
     put_me(client, CARLA, "out")
     settle(client)
-    assert [p["resident_id"] for p in get_all(client, ANA)] == [str(fx.ANA)]  # só o próprio
-    client.app_state.db.run_sync(
-        lambda c: c.execute(
-            "UPDATE membership SET presence_opt_in = 1 WHERE resident_id = ? AND household_id = ?",
-            (str(fx.BRUNO), A),
-        )
-    )
-    seen = {p["resident_id"]: p["state"] for p in get_all(client, ANA)}
-    assert seen == {str(fx.ANA): "uncertain", str(fx.BRUNO): "in"}  # Carla não partilha
-    assert [p["resident_id"] for p in get_all(client, BRUNO)][0] == str(fx.BRUNO)  # o seu, primeiro
+    set_presence_opt_in(client.app_state.db, fx.BRUNO, 1)
+    set_presence_opt_in(client.app_state.db, fx.CARLA, 1)
+    for sub, rid, st in ((ANA, fx.ANA, "uncertain"), (BRUNO, fx.BRUNO, "in"),
+                         (CARLA, fx.CARLA, "out")):  # fmt: skip
+        own = get_own(client, sub)
+        assert isinstance(own, dict) and own["resident_id"] == str(rid) and own["state"] == st
 
 
 def test_state_response_has_no_ids_of_cues_nor_images(client, clock):
     put_me(client, BRUNO, "in")
-    [p] = get_all(client, BRUNO)
+    p = get_own(client, BRUNO)
     assert set(p) == {"resident_id", "state", "since", "confidence", "provenance", "sources",
                       "reason"}  # fmt: skip

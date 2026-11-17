@@ -140,9 +140,9 @@ def _http(e: DeviceError) -> HTTPException:
 
 
 @router.get("")
-async def get_presence(access: Read, service: Service) -> list[PersonPresence]:
-    """O meu estado (primeiro) e o dos colegas que partilham o deles (`presence_opt_in`)."""
-    return await service.states_visible_to(access.household_id, access.resident_id)
+async def get_presence(access: Read, service: Service) -> PersonPresence:
+    """O meu estado. Ninguém mais o vê (nem colegas, nem senhorio, nem operador)."""
+    return await service.own_state(access.household_id, access.resident_id)
 
 
 @router.put("/me")
