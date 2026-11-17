@@ -14,7 +14,7 @@ import time
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homemind.connectors.altice_auth import OAuthReauthRequired, altice_session, needs_login
 from homemind.connectors.write_grant import read_grant
@@ -26,6 +26,9 @@ from homemind.contracts.home import (
     EstadoTomada,
 )
 from homemind.core.config import Settings, get_settings
+
+if TYPE_CHECKING:
+    from homemind.connectors.mcp_collector import EnergyCollector
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +54,18 @@ _UNIT_FACTOR = {"W": 1.0, "w": 1.0, "dW": 0.1, "mW": 0.001, "milliwatt": 0.001}
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[Any]]
 EstadoOuvinte = Callable[[EstadoCasa, bool], None]
+
+
+def _next_poll_delay(base: float, consecutive_failures: int, maximum: float) -> float:
+    if consecutive_failures <= 0:
+        return base
+    # Evita overflow após uma indisponibilidade prolongada.
+    delay = base
+    for _ in range(consecutive_failures):
+        delay = min(delay * 2, maximum)
+        if delay >= maximum:
+            break
+    return delay
 
 
 def _payload(result: Any) -> Any:
@@ -312,6 +327,8 @@ class McpHome:
         # Definido pelo motor: ao_estado(casa, mudou). Chamado sem locks; `mudou` só em
         # alterações relevantes (estado, consumo, disponibilidade), não por timestamps.
         self.ao_estado: EstadoOuvinte | None = None
+        self.coletor: EnergyCollector | None = None
+        self._falhas_consecutivas = 0
         self.ultima_falha: str | None = None  # motivo (sem segredos) da última escrita recusada
         self.tempos_ms: dict[str, float] = {}  # duração da última operação de cada tipo
         self._mcp_ok = False
@@ -444,6 +461,11 @@ class McpHome:
 
     def _falha(self, exc: BaseException) -> None:
         """Leitura falhou: nada de estados/consumo inventados; caches invalidados."""
+        if self.coletor is not None:
+            try:
+                self.coletor.unavailable()
+            except Exception as erro:
+                log.exception("falha no coletor (%s)", type(erro).__name__, exc_info=False)
         self._mcp_ok = False
         self._lampada, self._tomada = EstadoLampada(), EstadoTomada()
         self._consumo_w = self._lido_em = self._consumo_em = None
@@ -459,7 +481,12 @@ class McpHome:
         while True:
             inicio = time.monotonic()
             await self._refrescar()
-            await asyncio.sleep(max(_POLL_SECONDS - (time.monotonic() - inicio), 0))
+            atraso = _next_poll_delay(
+                self._settings.mcp_poll_seconds,
+                self._falhas_consecutivas,
+                self._settings.mcp_poll_backoff_max_s,
+            )
+            await asyncio.sleep(max(atraso - (time.monotonic() - inicio), 0))
 
     def _reabriu(self) -> None:
         """Nova sessão: revalida o catálogo e redescobre os dispositivos."""
@@ -481,7 +508,10 @@ class McpHome:
                     if needs_login(exc):  # repetir não ajuda: só `make mcp-login`
                         break
             if falha is not None:
+                self._falhas_consecutivas += 1
                 self._falha(falha)
+            else:
+                self._falhas_consecutivas = 0
             self.tempos_ms["poll"] = round((time.monotonic() - inicio) * 1000)
         self._emitir()
 
@@ -526,6 +556,11 @@ class McpHome:
         if lamp is not None:
             self._lampada = _lamp_state(lamp)
         if plug is not None:
+            if self.coletor is not None:
+                try:
+                    self.coletor.ingest(plug)
+                except Exception as erro:
+                    log.exception("falha no coletor (%s)", type(erro).__name__, exc_info=False)
             self._tomada = EstadoTomada(ligada=_power(plug))
             self._consumo_w = _plug_consumption(plug, self._settings.mcp_instantpower_unit)
             self._consumo_em = datetime.now(UTC)

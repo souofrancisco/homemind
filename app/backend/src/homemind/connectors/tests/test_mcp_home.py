@@ -502,3 +502,46 @@ def test_engine_over_mcp_home_gesture_outage_and_recovery(tmp_path):
         await home.parar()
 
     run(cenario())
+
+
+@pytest.mark.parametrize("failures,expected", [(0, 5), (1, 10), (2, 20), (3, 40), (10000, 60)])
+def test_next_poll_delay(failures, expected):
+    from homemind.connectors.mcp_home import _next_poll_delay
+
+    assert _next_poll_delay(5, failures, 60) == expected
+
+
+def test_collector_receives_readings_and_failure(tmp_path):
+    home, mcp, _ = make(tmp_path)
+    calls = []
+    home.coletor = SimpleNamespace(
+        ingest=lambda plug: calls.append(("ingest", plug)),
+        unavailable=lambda: calls.append(("unavailable", None)),
+    )
+    run(home._refrescar())
+    assert calls == [("ingest", mcp.dev["P0"])]
+    mcp.down = True
+    run(home._refrescar())
+    assert calls[-1] == ("unavailable", None)
+    assert home._falhas_consecutivas == 1
+    mcp.down = False
+    run(home._refrescar())
+    assert home._falhas_consecutivas == 0
+    home.coletor = None
+    run(home._refrescar())
+    run(home.parar())
+
+
+def test_collector_failure_does_not_affect_home(tmp_path):
+    home, mcp, _ = make(tmp_path, FakeMcp(unit="W"))
+
+    def fail(*args):
+        raise RuntimeError("secret")
+
+    home.coletor = SimpleNamespace(ingest=fail, unavailable=fail)
+    run(home._refrescar())
+    assert run(home.ler_consumo()) == 55
+    mcp.down = True
+    run(home._refrescar())
+    assert not run(home.estado()).mcp_ok
+    run(home.parar())

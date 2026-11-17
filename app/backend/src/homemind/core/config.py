@@ -2,6 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -10,6 +11,8 @@ class Settings(BaseSettings):
     # Nunca logar nem devolver este valor (header X-API-Key do MCP Altice).
     mcp_api_key: str = ""
     mcp_client_type: str = "core"
+    mcp_poll_seconds: float = Field(default=5.0, ge=1.0)
+    mcp_poll_backoff_max_s: float = 60.0
     mcp_oauth_client_id: str = "mcp-client"
     mcp_oauth_callback_port: int = 5434
     mcp_oauth_callback_url: str = "http://mcp-redirect.futurelabsinnovations.com:5434/callback"
