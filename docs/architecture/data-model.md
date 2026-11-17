@@ -1,5 +1,7 @@
 # Modelo de dados
 
+> **HOUSE-03 #86 (Draft PR #142):** propõe `device`, `appliance`, `appliance_state`, `appliance_meter_link` e `appliance_signature` na migração `0101_house_appliance_catalog.sql`, com intervalos históricos. O esquema só ficará na `main` após merge. Detalhes em [house-03-appliance-catalog.md](house-03-appliance-catalog.md).
+
 **Estado.** IMPLEMENTADAS em SQLite: `household`, `room`, `resident`, `membership`, `domain_event`, `processed_event`, `event_failure`, `schema_migration` (`core/migrations/0001`, `0002`). As restantes entidades têm **modelo Pydantic implementado** (`contracts/`) e tabelas **PLANEADAS**, criadas pelo dono de cada módulo (§Persistência). Convenções (IMPLEMENTADAS): IDs UUID (texto); instantes UTC com fuso; **dinheiro em cêntimos inteiros** (`*_cents`); **energia em Wh inteiros** (`energy_wh`); **potência em W** (`float`); preço em **milicêntimos/kWh**; ausência de medição = `NULL`/`None`, nunca 0; nomes em inglês `snake_case`; texto de UI em PT-PT.
 
 ## Proveniência (transversal) — IMPLEMENTADA
