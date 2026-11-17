@@ -16,7 +16,7 @@ from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from datetime import UTC, datetime
 from typing import Any
 
-from homemind.connectors.altice_auth import altice_session, needs_login
+from homemind.connectors.altice_auth import OAuthReauthRequired, altice_session, needs_login
 from homemind.connectors.write_grant import read_grant
 from homemind.contracts.home import (
     CORES,
@@ -38,6 +38,7 @@ _WRITABLE = {"lamp": {"power", "brightness", "color_rgb"}, "plug": {"power"}}
 _POLL_SECONDS = 5
 _READ_TIMEOUT_S = 8
 _OPEN_TIMEOUT_S = 10
+_CLOSE_TIMEOUT_S = 5
 _WRITE_TIMEOUT_S = 14
 _READBACK_RETRIES = 5
 _READBACK_GAP_S = 0.5
@@ -46,7 +47,7 @@ _STALE_S = 30  # leitura de consumo mais antiga que isto deixa de ser devolvida
 _POWER = {"on": True, "off": False}  # qualquer outro valor = desconhecido
 _SEM_CONTACTO_MIN = 5  # só diagnóstico na mensagem de falha; nunca bloqueia escritas
 _RGB_TOL = 3  # arredondamentos do brilho; o RGB devolvido vem escalado por ele
-_UNIT_FACTOR = {"W": 1.0, "w": 1.0, "mW": 0.001, "milliwatt": 0.001}
+_UNIT_FACTOR = {"W": 1.0, "w": 1.0, "dW": 0.1, "mW": 0.001, "milliwatt": 0.001}
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[Any]]
 EstadoOuvinte = Callable[[EstadoCasa, bool], None]
@@ -183,11 +184,14 @@ def _lamp_state(device: dict[str, Any]) -> EstadoLampada:
     return EstadoLampada(ligada=_power(device), cor=_color_name(rgb), rgb=rgb, brilho=brilho)
 
 
-def _plug_consumption(device: dict[str, Any]) -> float | None:
-    """Watts só com unidade declarada pelo MCP; a capability observada não a declara."""
+def _plug_consumption(device: dict[str, Any], override: str = "") -> float | None:
+    """Watts só com unidade conhecida: a declarada pelo MCP (tem prioridade) ou `override`.
+
+    A capability observada no kit real não declara unidade; sem override o consumo fica `None`.
+    """
     cap = _capabilities(device).get("instantPower", {})
     raw = cap.get("value")
-    factor = _UNIT_FACTOR.get(cap.get("unit") or cap.get("unitOfMeasure"))
+    factor = _UNIT_FACTOR.get(cap.get("unit") or cap.get("unitOfMeasure") or override)
     if isinstance(raw, int | float) and not isinstance(raw, bool) and factor is not None:
         return float(raw) * factor
     return None
@@ -278,16 +282,21 @@ class _Conexao:
             # chegue entretanto abre uma sessão nova em vez de ficar numa fila que ninguém lê.
             if self._task is eu:
                 self._task = None
+            # Fecha ANTES de resolver os futuros: o erro verdadeiro (ex.: OAuthReauthRequired
+            # levantado na tarefa filha do SDK) só aparece no fecho e não pode ser escondido
+            # por um ConnectionError genérico.
+            try:
+                async with asyncio.timeout(_CLOSE_TIMEOUT_S):
+                    await stack.aclose()
+            except BaseException as close_exc:  # noqa: BLE001 — fechar nunca esconde o erro
+                if needs_login(close_exc):
+                    erro = OAuthReauthRequired("sessão OAuth MCP expirada")
             if fut is not None and not fut.done():  # cancelada a meio de um pedido
                 fut.set_exception(erro)
             while not self._fila.empty():  # pedidos que ficaram para trás (ex.: falha ao abrir)
                 _, fut, _ = self._fila.get_nowait()
                 if not fut.done():
                     fut.set_exception(erro)
-            try:
-                await stack.aclose()
-            except BaseException:  # noqa: BLE001 — fechar nunca deve esconder o erro original
-                pass
 
 
 class McpHome:
@@ -346,9 +355,9 @@ class McpHome:
         ):
             return self._recusar("argumentos inválidos")
         changes: list[dict[str, Any]] = []
-        # Só omite o "power on" se a cache fresca já o confirma; "off" é sempre enviado.
-        if not (ligada and self._lampada.ligada is True and self._fresco()):
-            changes.append({"type": "power", "value": "on" if ligada else "off"})
+        # O power é sempre enviado (idempotente): a cache pode estar desatualizada (alguém
+        # apagou a luz na app da Altice) e omiti-lo daria um falso negativo.
+        changes.append({"type": "power", "value": "on" if ligada else "off"})
         if cor is not None:
             r, g, b = CORES[cor]
             changes.append({"type": "color_rgb", "redValue": r, "greenValue": g, "blueValue": b})
@@ -459,11 +468,20 @@ class McpHome:
     async def _refrescar(self) -> None:
         async with self._lock:
             inicio = time.monotonic()
-            try:
-                await self._con.executar(self._ler_job, _READ_TIMEOUT_S)
-                self._mcp_ok = True
-            except Exception as exc:
-                self._falha(exc)
+            falha: Exception | None = None
+            for _ in range(2):
+                # Uma falha isolada não apaga o estado: repete-se a leitura (idempotente) logo
+                # numa sessão nova. Só a 2.ª falha seguida invalida a cache (`_falha`).
+                try:
+                    await self._con.executar(self._ler_job, _READ_TIMEOUT_S)
+                    self._mcp_ok, falha = True, None
+                    break
+                except Exception as exc:
+                    falha = exc
+                    if needs_login(exc):  # repetir não ajuda: só `make mcp-login`
+                        break
+            if falha is not None:
+                self._falha(falha)
             self.tempos_ms["poll"] = round((time.monotonic() - inicio) * 1000)
         self._emitir()
 
@@ -509,10 +527,13 @@ class McpHome:
             self._lampada = _lamp_state(lamp)
         if plug is not None:
             self._tomada = EstadoTomada(ligada=_power(plug))
-            self._consumo_w = _plug_consumption(plug)
+            self._consumo_w = _plug_consumption(plug, self._settings.mcp_instantpower_unit)
             self._consumo_em = datetime.now(UTC)
             if self._consumo_w is None and self._aviso is None:
-                self._aviso = "Unidade de instantPower não declarada; consumo em W desconhecido."
+                self._aviso = (
+                    "Unidade de instantPower não declarada (MCP_INSTANTPOWER_UNIT); "
+                    "consumo em W desconhecido."
+                )
         self._lido_em = datetime.now(UTC)
 
     # ---- escritas --------------------------------------------------------------------------
@@ -544,6 +565,7 @@ class McpHome:
             return self._recusar("alteração fora da whitelist")
         inicio = time.monotonic()
         erro: str | None = None
+        falha_transporte: Exception | None = None
         enviado = False
         device_id: str | None = None
         atual: dict[str, Any] | None = None
@@ -577,6 +599,7 @@ class McpHome:
                 atual = await self._con.executar(job, _WRITE_TIMEOUT_S)
             except Exception as exc:
                 # Resultado incerto: nunca repetir a escrita; só reler.
+                falha_transporte = exc
                 erro = erro or f"escrita sem confirmação de transporte ({type(exc).__name__})"
                 if needs_login(exc):
                     erro = "sessão OAuth MCP expirada"
@@ -597,8 +620,8 @@ class McpHome:
                     minutos = _minutos_sem_contacto(atual)
                     if minutos is not None and minutos >= _SEM_CONTACTO_MIN:
                         erro += f" (dispositivo sem contactar a cloud há {minutos} min)"
-            elif enviado:
-                self._mcp_ok = False
+            elif enviado:  # nem a releitura funcionou: estado desconhecido, não o de antes
+                self._falha(falha_transporte or ConnectionError("sem releitura"))
             self.tempos_ms[f"escrita_{role}"] = round((time.monotonic() - inicio) * 1000)
         self.ultima_falha = None if ok else (erro or "sem confirmação")
         log.info(

@@ -195,8 +195,8 @@ Operação detalhada em `mcp-demo.md`; hipóteses para a lâmpada em `mcp-capabi
 ### MCP-06 — Consumo
 - **Issue:** #12 · **Tipo:** REAL, só leitura
 - **Pré-requisitos:** carga de potência conhecida (ex.: lâmpada de 60 W) na tomada.
-- **Passos:** `auth $API/api/state` com a carga ligada e desligada; comparar com a potência nominal e com a app oficial.
-- **Esperado (hoje):** `consumo_w: null` e aviso «Unidade de instantPower não declarada». Anotar o valor bruto de `instantPower` visto na app/MCP com a carga ligada.
+- **Passos:** com a carga ligada e depois desligada, correr `make mcp-doctor`; na linha «Tomada» ler `instantPower`, `instantVoltage` e `instantCurrent` (value/min/max e chaves de unidade declaradas, sem IDs). Depois `auth $API/api/state`; comparar com a potência nominal e com a app oficial.
+- **Esperado (hoje):** `consumo_w: null` e aviso «Unidade de instantPower não declarada». Anotar o valor bruto de `instantPower` (e de tensão/corrente) mostrado por `make mcp-doctor` com a carga ligada.
 - **PASS** se o sistema **não** inventar watts. A unidade só se fecha com a resposta dos mentores ou com a comparação com a carga conhecida.
 
 ### MCP-07 — ⚠️ Falhas, autorização e reconexão

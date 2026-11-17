@@ -14,7 +14,7 @@ class FakeHome:
     async def definir_lampada(
         self, ligada: bool, cor: Cor | None = None, brilho: int | None = None
     ) -> bool:
-        if brilho is not None and not 1 <= brilho <= 100:
+        if ligada and brilho is not None and not 1 <= brilho <= 100:  # ao desligar é ignorado
             return False
         mudar: dict = {"ligada": ligada}
         if ligada and cor is not None:

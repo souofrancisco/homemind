@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     mcp_write_max_minutes: int = 60
     mcp_lamp_id: str = ""
     mcp_plug_id: str = ""
+    # Unidade de `instantPower` quando o MCP não a declara (o kit real não declara). Vazio =
+    # desconhecida: consumo_w fica null. Confirmar com carga conhecida (docs/mcp-capabilities.md).
+    mcp_instantpower_unit: Literal["", "W", "dW", "mW"] = ""
     enable_physical_writes: bool = False
     # Authentik (OIDC). Issuer = URL pública do provider (campo `iss` dos tokens);
     # jwks_url pode ser interno (ex.: http://authentik-server:9000/...) em Docker.
