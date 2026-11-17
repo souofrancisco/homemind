@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # desconhecida: consumo_w fica null. Confirmar com carga conhecida (docs/mcp-capabilities.md).
     mcp_instantpower_unit: Literal["", "W", "dW", "mW"] = ""
     enable_physical_writes: bool = False
+    # SQLite partilhado (eventos, casas, memberships). Ficheiro local; ":memory:" nos testes.
+    db_path: str = "data/homemind.sqlite3"
+    db_busy_timeout_ms: int = 5000
     # Authentik (OIDC). Issuer = URL pública do provider (campo `iss` dos tokens);
     # jwks_url pode ser interno (ex.: http://authentik-server:9000/...) em Docker.
     oidc_issuer: str = "http://localhost:9000/application/o/homemind/"
