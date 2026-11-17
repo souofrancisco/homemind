@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -6,7 +7,6 @@ from fastapi.testclient import TestClient
 
 from homemind.contracts.video import FrameVideo
 from homemind.core.config import get_settings
-from homemind.features.auth.service import User, current_user
 from homemind.features.video import service
 from homemind.features.video.router import video
 from homemind.features.video.service import partes_mjpeg
@@ -28,21 +28,32 @@ class FonteFalsa:
         return FrameVideo(imagem=imagem, indice=self.indice, t=0.0)
 
 
-def test_video_503_sem_fonte_configurada(monkeypatch):
+OPERADOR = {"x-test-sub": "sub-operador"}
+
+
+def test_video_503_sem_fonte_configurada(client, monkeypatch):
     monkeypatch.delenv("VIDEO_SOURCE", raising=False)
     get_settings.cache_clear()
-    app.dependency_overrides[current_user] = lambda: User(sub="t")
     try:
-        resposta = TestClient(app).get("/api/video")
+        resposta = client.get("/api/video", headers=OPERADOR)
     finally:
-        app.dependency_overrides.clear()
         get_settings.cache_clear()
     assert resposta.status_code == 503
     assert resposta.json()["error"]["code"] == "http_503"
 
 
-def test_video_401_sem_login():
-    assert TestClient(app).get("/api/video").status_code == 401
+def test_video_401_sem_login(client):
+    assert client.get("/api/video").status_code == 401
+
+
+def test_video_so_o_operador_recebe_imagens(client, monkeypatch):
+    """Senhorio, inquilino e quem não tem membership: 403, mesmo com a fonte a funcionar."""
+    monkeypatch.setattr(service, "_fonte", FonteFalsa())
+    monkeypatch.setattr(service, "get_settings", lambda: SimpleNamespace(video_source="x"))
+    for sub in ("sub-senhorio", "sub-ana", "sub-bruno", "sub-desconhecido"):
+        r = client.get("/api/video", headers={"x-test-sub": sub})
+        assert r.status_code == 403, sub
+        assert r.json()["error"]["code"] == "forbidden_role"
 
 
 def test_video_responde_multipart_mjpeg():

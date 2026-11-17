@@ -62,7 +62,7 @@ Caminhos relativos a `app/backend/src/homemind/` (backend) e `app/frontend/src/`
 | Caminho | Destino | Justificação | Resp. |
 |---|---|---|---|
 | `features/video` (`fonte.py`, `service.py`, `router.py`, `medir.py`) | **KEEP** | RTSP, reconexão, clip de reserva e último frame servem a câmara da porta; leitura RTSP de 10 min sem quedas já medida | P2 |
-| `features/video/router.py` (`GET /api/video` MJPEG) | **ADAPT** | Só diagnóstico do operador, com máscara de privacidade; nunca para o senhorio | P2 |
+| `features/video/router.py` (`GET /api/video` MJPEG) | **ADAPT** | Só diagnóstico do operador, com máscara de privacidade; nunca para o senhorio. Restrição ao `operator` **IMPLEMENTADA** (fix/video-mjpeg-operador); máscara **PLANEADO** | P2 |
 | `features/visao/detetor.py` (`DetetorYolo`, YOLO11 + pose + ByteTrack) | **ADAPT** | Mantém-se a classe «pessoa» e o tracking; **sai** a deteção de caneca/livro/comando e a pose | P2 |
 | `features/visao/thread.py`, `dispositivo.py`, `pesos.py` | **KEEP** | Thread de visão, escolha de dispositivo (MPS/CUDA/CPU), descarga de pesos | P2 |
 | `features/visao/anotar.py` | **ADAPT** | Passa a desenhar só a soleira e a máscara a preto | P2 |

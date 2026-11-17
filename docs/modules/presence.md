@@ -61,7 +61,7 @@ Em dúvida a fonte é SIMULADA: `kit`/`rtsp` sem URL `rtsp://` caem para `clip`;
 `last_frame_at`, `door_mask_configured`), nunca imagem nem URL. Só o papel `operator` em **qualquer** casa (sem `household_id` na rota). **Decisão para a demo (uma casa); definitivo: `household_id` na rota (PLANEADO)**, ver P-28 em `decisions.md`. Senhorio, inquilino e sem membership recebem `403 forbidden_role`. Fonte ausente ou sem frame
 há mais de `VIDEO_SEM_FRAME_S` ⇒ `camera_ok=false` e sem `fps`; **nunca** se conclui «casa vazia». O
 `fps` é a cadência de frames novos entre duas consultas (`null` na primeira).
-`door_mask_configured` é sempre `false` até à PRES-02. `GET /api/video` (MJPEG) mantém-se como estava.
+`door_mask_configured` é sempre `false` até à PRES-02. `GET /api/video` (MJPEG) passou a exigir também o papel `operator` (o senhorio nunca vê imagens); a rota mantém-se (remoção/adaptação: BASE-04).
 
 ## Limites reais
 
