@@ -8,6 +8,10 @@ Fluxo: câmara → gesto → evento → regra → motor → `McpHome` → MCP Al
 
 `MCP_ENDPOINT`, `MCP_API_KEY`, `MCP_CLIENT_TYPE`, `MCP_OAUTH_*`. Nunca commitar o `.env`.
 
+Opcional: `MCP_INSTANTPOWER_UNIT` (`W`, `dW` = 0,1 W ou `mW`). O MCP não declara a unidade de
+`instantPower`; sem esta variável `consumo_w` fica `null`. Só a definir depois de confirmar a
+unidade com uma carga conhecida (ver `docs/mcp-capabilities.md`).
+
 ## 2. Login OAuth (só no host, interativo)
 
 ```bash
@@ -67,9 +71,9 @@ funcionar. O FakeHome é independente do MCP.
 
 | Sinal | Significado |
 | --- | --- |
-| `mcp_ok=false` | última leitura MCP falhou; lâmpada/tomada ficam `null` (desconhecido), consumo `null`; recupera sozinho |
+| `mcp_ok=false` | duas leituras seguidas falharam (a 1.ª falha repete-se logo numa sessão nova); lâmpada/tomada ficam `null` (desconhecido), consumo `null`; recupera sozinho. Também após uma escrita enviada cuja releitura falhou |
 | `casa.aviso` «Sessão OAuth MCP expirada…» | `make mcp-login` no host |
-| `casa.aviso` «Unidade de instantPower não declarada…» | consumo em W desconhecido (ver #12); `consumo_w=null` |
+| `casa.aviso` «Unidade de instantPower não declarada…» | consumo em W desconhecido (ver #12); `consumo_w=null`; definir `MCP_INSTANTPOWER_UNIT` depois de confirmar a unidade |
 | `casa.aviso` «…inequivocamente…» | 0 ou vários candidatos; definir `MCP_LAMP_ID`/`MCP_PLUG_ID` |
 | evento «Falha ao atuar em … : escritas físicas desativadas» | flag a false |
 | evento «… sem sessão de escritas autorizada» | grant ausente/expirado: `make mcp-writes-on` |
@@ -94,3 +98,19 @@ O servidor demora ~2 s na 1.ª chamada de cada sessão e ~0,5–0,8 s nas seguin
 mantém uma sessão persistente (aberta por uma tarefa dona), cacheia catálogo validado e IDs, e faz a
 escrita e a releitura na mesma sessão. Leitura de ambos os dispositivos em sessão quente: ~0,9 s
 (antes ~3 s). Os tempos ficam em `McpHome.tempos_ms` e no log (`escrita MCP lamp: ok em N ms`).
+
+**Medição por refazer.** Os tempos acima foram medidos com o transporte a enviar cada pedido MCP
+duas vezes (o SDK `mcp` 1.12.4 reenvia sempre o pedido autenticado; correção em
+`connectors/altice_auth.py`). Com um pedido por chamada as latências devem baixar: voltar a medir
+no kit real e atualizar esta secção.
+
+**Pior caso com o MCP pendurado.** Uma escrita espera pelo lock do polling e depois pelo seu
+próprio timeout: no pior caso ~22 s até devolver falha (por exemplo `/api/off` com o MCP
+pendurado). É aceitável para a demo: a resposta é sempre `success: false`/`mcp_unavailable` e nunca
+um estado inventado. O polling repete uma leitura falhada uma vez, o que também pode ocupar o lock
+até ~2× o timeout de leitura quando o servidor está em baixo.
+
+**Pedido ao motor (P4, ainda não implementado).** Se uma leitura falhada deixar `lampada.ligada`
+a `None` no instante em que a pessoa sai, o motor guarda estado desconhecido e não repõe a luz ao
+regressar. Proposta: em `engine.py`, reaplicar `self.modo.acoes` ao regressar quando
+`_guardado.lampada.ligada is None`.

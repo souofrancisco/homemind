@@ -106,12 +106,15 @@ Evidência recolhida em leitura (2026-11-17), incluindo `get_device_details` com
   Compatível com décimas de W, mW ou W — não distinguível.
 - Com a tomada em vazio `instantPower` = 0, logo não dá para comparar `V × I` com a potência.
 
-**Não confirmado:** a unidade de `instantPower`. `consumo_w` mantém-se `null`. Perguntar aos
+**Não confirmado:** a unidade de `instantPower`. `consumo_w` mantém-se `null` por omissão. Perguntar aos
 mentores da Altice: (1) a unidade de `instantPower` (W, 0,1 W ou mW) e das capabilities
 `instantVoltage`/`instantCurrent`; (2) se `todayConsumption` é kWh. Alternativa interna: ligar uma
 carga conhecida (ex.: 60 W) e comparar `instantPower` com `instantVoltage × instantCurrent`.
-Confirmada a unidade, basta acrescentá-la em `_UNIT_FACTOR` (`mcp_home.py`); o polling,
-timestamp e limpeza em falha já estão implementados.
+Confirmada a unidade, define-se `MCP_INSTANTPOWER_UNIT` em `app/.env` (`W`, `dW` = 0,1 W ou `mW`)
+e reinicia-se o backend: o `McpHome` converte para W e `consumo_w` deixa de ser `null`. Se o MCP
+passar a declarar a unidade na capability (`unit`/`unitOfMeasure`), essa tem prioridade sobre a
+variável. Vazia (por omissão) = comportamento anterior (`null`, com aviso). O polling, timestamp
+e limpeza em falha já estão implementados.
 
 ## Verificação física da lâmpada (#10/#11) — 2026-11-17, BLOQUEADA
 
@@ -159,7 +162,7 @@ Para ajudar a distinguir H1, quando uma escrita não é confirmada o `McpHome` a
 - Leituras de `get_home_devices` e `get_device_details` foram efetuadas. Escritas: ver a
   verificação física acima (sem efeito físico confirmado); a tomada não foi testada.
 - A unidade de `instantPower` não consta no schema/resposta observados. Consumo em watts não está
-  validado.
+  validado (só se obtém com `MCP_INSTANTPOWER_UNIT`, depois de confirmada a unidade).
 - `get_home_devices` e `get_device_details` devolvem as mesmas capabilities (comparado em leitura).
   O polling ObjectOS regista separadamente o instante da sua última leitura.
 - Latência observada: 1.ª chamada de cada sessão ~2 s, seguintes ~0,5–0,8 s.

@@ -5,6 +5,10 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
+
+from homemind.connectors.altice_auth import OAuthReauthRequired
+from homemind.connectors.fake_home import FakeHome
 from homemind.connectors.mcp_home import McpHome
 from homemind.connectors.write_grant import read_grant, write_grant
 from homemind.core.config import Settings
@@ -27,6 +31,8 @@ class FakeMcp:
         self.down = False
         self.explicit_error = False
         self.ignore_writes = False
+        self.fail_reads = 0  # falhas transitórias de get_device_details (a sessão fecha)
+        self.die_after_write = False  # o transporte cai logo após a 1.ª escrita
         self.list_calls = 0
         self.opens = 0
         self.calls: list[tuple[str, dict]] = []
@@ -88,6 +94,9 @@ class FakeMcp:
         if name == "get_home_devices":
             return ok({"devices": list(self.dev.values())})
         if name == "get_device_details":
+            if self.fail_reads > 0:
+                self.fail_reads -= 1
+                raise ConnectionError("transitório")
             return ok(self.dev[args["deviceId"]])
         if self.explicit_error:
             return SimpleNamespace(isError=True, structuredContent=None, content=[])
@@ -105,15 +114,18 @@ class FakeMcp:
             b = caps["brightness"]["value"]
             for k, c in zip(("redValue", "greenValue", "blueValue"), dev["base"], strict=True):
                 caps["color_rgb"][k] = round(c * b / 100)
+        if self.die_after_write:
+            self.down = True
         return ok({})
 
     def writes(self):
         return [c for c in self.calls if c[0] == "update_device_capabilities"]
 
 
-def make(tmp_path, mcp=None, writes=True, grant=("lamp", "plug"), minutes=10):
+def make(tmp_path, mcp=None, writes=True, grant=("lamp", "plug"), minutes=10, power_unit=""):
     mcp = mcp or FakeMcp()
     s = Settings(
+        mcp_instantpower_unit=power_unit,
         enable_physical_writes=writes,
         mcp_write_grant_path=tmp_path / "grant.json",
         mcp_write_max_minutes=60,
@@ -310,3 +322,183 @@ def test_accepted_but_unapplied_write_is_failure_without_retry(tmp_path, monkeyp
     assert len(fake.writes()) == 1
     assert "não corresponde" in home.ultima_falha
     assert "sem contactar a cloud há 2" in home.ultima_falha
+
+
+# ---- B2: OAuth expirado na tarefa filha do SDK ------------------------------------------------
+
+
+def test_reauth_in_sdk_child_task_reports_login(tmp_path):
+    """Regressão: o aviso tem de mandar fazer `make mcp-login`, não «ConnectionError»."""
+
+    @asynccontextmanager
+    async def factory():
+        async def filha():
+            await asyncio.sleep(0.05)
+            raise OAuthReauthRequired("refresh expirado")
+
+        async with asyncio.TaskGroup() as tg:  # como o transporte do SDK: o filho mata o pai
+            tg.create_task(filha())
+            yield SessionLenta()
+
+    class SessionLenta(FakeMcp):
+        async def list_tools(self):
+            await asyncio.sleep(0.3)
+            return await super().list_tools()
+
+    s = Settings(mcp_write_grant_path=tmp_path / "grant.json")
+    home = McpHome(s, factory)
+    run(home._refrescar())
+    casa = run(home.estado())
+    assert casa.mcp_ok is False
+    assert "make mcp-login" in casa.aviso and "ConnectionError" not in casa.aviso
+    run(home.parar())
+
+
+# ---- B3: escrita enviada e transporte caído -------------------------------------------------
+
+
+def test_sent_write_with_dead_transport_leaves_unknown_state(tmp_path):
+    home, mcp, _ = make(tmp_path)
+    run(home._refrescar())
+    assert run(home.estado()).lampada.ligada is False
+    mcp.die_after_write = True
+    assert run(home.definir_lampada(True)) is False
+    casa = run(home.estado())
+    assert mcp.writes()  # a escrita chegou a ser enviada (e nunca é repetida)
+    assert len(mcp.writes()) == 1
+    assert casa.mcp_ok is False and casa.lampada.ligada is None and casa.tomada.ligada is None
+
+
+# ---- B4: unidade de instantPower ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("unit", "declared", "esperado"),
+    [
+        ("", None, None),  # sem unidade conhecida: desconhecido, nunca inventado
+        ("W", None, 55.0),
+        ("dW", None, 5.5),
+        ("mW", None, 0.055),
+        ("W", "mW", 0.055),  # a unidade declarada pelo dispositivo tem prioridade
+    ],
+)
+def test_instantpower_unit_override(tmp_path, unit, declared, esperado):
+    home, _, _ = make(tmp_path, FakeMcp(unit=declared), power_unit=unit)
+    run(home._refrescar())
+    consumo = run(home.ler_consumo())
+    if esperado is None:
+        assert consumo is None
+        assert run(home.estado()).tomada.consumo_w is None
+    else:
+        assert consumo == pytest.approx(esperado)
+        assert run(home.estado()).tomada.consumo_w == pytest.approx(esperado)
+
+
+# ---- B5: uma falha de leitura isolada não apaga o estado ----------------------------------
+
+
+def test_single_poll_failure_keeps_state_two_in_a_row_clear_it(tmp_path):
+    home, mcp, _ = make(tmp_path)
+    run(home._refrescar())
+    mcp.fail_reads = 1
+    run(home._refrescar())  # falha 1× e a repetição (sessão nova) funciona
+    casa = run(home.estado())
+    assert casa.mcp_ok is True and casa.tomada.ligada is True and casa.lampada.brilho == 30
+    assert mcp.opens == 2
+    mcp.fail_reads = 4  # a leitura de lâmpada e tomada é paralela: 2 falhas por tentativa
+    run(home._refrescar())  # duas tentativas falhadas seguidas
+    casa = run(home.estado())
+    assert casa.mcp_ok is False and casa.lampada.ligada is None and "indisponível" in casa.aviso
+
+
+# ---- B6: power on nunca é omitido -----------------------------------------------------------
+
+
+def test_power_on_sent_even_if_cache_says_on(tmp_path):
+    home, mcp, _ = make(tmp_path)
+    mcp.dev["L0"]["capabilities"][0]["value"] = "on"
+    run(home._refrescar())
+    assert run(home.estado()).lampada.ligada is True  # cache fresca: ligada
+    mcp.dev["L0"]["capabilities"][0]["value"] = "off"  # apagada na app da Altice entretanto
+    assert run(home.definir_lampada(True)) is True
+    assert {"type": "power", "value": "on"} in [a["body"] for _, a in mcp.writes()]
+    assert run(home.estado()).lampada.ligada is True
+
+
+# ---- B7 e conformidade com o contrato Home -----------------------------------------------------
+
+
+def test_fake_home_ignores_brightness_when_off():
+    fake = FakeHome()
+    assert run(fake.definir_lampada(False, None, 999)) is True
+    assert run(fake.definir_lampada(True, None, 999)) is False
+
+
+def _fake(tmp_path):
+    return FakeHome(), None
+
+
+def _mcp(tmp_path):
+    home, mcp, _ = make(tmp_path)
+    run(home._refrescar())
+    return home, mcp
+
+
+@pytest.mark.parametrize("criar", [_fake, _mcp], ids=["fake", "mcp"])
+def test_home_contract_conformance(tmp_path, criar):
+    home, _ = criar(tmp_path)
+    for brilho, esperado in ((0, False), (1, True), (100, True), (101, False)):
+        assert run(home.definir_lampada(True, "azul", brilho)) is esperado, brilho
+    assert run(home.definir_lampada(True, "azul", 40)) is True
+    # com ligada=False cor e brilho são ignorados (mesmo inválidos)
+    assert run(home.definir_lampada(False, "vermelho", 999)) is True
+    assert run(home.estado()).lampada.ligada is False
+    assert run(home.definir_lampada(True, None, None)) is True  # None = manter
+    assert run(home.definir_tomada(True)) is True
+    consumo = run(home.ler_consumo())
+    assert consumo is None or isinstance(consumo, float)
+    casa = run(home.estado())
+    if isinstance(home, FakeHome):
+        assert (casa.backend, casa.mcp_ok) == ("fake", False)
+    else:
+        assert (casa.backend, casa.mcp_ok) == ("mcp", True)
+    assert casa.lampada.ligada is True and casa.tomada.ligada is True
+
+
+# ---- Integração: motor real sobre McpHome (servidor MCP falso) --------------------------------
+
+
+def test_engine_over_mcp_home_gesture_outage_and_recovery(tmp_path):
+    from homemind.contracts.eventos import ObjetoLevantado
+    from homemind.features.engine.engine import Engine, Estado, Tempos
+    from homemind.features.engine.eventlog import EventLog
+    from homemind.features.engine.rules import RulesStore
+
+    async def cenario():
+        home, mcp, _ = make(tmp_path)
+        regras = RulesStore(tmp_path / "rules.json")
+        regras.carregar()
+        engine = Engine(home, regras, EventLog(tmp_path / "e.jsonl", "mcp"), Tempos())
+        await home._refrescar()
+        await engine.iniciar()
+        await engine.processar(ObjetoLevantado(classe="livro", hora=datetime.now(UTC)))
+        assert engine.estado == Estado.ATIVO
+        casa = engine.home_state().casa
+        assert (casa.lampada.ligada, casa.lampada.brilho) == (True, 40)
+        assert casa.tomada.ligada is True
+
+        mcp.down = True  # MCP em baixo
+        res = await engine.desligar_tudo()
+        assert res.success is False and res.code == "mcp_unavailable"
+        assert res.devices.lampada == "unknown" and res.devices.tomada == "unknown"
+        await home._refrescar()
+        assert engine.home_state().mcp_ok is False
+
+        mcp.down = False  # recuperação
+        await home._refrescar()
+        assert engine.home_state().mcp_ok is True
+        res = await engine.desligar_tudo()
+        assert res.success is True and res.code is None
+        await home.parar()
+
+    run(cenario())

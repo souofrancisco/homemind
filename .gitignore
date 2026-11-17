@@ -6,6 +6,9 @@
 *.key
 credentials*.json
 app/.mcp-tokens.json
+# clientes MCP locais (contêm X-API-Key)
+.mcp.json
+.vscode/mcp.json
 app/.mcp-auth/
 # data
 *.db

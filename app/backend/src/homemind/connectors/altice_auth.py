@@ -12,7 +12,7 @@ import re
 import tempfile
 import time
 import webbrowser
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Any
@@ -154,6 +154,24 @@ class JsonTokenStorage:
 
 class PersistentOAuthClientProvider(OAuthClientProvider):
     """Restore SDK expiry accounting so persisted tokens refresh after a restart."""
+
+    async def async_auth_flow(
+        self, request: httpx.Request
+    ) -> AsyncGenerator[httpx.Request, httpx.Response]:
+        # O SDK mcp 1.12.4 (client/auth.py, ~l.548) reenvia SEMPRE o pedido ("Retry with new
+        # tokens" fora do `if 401`), duplicando cada chamada ao servidor. Só repetimos após 401.
+        inner = super().async_auth_flow(request)
+        try:
+            req = await inner.__anext__()
+            while True:
+                resp = yield req
+                if req is request and resp.status_code != 401:
+                    return
+                req = await inner.asend(resp)
+        except StopAsyncIteration:
+            return
+        finally:
+            await inner.aclose()
 
     async def _initialize(self) -> None:
         await super()._initialize()
@@ -409,6 +427,22 @@ def _schema_for_tool(tool: object) -> dict[str, object]:
     )
 
 
+_MEDIDAS_TOMADA = ("instantPower", "instantVoltage", "instantCurrent")
+_CHAVES_UNIDADE = ("unit", "unitOfMeasure", "units")
+
+
+def _imprimir_medidas_tomada(caps: dict[str, dict[str, Any]]) -> None:
+    """Valores brutos (value/min/max e unidade declarada) das medidas da tomada, sem IDs."""
+    for nome in _MEDIDAS_TOMADA:
+        cap = caps.get(nome)
+        if cap is None:
+            print(f"  {nome}: não declarada.")
+            continue
+        campos = {k: cap[k] for k in ("value", "min", "max") if k in cap}
+        campos.update({k: cap[k] for k in _CHAVES_UNIDADE if k in cap})
+        print(f"  {nome}: {json.dumps(campos, ensure_ascii=False)}")
+
+
 async def doctor() -> None:
     settings = get_settings()
     _, storage = create_oauth_provider()
@@ -438,6 +472,8 @@ async def doctor() -> None:
         minutos = _minutos_sem_contacto(device)
         contacto = "desconhecido" if minutos is None else f"há {minutos} min"
         print(f"{rotulo}: {json.dumps(campos, ensure_ascii=False)}; último contacto {contacto}.")
+        if rotulo == "Tomada":
+            _imprimir_medidas_tomada(caps)
     if aviso:
         print(f"Aviso: {aviso}")
     for tool in result.tools:
