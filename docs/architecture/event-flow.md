@@ -12,6 +12,8 @@ flowchart LR
 
   E -->|"consumption_detected"| B["billing (P4)"]
   P -->|"presence.changed"| B
+  E -->|"consumption_detected (dono), sensor.reading_recorded"| P
+  P -->|"presence.confirmation_needed, safety.alert_raised"| N
   B -->|"confirmation_needed"| N
   N -->|"notification.created (WS)"| UI["Aplicação"]
   UI -->|"respond"| N
@@ -42,10 +44,10 @@ sequenceDiagram
   E->>B: consumption_detected (location=common, owner=Bruno)
   B->>B: regra da casa = «perguntar» e custo acima do limiar
   B->>N: confirmation_needed (event_id, custo estimado)
-  N->>U: notification.created «De quem é esta conta?» [É minha] [É de todos] [Não sei]
+  N->>U: notification.created «De quem é esta conta?» [É minha] [É de todos] [Não sei] [É de outra pessoa]
   U->>N: respond(action_id = mine)
-  N->>N: guarda resposta (autor e hora), status = actioned
-  N->>B: notification.responded
+  N->>N: guarda o voto; confirmation_outcome = self_claimed → status = actioned
+  N->>B: notification.responded (outcome decidido)
   B->>B: Attribution(resident=Carla, method=confirmation), anterior = superseded
   B->>N: attribution_changed → notificação de confirmação «Registado na tua conta»
   Note over B: Sem resposta em 24 h → fallback da regra da casa (por igual ou por presença), Attribution(method=equal_fallback)
@@ -53,9 +55,9 @@ sequenceDiagram
 
 Regras:
 
-- Pode responder qualquer **inquilino ativo da casa**; a primeira resposta válida fixa a atribuição; uma resposta posterior em sentido contrário **não** a altera: cria um pedido de contestação visível para a casa (**PROPOSTA**, P-03).
-- «Não sei» mantém o pedido aberto até ao fim do prazo; depois aplica-se o fallback.
-- «É minha» é limitado: o morador só pode atribuir a si ou à conta comum, nunca a um terceiro.
+- **Votação (D-32, prevalece sobre a regra antiga «primeira resposta vence»):** vota qualquer **inquilino ativo da casa**, uma vez. Um «É minha» fecha (paga quem assumiu). «É de outra pessoa» (`other` + alvo) só decide quando **pelo menos metade** dos elegíveis (arredondado para cima) escolheu o mesmo alvo; se o próprio assumir antes, fecha com ele. Todos votaram sem decisão, ou 24 h sem decisão → **por todos**. Fonte única: `confirmation_outcome`.
+- Cada voto emite `notification.responded` com `outcome`; billing só cria a `Attribution` quando `outcome.decided`. Sem decisão até `expires_at`, billing aplica a divisão por todos pelo seu próprio prazo.
+- «Não sei» e «É de todos» contam como votos (para «votaram todos»), mas não decidem sozinhos.
 - Em `HOME_BACKEND=fake` ou com leituras `simulated`, a atribuição resultante é `simulated` e a notificação diz-o.
 
 ### Estados do consumo e da notificação
@@ -113,7 +115,7 @@ flowchart TD
 
 Notas:
 
-- **Arredondamento:** método do maior resto sobre `valor_i` em cêntimos; o resto distribui-se, um cêntimo de cada vez, pelas maiores partes fracionárias; empates resolvem-se por `resident_id` (determinístico). `Σ amount_cents = total_cents` é invariante testada.
+- **Arredondamento:** método do maior resto sobre `valor_i` em cêntimos; o resto distribui-se, um cêntimo de cada vez, pelas maiores partes fracionárias; empates resolvem-se por sorteio reproduzível (D-34: hash da casa, do mês da fatura e do morador; o mesmo mês dá sempre o mesmo resultado). `Σ amount_cents = total_cents` é invariante testada.
 - **Plafond solidário** (prioridade P1): os primeiros `N` kWh de aquecimento básico de cada quarto saem de `individual_kwh` e entram no resíduo.
 - **Bi-horário** (P2): o preço passa a depender da hora de cada `ConsumptionEvent`.
 - Exemplos numéricos de teste (ambos de 120 €) em [modules/billing.md](../modules/billing.md).

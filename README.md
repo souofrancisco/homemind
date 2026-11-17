@@ -31,7 +31,7 @@ Implementada hoje (ObjectOS), que é a que corre:
 
 ```mermaid
 flowchart LR
-  C["Câmara RTSP ou clip"] --> V["Visão local<br/>YOLO objetos + pose"]
+  C["Clip sintético local (demo)\n/captura desativada"] --> V["Visão local<br/>YOLO legado"]
   V --> G["Gestos e presença"]
   G -->|"eventos de texto"| M["Motor de regras e estados"]
   M --> H{"Home"}
@@ -87,7 +87,7 @@ O ficheiro de exemplo já arranca em modo simulado. Variáveis principais:
 |---|---|
 | `HOME_BACKEND` | `fake` (omissão, SIMULADO) ou `mcp` (dispositivos reais) |
 | `PROFILE` | `demo` reduz a espera do motor antigo de 180 s para 10 s |
-| `VIDEO_SOURCE` | URL RTSP ou caminho de um clip (contém credenciais: nunca partilhar) |
+| `VIDEO_SOURCE` | Só clip sintético em `app/data/privacy-test-clips/` com `PROFILE=demo`, `HOME_BACKEND=fake` e flag dev; RTSP recusado |
 | `VISAO_DETETOR` | `homemind.features.visao.detetor:DetetorYolo` liga a visão ao motor |
 | `NVIDIA_API_KEY` | Só para criar regras por texto; sem ela o resto funciona |
 | `MCP_*`, `ENABLE_PHYSICAL_WRITES` | Ver [docs/integrations/mcp-demo.md](docs/integrations/mcp-demo.md) |
@@ -116,7 +116,7 @@ Sem mais nada, o modo MCP é **só leitura**. As escritas físicas exigem `ENABL
 
 ### Visão real (opcional, fora do Docker)
 
-A imagem Docker não inclui YOLO/torch. Para visão real, correr o backend no host:
+A imagem Docker não inclui YOLO/torch. A captura real por RTSP e a rota MJPEG estão desativadas por PRIV-02. Para exercício legado somente com clip sintético local em ambiente de demo:
 
 ```bash
 cd app/backend
@@ -125,7 +125,7 @@ uv run python -m homemind.features.visao.pesos     # descarrega yolo11s.pt e yol
 uv run --env-file ../.env uvicorn homemind.main:app --host 0.0.0.0 --port 8000
 ```
 
-com `VIDEO_SOURCE` e `VISAO_DETETOR` definidos em `app/.env`. Noutras duas consolas:
+definir `PROFILE=demo`, `HOME_BACKEND=fake`, `ENABLE_DEV_VIDEO_PREVIEW=true`, um clip sintético allowlisted em `VIDEO_SOURCE` e `VISAO_DETETOR` em `app/.env`. O painel Conta Certa não recebe imagens; a página ObjectOS mostra a captura como desativada. Noutras duas consolas:
 
 ```bash
 make auth                                   # só o Authentik (login), em Docker
@@ -155,8 +155,8 @@ Não correr `make dev` ao mesmo tempo (ocuparia as portas 8000 e 5173).
 | Login dá erro ou página em branco no primeiro arranque | O Authentik ainda está a aplicar o blueprint; esperar um minuto e recarregar |
 | Porta ocupada | Definir `BACKEND_PORT`, `FRONTEND_PORT` ou `AUTHENTIK_PORT` em `app/.env` |
 | Painel mostra «offline» | Backend parado ou sessão expirada; ver `docker compose -f app/compose.yaml logs backend` |
-| Vídeo «Sem fonte de vídeo configurada» | `VIDEO_SOURCE` vazio (normal em FakeHome) |
-| Log «visão desligada» | Falta `VIDEO_SOURCE` e/ou `VISAO_DETETOR`, ou os pesos YOLO |
+| Página Câmara sem imagem | Esperado em PRIV-02: `/api/video` está sempre fechado; `VIDEO_SOURCE` não reabre o stream |
+| Log «visão desligada» | Falta configuração allowlisted de clip de teste, `HOME_BACKEND=fake`, `VISAO_DETETOR` ou pesos YOLO |
 | Criar regra por texto dá 503 | Falta `NVIDIA_API_KEY` |
 | `mcp_ok: false` com aviso de sessão expirada | `make mcp-login` no host |
 | Evento «escritas físicas desativadas» | Esperado: ver [docs/integrations/mcp-demo.md](docs/integrations/mcp-demo.md) |

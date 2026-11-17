@@ -38,12 +38,14 @@ A base é sempre `app/.demo-data/conta-certa-demo.sqlite3`. Não existe
 parâmetro de caminho no CLI e `DB_PATH` não é consultado. Para testes,
 `DemoStore(tmp_path)` permite um diretório temporário isolado.
 
-**Proteções do reset:** caminho dedicado; symlink/hardlink recusados;
-cabeçalho SQLite; marcador `demo_marker`; exatamente a casa F0
-`HOUSEHOLD` com `source_kind=demo`; WAL/SHM presentes recusados.
-Se houver outro utilizador/casa, ficheiro externo ou marcador ausente,
-o comando aborta sem alterar dados. Parar processos que mantenham a
-base aberta antes de resetar. Nenhum outro ficheiro é removido.
+**Proteções do reset:** o CLI usa um caminho fixo, sem aceitar argumentos de
+caminho; componentes de caminho, base e sidecars com symlink são recusados;
+hardlinks inesperados, cabeçalho SQLite inválido, marcador ausente, outra
+casa, residente/conta ou membership fora das fixtures também são recusados.
+`demo-reset` recusa WAL/SHM: fechar processos antes de resetar. `prepare`,
+`replay` e `verify` deixam SQLite recuperar um WAL de replay interrompido,
+desde que os sidecars sejam ficheiros independentes; o replay é uma única
+transação. Nenhum outro ficheiro ou base da aplicação é removido.
 
 ## O cenário oficial
 
@@ -54,10 +56,19 @@ base aberta antes de resetar. Nenhum outro ficheiro é removido.
   chaleira (3 minutos), aquecedor (120 minutos), carga desconhecida e
   uma assinatura ambígua. As probabilidades são **valores de referência
   roteirizados**, não probabilidades calculadas por ENERGY-03.
-- Consumos tipados ON/OFF, leitura faltante (`power_w=None`, não 0),
-  passos de potência, pedido de confirmação, resposta da Carla e atribuição
-  *de referência*; aviso de orçamento 80% (`2000/2500` cêntimos).
-  Estes eventos **não provam** que P1/P3/P4 os produziram.
+- Leituras tipadas em W incluem **0 W válido** e ausência (`power_w=None`),
+  que são estados distintos; consumos em curso ficam com `energy_wh=None`,
+  não com zero. Degraus e consumos ON/OFF têm rótulos/confianças roteirizados,
+  não calculados por ENERGY-02/03.
+- O pedido `billing.confirmation_needed` é uma entrada válida para o
+  consumidor real P3. `demo-replay` apenas persiste a entrada; não arranca o
+  lifespan/consumidor FastAPI. A integração isolada testa o handler P3 real,
+  a persistência SQLite da notificação e votos humanos distintos através de
+  `NotificationService`/D-32. Os eventos `notification.created`,
+  `notification.responded` e `billing.attribution_changed` não são fabricados
+  pelo cenário. P4 ainda não consome os votos no pipeline real.
+- O limiar de orçamento 80% é um evento de referência ilustrativo; o produtor
+  de orçamento/alertas não está ligado. A demo também não chama `allocate`.
 - Fatura de **120,00 €**: dois exemplos *distintos* da v5.1,
   persistidos na tabela `demo_reference` como
   `reference_bill`/`reference_allocation` (e não nos quadros de
@@ -72,7 +83,9 @@ base aberta antes de resetar. Nenhum outro ficheiro é removido.
 | **Total** | **120,00 €** | **120,00 €** |
 
 Os recibos são estruturas `BillAllocation` com breakdown validado pelos
-contratos F0; **não** foram calculados por BILL-02. O termo fixo,
+contratos F0; **não** foram calculados por `demo-replay`/BILL-02. BILL-02/04
+tem testes próprios que executam `allocate` e reproduzem A/B; D-34 fixa
+empates por hash da casa/período. O termo fixo,
 os consumos individuais e o resíduo pertencem aos exemplos originais da
 documentação, não à sequência de poucos minutos do replay.
 
@@ -85,7 +98,9 @@ resets. Comparar o **estado lógico**, não os bytes SQLite.
 
 ## Erro e recuperação
 
-A falta de câmara, MCP, Wi-Fi ou LLM não interfere no replay.
+A falta de câmara, MCP, Wi-Fi ou LLM não interfere no replay. Não inicia
+recolha de presença nem operação física MCP. As passagens de porta são apenas
+`DoorCrossed` anónimos; nenhuma identidade é inferida por imagem.
 Os casos `missing`, `unknown` e `ambiguous` são reproduzíveis;
 não são convertidos em medição zero, identidade ou cobrança pessoal.
 Repetir o replay não duplica eventos; depois de reiniciar o processo,
@@ -103,12 +118,16 @@ Dados reais terão `origin=real`, sem ocultar os restantes simulados.
 
 ## Checklist do ensaio
 
-1. Correr `make demo-reset` e `make demo-verify` duas vezes; comparar
+1. Correr `make demo-prepare`, `make demo-verify`, `make demo-replay` e
+   `make demo-verify`; comparar
    `event_digest`, sequências e recibos.
-2. Explicar uma entrada anónima, uma identificação provável e um
-   desconhecido sem atribuição.
-3. Mostrar a confirmação humana da Carla e o orçamento ilustrativo a 80%.
-4. Mostrar **separadamente** as repartições A/B de 120 €.
+2. Explicar uma passagem anónima, um match ilustrativo e um desconhecido
+   sem atribuição; comparar 0 W com leitura ausente.
+3. Para mostrar notificações, executar o evento de confirmação no backend
+   P3 real com base isolada: pedido → notificação persistida → votos D-32.
+   O CLI de demo offline não cria nem responde a notificações.
+4. Mostrar o aviso de 80% como referência e as repartições A/B de 120 €
+   **separadamente**; dizer que A/B são fixtures do documento.
 5. Se os serviços finais estiverem ligados, validar a UI com APP-02/BILL-02
    sem substituir as fixtures por resultados inventados.
 6. Se algo falhar, usar estes comandos offline e identificar a origem

@@ -42,11 +42,30 @@ class DemoStore:
     def path(self) -> Path:
         return self.root / FILE_NAME
 
-    def _guard(self, *, existing: bool) -> None:
-        if self.root.is_symlink() or self.path.is_symlink():
-            raise DemoSafetyError("symlink proibido para a base de demonstração")
+    @staticmethod
+    def _reject_symlink_components(path: Path) -> None:
+        absolute = Path(os.path.abspath(path))
+        for component in (absolute, *absolute.parents):
+            try:
+                info = component.lstat()
+            except FileNotFoundError:
+                continue
+            if stat.S_ISLNK(info.st_mode):
+                raise DemoSafetyError("symlink proibido no caminho da base de demonstração")
+
+    def _guard(self, *, existing: bool, allow_wal_recovery: bool = False) -> None:
+        self._reject_symlink_components(self.root)
+        self._reject_symlink_components(self.path)
         if self.root.exists() and not self.root.is_dir():
             raise DemoSafetyError("diretório de demo inválido")
+        sidecars = [Path(f"{self.path}{suffix}") for suffix in ("-wal", "-shm")]
+        present_sidecars = [sidecar for sidecar in sidecars if os.path.lexists(sidecar)]
+        if present_sidecars and not allow_wal_recovery:
+            raise DemoSafetyError("SQLite WAL/SHM presente; parar processos antes de operar")
+        for sidecar in present_sidecars:
+            info = sidecar.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise DemoSafetyError("SQLite WAL/SHM não é um ficheiro independente")
         if not self.path.exists():
             if existing:
                 raise DemoSafetyError("a base de demo não existe; executar demo-prepare")
@@ -57,19 +76,47 @@ class DemoStore:
         with self.path.open("rb") as source:
             if source.read(16) != SQLITE_MAGIC:
                 raise DemoSafetyError("ficheiro existente não é uma base SQLite válida")
-        # Evitar reset com outra ligação/processo potencialmente ativo.
-        if any(Path(str(self.path) + suffix).exists() for suffix in ("-wal", "-shm")):
-            raise DemoSafetyError("SQLite WAL/SHM presente; parar processos antes do reset")
         try:
-            # immutable evita que a própria validação crie ficheiros -wal/-shm.
-            with closing(
-                sqlite3.connect(f"file:{self.path}?mode=ro&immutable=1", uri=True)
-            ) as conn:
+            # immutable evita sidecars novos na leitura normal; após crash, SQLite lê e
+            # recupera o WAL existente em modo read-only.
+            immutable = "&immutable=1" if not present_sidecars else ""
+            uri = f"{self.path.absolute().as_uri()}?mode=ro{immutable}"
+            with closing(sqlite3.connect(uri, uri=True)) as conn:
                 conn.execute("PRAGMA query_only=ON")
                 marker = conn.execute("SELECT token FROM demo_marker WHERE id=1").fetchone()
                 houses = conn.execute("SELECT id, source_kind FROM household").fetchall()
                 if marker != (MARKER,) or houses != [(str(fx.HOUSEHOLD), "demo")]:
                     raise DemoSafetyError("base não marcada como demo exclusiva")
+                residents = conn.execute(
+                    "SELECT id, display_name, auth_subject FROM resident ORDER BY id"
+                ).fetchall()
+                expected_residents = sorted(
+                    (str(r.id), r.display_name, r.auth_subject) for r in fx.residents()
+                )
+                if residents != expected_residents:
+                    raise DemoSafetyError("base contém contas/residentes fora das fixtures demo")
+                memberships = conn.execute(
+                    "SELECT id, household_id, resident_id, role, room_id, starts_on, ends_on,"
+                    " status, presence_opt_in FROM membership ORDER BY id"
+                ).fetchall()
+                expected_memberships = sorted(
+                    (
+                        str(m.id),
+                        str(m.household_id),
+                        str(m.resident_id),
+                        m.role.value,
+                        str(m.room_id) if m.room_id else None,
+                        m.starts_on.isoformat(),
+                        m.ends_on.isoformat() if m.ends_on else None,
+                        m.status.value,
+                        int(m.presence_opt_in),
+                    )
+                    for m in fx.memberships()
+                )
+                if memberships != expected_memberships:
+                    raise DemoSafetyError("base contém memberships fora das fixtures demo")
+                if conn.execute("SELECT count(*) FROM membership_invitation").fetchone() != (0,):
+                    raise DemoSafetyError("base contém convites que não pertencem à demo")
         except sqlite3.Error as exc:
             raise DemoSafetyError("base sem marcador válido de demonstração") from exc
 
@@ -109,10 +156,12 @@ class DemoStore:
             os.replace(candidate, self.path)
         finally:
             candidate.unlink(missing_ok=True)
+            Path(f"{candidate}-wal").unlink(missing_ok=True)
+            Path(f"{candidate}-shm").unlink(missing_ok=True)
 
     def prepare(self) -> dict:
         if self.path.exists():
-            self._guard(existing=True)
+            self._guard(existing=True, allow_wal_recovery=True)
             self.replay()
         else:
             self._build()
@@ -125,7 +174,7 @@ class DemoStore:
         return self.verify()
 
     def replay(self) -> dict:
-        self._guard(existing=True)
+        self._guard(existing=True, allow_wal_recovery=True)
         db = Database(self.path)
         try:
             db.open()
@@ -140,7 +189,7 @@ class DemoStore:
         return self.verify()
 
     def verify(self) -> dict:
-        self._guard(existing=True)
+        self._guard(existing=True, allow_wal_recovery=True)
         db = Database(self.path)
         try:
             db.open()

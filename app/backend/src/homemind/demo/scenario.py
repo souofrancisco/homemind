@@ -12,10 +12,10 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from homemind.contracts import billing, devices, energy, notification, presence
+from homemind.contracts import billing, devices, energy, presence
 from homemind.contracts import domain_events as ev
 from homemind.contracts import fixtures as fx
-from homemind.contracts.common import Audit, Provenance, replace, stable_id
+from homemind.contracts.common import Provenance, replace, stable_id
 
 
 @dataclass(frozen=True)
@@ -40,6 +40,7 @@ POWER_PROFILE = (
     (144, 40.0),
     (147, 2040.0),
     (149, 40.0),
+    (159, 0.0),
 )
 
 
@@ -109,7 +110,7 @@ def _episode(
     room_id: UUID | None,
     closed: bool,
 ) -> energy.ConsumptionEvent:
-    wh = watts * (end - start) // 60 if closed else 0
+    wh = watts * (end - start) // 60 if closed else None
     return energy.ConsumptionEvent(
         id=fx.CONSUMPTION if name == "heater" else stable_id("demo-consumption", name),
         household_id=fx.HOUSEHOLD,
@@ -122,9 +123,13 @@ def _episode(
         energy_wh=wh,
         location=location,
         room_id=room_id,
-        cost_estimate=energy.CostEstimate(
-            cents=fx.cost_cents(wh, fx.PRICE_MILLICENTS),
-            price_millicents_per_kwh=fx.PRICE_MILLICENTS,
+        cost_estimate=(
+            energy.CostEstimate(
+                cents=fx.cost_cents(wh, fx.PRICE_MILLICENTS),
+                price_millicents_per_kwh=fx.PRICE_MILLICENTS,
+            )
+            if wh is not None
+            else None
         ),
         provenance=fx.SIM_INFERRED,
     )
@@ -219,52 +224,16 @@ def events() -> list[ev.EventBase]:
             fx.SIM_INFERRED,
         )
 
-    # Pedido/aceitação roteirizados; a decisão é humana, não derivada da câmara.
+    # Entrada válida para o consumidor real P3. O CLI offline não arranca consumidores.
     req = replace(
         fx.confirmation_request(),
         estimated_cost_cents=64,
         expires_at=CLOCK.at(131) + timedelta(hours=24),
     )
     add("ask", ev.BillingConfirmationNeeded, 131, req, fx.SIM_INFERRED)
-    original = fx.confirmation_notification()
-    add(
-        "notification",
-        ev.NotificationCreated,
-        132,
-        ev.NotificationCreatedData(
-            notification_id=original.id,
-            scope=original.scope,
-            kind=original.kind,
-        ),
-        fx.SIM_MEASURED,
-    )
-    answer = notification.NotificationResponse(
-        notification_id=original.id,
-        action_id="mine",
-        resident_id=fx.CARLA,
-        responded_at=CLOCK.at(133),
-    )
-    add(
-        "answer",
-        ev.NotificationResponded,
-        133,
-        ev.NotificationRespondedData(
-            response=answer,
-            ref=notification.NotificationRef(
-                type=notification.RefType.consumption_event,
-                id=fx.CONSUMPTION,
-            ),
-        ),
-        fx.SIM_MEASURED,
-    )
-    attribution = replace(
-        fx.carla_attribution(),
-        decided_by=Audit(
-            at=CLOCK.at(133),
-            by_resident_id=fx.CARLA,
-        ),
-    )
-    add("attribution", ev.BillingAttributionChanged, 133, attribution, fx.SIM_MEASURED)
+    # `notification.created/responded` e `billing.attribution_changed` são resultados
+    # de P3/P4; não são fabricados pelo cenário. A resposta humana é exercitada no teste
+    # de integração com NotificationService e com a votação D-32.
     add(
         "budget-80",
         ev.AlertsThresholdCrossed,
