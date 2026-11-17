@@ -102,7 +102,7 @@ def _episode(
 ) -> energy.ConsumptionEvent:
     wh = watts * (end - start) // 60 if closed else 0
     return energy.ConsumptionEvent(
-        id=stable_id("demo-consumption", name),
+        id=fx.CONSUMPTION if name == "heater" else stable_id("demo-consumption", name),
         household_id=fx.HOUSEHOLD,
         device_id=fx.METER,
         match=match,
