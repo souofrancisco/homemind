@@ -91,6 +91,7 @@ PR #141 e #144 continuam fora da `main`. Não foi copiado código para DEMO-02.
 - PR #168 isolado: testes de `features/energy/tests` — 45 passed.
 - PR #169 com notificações da main: attributor + handlers + votação — 52 passed; teste isolado de composição P3→P4 acima — 1 passed.
 - #141/#144: checks de compatibilidade descritos na secção anterior. `make smoke` passou sobre esta base em Compose isolado, com backend, frontend e Authentik saudáveis. Smoke de configuração demo, sem MCP/hardware físico. Os warnings de `TestClient` são depreciação de `anyio` no Starlette.
+- CI GitHub: não foi publicado run para o HEAD atual `6a73e95`; o último run bem-sucedido listado é do SHA anterior `288b53a`, portanto não o conto como validação destes commits. `make check` local é a evidência para o HEAD atual.
 - Não se executou o ciclo completo energia → aparelho → voto → orçamento → fatura final → recibos, nem se inventou valor/resultado. Nenhum teste chama motor NILM por trás de um nome E2E.
 
 ## 7. Ordem de integração e bloqueios para E2E
