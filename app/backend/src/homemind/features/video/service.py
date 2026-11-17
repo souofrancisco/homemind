@@ -34,6 +34,11 @@ def get_fonte() -> FonteVideo:
         return _fonte
 
 
+def fonte_atual() -> FonteVideo | None:
+    """A fonte já iniciada, sem a criar nem falhar quando não está configurada."""
+    return _fonte
+
+
 def parar_fonte() -> None:
     """Para e esquece a fonte, se existir. Idempotente."""
     global _fonte

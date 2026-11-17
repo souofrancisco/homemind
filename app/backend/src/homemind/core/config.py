@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost,https://localhost"
     # Vídeo: URL RTSP ou caminho de clip. Nunca logar nem devolver (pode conter credenciais).
     video_source: str = ""
+    # Que fonte é (PRES-01): kit | rtsp | clip | phone. Vazio = deduzir do URL (rtsp:// -> rtsp;
+    # http(s):// -> phone, SIMULADO; sem esquema -> clip, SIMULADO). Nunca promove a «real».
+    video_source_kind: Literal["", "kit", "rtsp", "clip", "phone"] = ""
     video_sem_frame_s: float = 3.0  # sem frame há mais do que isto -> camara_ok False e reabre
     video_reconexao_s: tuple[float, ...] = (1, 2, 4, 8, 10)  # esperas entre reaberturas
     video_timeout_abrir_ms: int = 5000

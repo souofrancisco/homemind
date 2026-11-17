@@ -1,6 +1,6 @@
 # Módulo `presence` — câmara na porta e presença
 
-**Dono: P2 (1Mii).** **PLANEADO**, sobre `features/video` e `features/visao` existentes. Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
+**Dono: P2 (1Mii).** **PLANEADO**, exceto o estado da câmara (PRES-01, **IMPLEMENTADO**, ver abaixo), sobre `features/video` e `features/visao` existentes. Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
 
 ## Responsabilidade
 
@@ -40,6 +40,29 @@ Contratos novos (`PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`
 | 5 | Sinal de presença por Wi-Fi (opt-in) e confirmação manual | P0 (PRES-03 #107) |
 
 Regras de fusão (PDF §6.8): presença no Wi-Fi conta muito, ausência conta pouco; só se considera que alguém saiu se houver uma saída pela porta e passarem 20–30 min; um aparelho a continuar ligado não prova presença, só um a **ligar** prova; contradição (entrada + aparelho a ligar sem ninguém «em casa») → `uncertain` e pergunta na aplicação.
+
+## Fontes de vídeo e estado da câmara (PRES-01) — IMPLEMENTADO
+
+`VIDEO_SOURCE` (URL ou caminho; segredo, só em `app/.env`) + `VIDEO_SOURCE_KIND` escolhem a fonte; o
+pipeline `features/video` (RTSP/TCP ou clip, reconexão com backoff, só o último frame em memória) é o
+mesmo para todas.
+
+| Fonte (`VideoSourceKind`) | Como | Origem |
+|---|---|---|
+| `kit` | link/stream RTSP partilhado pela app da câmara MEARI; só leitura, sem passar pelo MCP | REAL (só depois de validada, ver guia: **não validada**) |
+| `rtsp` | outra câmara IP na porta | REAL |
+| `phone` | telemóvel como câmara IP (RTSP ou MJPEG por `http(s)://`) | SIMULADO |
+| `clip` | clip pré-gravado da porta, em loop | SIMULADO |
+
+Em dúvida a fonte é SIMULADA: `kit`/`rtsp` sem URL `rtsp://` caem para `clip`; sem tipo declarado,
+`http(s)://` é `phone`. Sem `VIDEO_SOURCE` o estado é `clip`/simulada com `camera_ok=false`.
+
+`GET /api/presence/camera/status` devolve `CameraStatus` (fonte, origem, `camera_ok`, `fps`,
+`last_frame_at`, `door_mask_configured`), nunca imagem nem URL. Só o papel `operator` (numa membership
+ativa); senhorio, inquilino e sem membership recebem `403 forbidden_role`. Fonte ausente ou sem frame
+há mais de `VIDEO_SEM_FRAME_S` ⇒ `camera_ok=false` e sem `fps`; **nunca** se conclui «casa vazia». O
+`fps` é a cadência de frames novos entre duas consultas (`null` na primeira).
+`door_mask_configured` é sempre `false` até à PRES-02. `GET /api/video` (MJPEG) mantém-se como estava.
 
 ## Limites reais
 
