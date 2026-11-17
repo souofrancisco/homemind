@@ -35,7 +35,7 @@ Regras gerais em [`../../CLAUDE.md`](../../CLAUDE.md). Aqui só o específico do
 
 | Módulo | Responsabilidade | Destino (ver migração) |
 |---|---|---|
-| `features/video` | Fonte RTSP/clip numa thread (último frame, reconexão), MJPEG em `GET /api/video` | KEEP; MJPEG só diagnóstico do operador |
+| `features/video` | Último frame local de clip de teste; RTSP recusado no serviço e `GET /api/video` responde sempre 404 (PRIV-02) | ADAPT; não reabrir stream sem contrato/autorização e revisão |
 | `features/visao` | `DetetorYolo` (extra `visao`), thread de visão, anotação | ADAPT: só pessoa + linha na porta |
 | `features/gestos` | Gesto, presença, ponte thread→loop, afinador. Lógica pura | Gesto/afinador REMOVE; ponte KEEP; presença ADAPT |
 | `features/engine` | Regras (`rules.json`), máquina de estados, energia, registo (`events.jsonl`), NVIDIA, REST e WS | Motor REMOVE; `llm.py` e WS ADAPT |

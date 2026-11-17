@@ -100,3 +100,11 @@ Os PDFs continuam a mencionar Telegram; essa parte **não faz parte da arquitetu
 | P-19 | Um morador «manual» (declarado) é `measured`? Hoje sim (`origin` real, `kind` measured) | P2 | PRES-03 |
 | P-20 | Retenção de `domain_event` e de `payload_json` (dados de presença/consumo); hoje sem expurgo | Equipa | Piloto (P-08) |
 | P-21 | Quem pode ler `domain_event` por API (hoje ninguém; a app recebe DTOs). Um endpoint de diagnóstico para o operador? | P5 | WS/notificações |
+
+## PRIV-02 #119 — propostas de decisão pendentes de revisão (17/11/2026)
+
+- **P-22 / proposta técnica:** presença manual A como baseline sem câmara; contagem local B só após prova técnica, informação e triagem jurídica; pista Wi-Fi C desativada até validação. Sem opt-in não há pista individual nem desvantagem financeira; falha de sensor = `uncertain`, nunca `out`. Ver [investigação](modules/presence.md).
+- **P-23 / proposta de produto:** `presence_opt_in` F0 controla a recolha de pistas individuais, mas não representa, por si só, consentimento válido para finalidades distintas. Confirmar opt-in granular por câmara/Wi-Fi/manual, acesso de outros moradores, alternativa por regra A/B e o responsável pelo tratamento.
+- **P-24 / bloqueio jurídico:** validar base legal específica por finalidade, eventual exceção doméstica, sinalização aos visitantes e triagem AIPD/Regulamento CNPD 798/2018. **Não usar dados reais de pessoas** até decisão documentada.
+- **P-25 / bloqueio de retenção:** `domain_event` é append-only sem expurgo implementado; antes de piloto, acordar prazos, eliminação, backups e auditoria mínima das preferências. Proposta issue F0 separada: retenção seletiva de dados pessoais sem apagar eventos financeiros; ligada a P-08/P-20. Não existe issue GitHub dedicada ainda; não executar migração destrutiva nesta PRIV-02.
+- **Medida de segurança já codificada nesta revisão:** `Resource.presence.read=own`; `/api/video` sempre `404`; RTSP recusado no factory e em ferramentas de medição; clip só em path allowlisted com `PROFILE=demo`, `HOME_BACKEND=fake` e flag; escrita manual com gate e persistência na mesma transação; Wi-Fi recusado até haver consentimento de dispositivo persistido; estado legado de presença oculto no REST/WS. **Não altera automaticamente contratos jurídicos.**

@@ -216,11 +216,9 @@ class FonteClip(_FonteThread):
         return lidos > 0  # chegou ao fim: recomeçar já; sem frames nenhuns é falha
 
 
-def criar_fonte(settings: Settings) -> FonteRtsp | FonteClip:
-    """`VIDEO_SOURCE` com esquema (rtsp://...) é câmara; caso contrário é um clip local."""
-    comuns = {"sem_frame_s": settings.video_sem_frame_s, "reconexao_s": settings.video_reconexao_s}
+def criar_fonte(settings: Settings) -> FonteClip:
+    """Cria apenas uma fonte de clip local; RTSP fica desativado por PRIV-02."""
     if "://" in settings.video_source:
-        return FonteRtsp(
-            settings.video_source, timeout_abrir_ms=settings.video_timeout_abrir_ms, **comuns
-        )
+        raise ValueError("fontes RTSP desativadas por PRIV-02")
+    comuns = {"sem_frame_s": settings.video_sem_frame_s, "reconexao_s": settings.video_reconexao_s}
     return FonteClip(settings.video_source, **comuns)

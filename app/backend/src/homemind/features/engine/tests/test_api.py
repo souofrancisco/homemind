@@ -1,11 +1,14 @@
 """API do motor (contrato v3) com FakeHome e auth substituída (sem Authentik/câmara/MCP/NVIDIA)."""
 
+from datetime import UTC, datetime
+
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from homemind.connectors.fake_home import FakeHome
+from homemind.contracts.eventos import Presenca
 from homemind.features.auth.service import User, current_user
 from homemind.features.engine import router as engine_router
 from homemind.features.engine.config import EngineSettings
@@ -48,6 +51,25 @@ def test_status_e_state(client):
     s = client.get("/api/state").json()
     assert s["state"] == "inativo" and s["mode"] is None and s["casa"]["backend"] == "fake"
     assert s["mcp_ok"] is False and s["camera_ok"] is False
+
+
+def test_legacy_state_events_and_websocket_do_not_expose_presence(client):
+    engine = client.app.state.engine
+    engine.presenca = True
+    state = client.get("/api/state").json()
+    assert state["presence"] is None
+
+    import asyncio
+
+    asyncio.run(engine.processar(Presenca(ha_alguem=False, hora=datetime.now(UTC))))
+    assert all(
+        "Divisão vazia" not in event["message"]
+        for event in client.get("/api/events").json()["events"]
+    )
+
+    with client.websocket_connect("/api/ws") as ws:
+        ws.send_json({"type": "auth", "token": "bom"})
+        assert ws.receive_json()["data"]["presence"] is None
 
 
 def test_simulate_off_e_historico(client):

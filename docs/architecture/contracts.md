@@ -99,7 +99,7 @@ Garantias e limites: [event-flow.md](event-flow.md) §4. Eventos **não** se exp
 | `appliance` | — | own (r/w) | diagnostic (r/w) |
 | `energy` (leituras, resumos) | **aggregate** | own | diagnostic |
 | `consumption` | — | household (r), own (contestar) | diagnostic (r) |
-| `presence` | **—** | household (r), own (w) | **—** |
+| `presence` | **—** | **own** (r/w) | **—** |
 | `camera_status` | — | — | diagnostic |
 | `attribution` | — | own | — |
 | `bill` | aggregate (r), household (w) | own (r) | — |
@@ -144,7 +144,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 
 | Método | Rota | Papéis | Notas |
 |---|---|---|---|
-| `GET` | `/api/households/{id}/presence` | T | Estado dos moradores com `presence_opt_in`; **L: 403** |
+| `GET` | `/api/households/{id}/presence` | T | **Só o próprio** (opt-in); **L/O: 403**; ainda PLANEADO |
 | `PUT` | `/api/presence/me` | T | `PresenceMeIn` `{ "state": "in" \| "out" }` (substitui «cheguei/saí») |
 | `GET` | `/api/presence/camera/status` | O | `CameraStatus`: só diagnóstico (FPS, `camera_ok`, fonte e origem); sem imagens nem URL |
 | `GET` | `/api/households/{id}/occupancy` | T | `HouseOccupancy` (PROPOSTA): número de pessoas e visitas, sem nomes; **L: 403** |
@@ -185,7 +185,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 
 ### Operação (P1/P5, existentes)
 
-`GET /healthz`, `GET /api/status`, `GET /api/mcp/tools`, `GET /api/video` continuam (os dois últimos restringem-se a **O**; ver [migration.md](migration.md)).
+`GET /healthz`, `GET /api/status` e `GET /api/mcp/tools` continuam. `GET /api/video` responde sempre `404` por PRIV-02; nenhuma role recebe frames. Ver [migration.md](migration.md).
 
 ## 7. WebSocket (PLANEADO)
 
@@ -211,3 +211,5 @@ O servidor só envia notificações do utilizador autenticado (pessoais) e da su
 ## 9. Pontos para revisão da equipa (DECISÃO PENDENTE)
 
 Prioridade para aprovar antes de implementar os módulos: ver [decisions.md](../decisions.md) D-23…D-30 e P-16…P-21. Resumo: (1) `Provenance` em duas dimensões; (2) Wh inteiros + milicêntimos; (3) semântica do barramento; (4) 404 vs 403 e membership por datas; (5) `None` em energia/custo; (6) regras de resposta das notificações; (7) OpenAPI por `OPENAPI_MODELS`; (8) nenhuma alteração ao código ObjectOS de domínio; (9) **sem dependências novas**; (10) quem aprova cada pendência.
+
+> **PRIV-02 #119 (revisão de acesso):** o âmbito de leitura do recurso `presence` foi restringido de `household` a `own` para o inquilino; a regra de escrita `own` não mudou. A API de presença permanece planeada. Ver [módulo presença](../modules/presence.md#priv-02-119--investigação-e-arquitetura-de-privacidade-17112026).
