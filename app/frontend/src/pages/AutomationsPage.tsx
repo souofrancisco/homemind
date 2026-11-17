@@ -1,76 +1,80 @@
-import { Alert, Badge, Button, Card, Group, Loader, Modal, SimpleGrid, Stack, Switch, Table, Text, Textarea, Title } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { Alert, Badge, Button, Card, Group, Loader, SimpleGrid, Stack, Switch, Text, Title } from "@mantine/core";
+import { IconArrowRight, IconPlus } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
-import { IconAlertCircle, IconSparkles, IconTrash } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { useHome } from "../hooks/useHome";
+import { useNavigate } from "react-router-dom";
 import { demoSuggestionDecisions, demoSuggestions } from "../mocks/suggestions";
 import { homeService as service } from "../services/home";
-import type { HomeRule, RoutineSuggestion, RuleDraft } from "../types/home";
+import type { HomeRule } from "../types/home";
+import { useHome } from "../hooks/useHome";
+
 
 export default function AutomationsPage() {
+  const navigate = useNavigate();
   const { source } = useHome();
   const [rules, setRules] = useState<HomeRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
-  const [text, setText] = useState("");
-  const [proposal, setProposal] = useState<{ draft: RuleDraft; summary: string } | null>(null);
-  const [selectedSuggestion, setSelectedSuggestion] = useState<RoutineSuggestion | null>(null);
-  const [removeTarget, setRemoveTarget] = useState<HomeRule | null>(null);
-  const [busy, setBusy] = useState(false);
   const [, setDecisionVersion] = useState(0);
-  const [proposalOpened, proposalModal] = useDisclosure(false);
-  const [suggestionOpened, suggestionModal] = useDisclosure(false);
-  const [removeOpened, removeModal] = useDisclosure(false);
   const suggestions = source === "mock" ? demoSuggestions.filter((item) => !demoSuggestionDecisions.has(item.id)) : [];
 
-  const refresh = async () => {
-    setLoading(true); setFailed(false);
-    try { setRules(await service.getRules()); }
-    catch { setFailed(true); }
-    finally { setLoading(false); }
-  };
-  useEffect(() => { const timer = setTimeout(() => { void refresh(); }, 0); return () => clearTimeout(timer); }, []);
+  useEffect(() => {
+    let mounted = true;
+    void service.getRules().then((items) => { if (mounted) setRules(items); }).catch(() => { if (mounted) setFailed(true); }).finally(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; };
+  }, []);
 
-  const propose = async () => {
-    if (!text.trim()) return;
-    setBusy(true);
-    try { const result = await service.proposeRule(text.trim()); setProposal({ draft: result.proposal, summary: result.summary }); proposalModal.open(); }
-    catch (error) { notifications.show({ color: "red", title: "Proposta indisponível", message: error instanceof Error ? error.message : "O serviço de interpretação não respondeu. As regras existentes continuam disponíveis." }); }
-    finally { setBusy(false); }
-  };
-  const save = async (draft: RuleDraft) => {
-    setBusy(true);
-    try { const saved = await service.saveRule(draft); setRules((items) => [saved, ...items]); setProposal(null); setSelectedSuggestion(null); proposalModal.close(); suggestionModal.close(); setText(""); if (selectedSuggestion) { demoSuggestionDecisions.add(selectedSuggestion.id); setDecisionVersion((version) => version + 1); } notifications.show({ color: "teal", message: "Regra guardada como inativa. Não foi executada nenhuma ação física." }); }
-    catch (error) { notifications.show({ color: "red", title: "Regra não guardada", message: error instanceof Error ? error.message : "Serviço indisponível" }); }
-    finally { setBusy(false); }
-  };
   const toggle = async (rule: HomeRule, enabled: boolean) => {
-    try { const updated = await service.setRuleEnabled(rule.id, enabled); setRules((items) => items.map((item) => item.id === rule.id ? updated : item)); }
-    catch (error) { notifications.show({ color: "red", title: "Não foi possível atualizar", message: error instanceof Error ? error.message : "Serviço indisponível" }); }
-  };
-  const remove = async () => {
-    if (!removeTarget) return;
-    setBusy(true);
-    try { await service.deleteRule(removeTarget.id); setRules((items) => items.filter((item) => item.id !== removeTarget.id)); removeModal.close(); setRemoveTarget(null); }
-    catch (error) { notifications.show({ color: "red", title: "Não foi possível apagar", message: error instanceof Error ? error.message : "Serviço indisponível" }); }
-    finally { setBusy(false); }
+    try {
+      const updated = await service.setRuleEnabled(rule.id, enabled);
+      setRules((items) => items.map((item) => item.id === rule.id ? updated : item));
+    } catch (error) {
+      notifications.show({ color: "red", title: "Não foi possível atualizar", message: error instanceof Error ? error.message : "Tenta novamente mais tarde." });
+    }
   };
 
-  return <Stack gap="lg">
-    <div><Text c="dimmed" size="sm">ROTINAS DA CASA</Text><Title order={2}>Automações</Title><Text c="dimmed">As regras guardadas só ficam ativas após confirmação.</Text></div>
-    <Card withBorder radius="lg"><Group justify="space-between" mb="md"><div><Title order={4}>Regras guardadas</Title><Text size="sm" c="dimmed">Gerir as regras já guardadas.</Text></div><Badge variant="light">{rules.filter((rule) => rule.enabled).length} ativas</Badge></Group>
-      {failed ? <Alert color="orange" title="Regras indisponíveis">Não foi possível carregar regras. O backend pode ainda não disponibilizar este contrato.</Alert> : loading ? <Group><Loader size="sm" /><Text size="sm" c="dimmed">A carregar regras…</Text></Group> : rules.length ? <Table.ScrollContainer minWidth={520}><Table verticalSpacing="sm"><Table.Thead><Table.Tr><Table.Th>Regra</Table.Th><Table.Th>Objeto</Table.Th><Table.Th>Ativa</Table.Th><Table.Th>Ação</Table.Th></Table.Tr></Table.Thead><Table.Tbody>{rules.map((rule) => <Table.Tr key={rule.id}><Table.Td><Text fw={500}>{rule.nome}</Text><Text size="xs" c="dimmed">{rule.acoes.map((action) => action.dispositivo).join(" · ")}</Text></Table.Td><Table.Td>{rule.objeto}</Table.Td><Table.Td><Switch aria-label={`${rule.enabled ? "Desativar" : "Ativar"} ${rule.nome}`} checked={rule.enabled} onChange={(event) => void toggle(rule, event.currentTarget.checked)} /></Table.Td><Table.Td><Button variant="subtle" color="red" aria-label={`Apagar ${rule.nome}`} onClick={() => { setRemoveTarget(rule); removeModal.open(); }}><IconTrash size={16} /></Button></Table.Td></Table.Tr>)}</Table.Tbody></Table></Table.ScrollContainer> : <Text c="dimmed">Ainda não existem regras guardadas.</Text>}
-    </Card>
+  const ignoreSuggestion = (id: string) => {
+    demoSuggestionDecisions.add(id);
+    setDecisionVersion((version) => version + 1);
+  };
 
-    <Card withBorder radius="lg"><Title order={4}>Criar regra por linguagem natural</Title><Text size="sm" c="dimmed" mt="xs" mb="md">A frase é convertida numa proposta estruturada. Nada é guardado antes da confirmação.</Text><Group align="flex-end"><Textarea aria-label="Descreva uma regra" placeholder="Quando levantar o livro, ligar a luz a 40%" value={text} onChange={(event) => setText(event.currentTarget.value)} minRows={2} autosize style={{ flex: 1 }} /><Button leftSection={<IconSparkles size={16} />} loading={busy} disabled={!text.trim()} onClick={() => void propose()}>Pré-visualizar</Button></Group>{source === "mock" ? <Badge mt="sm" color="yellow">Interpretação simulada · sem chamada à NVIDIA</Badge> : null}</Card>
+  return <Stack gap="xl">
+    <Group justify="space-between" align="flex-start">
+      <div><Title order={2}>Automações</Title><Text c="dimmed" mt={4}>A casa adapta-se às tuas rotinas.</Text></div>
+      <Button leftSection={<IconPlus size={16} />} onClick={() => navigate("/automations/new")}>Nova automação</Button>
+    </Group>
 
-    <section><Group justify="space-between" mb="md"><div><Title order={4}>Sugestões inteligentes</Title><Text size="sm" c="dimmed">Padrões de utilização, sempre sujeitos à tua confirmação.</Text></div><Badge color={source === "mock" ? "yellow" : "gray"}>{source === "mock" ? "SIMULADAS" : "CONTRATO PENDENTE"}</Badge></Group>
-      {source !== "mock" ? <Alert color="blue">As sugestões reais dependem da validação do motor de padrões e do contrato do backend. Nenhum endpoint de sugestões é chamado.</Alert> : suggestions.length ? <SimpleGrid cols={{ base: 1, lg: 2 }}>{suggestions.map((item) => <Card withBorder radius="lg" key={item.id}><Badge color="yellow" mb="sm">PADRÃO SIMULADO</Badge><Title order={5}>{item.title}</Title><Text size="sm" mt="xs">{item.explanation}</Text><Text size="sm" fw={500} mt="md">{item.statement}</Text><Text size="sm" c="dimmed">Frequência: {item.frequency} · Período: {item.timeWindow}</Text><Text size="xs" c="dimmed" mt="sm">Evidências</Text><Stack gap={2} mt={4}>{item.evidence.map((evidence) => <Text size="xs" key={evidence}>• {evidence}</Text>)}</Stack><Text size="xs" c="dimmed" mt="sm">Proposta: {item.proposedRule.nome} · objeto {item.proposedRule.objeto}</Text><Group mt="md"><Button onClick={() => { setSelectedSuggestion(item); suggestionModal.open(); }}>Aceitar e rever</Button><Button variant="default" onClick={() => { demoSuggestionDecisions.add(item.id); setDecisionVersion((version) => version + 1); }}>Ignorar</Button></Group></Card>)}</SimpleGrid> : <Text c="dimmed">Não há sugestões pendentes nesta sessão.</Text>}
+    <section>
+      <Title order={4} mb="sm">As tuas automações</Title>
+      {failed ? <Alert color="red" title="Não foi possível carregar as automações">Tenta novamente mais tarde.</Alert> : loading ? <Group><Loader size="sm" /><Text size="sm" c="dimmed">A carregar…</Text></Group> : rules.length ? <Stack gap="sm">
+        {rules.map((rule) => <Card key={rule.id} withBorder radius="md" padding="md">
+          <Group justify="space-between" wrap="nowrap" align="center">
+            <div style={{ minWidth: 0 }}>
+              <Text fw={600}>{rule.nome}</Text>
+              <Text size="sm" c="dimmed">Quando levantar {rule.objeto === "livro" ? "o livro" : rule.objeto === "comando" ? "o comando" : rule.objeto === "caneca" ? "a caneca" : rule.objeto}</Text>
+            </div>
+            <Group gap="sm" wrap="nowrap">
+              <Badge color={rule.enabled ? "teal" : "gray"} variant="light">{rule.enabled ? "Ativa" : "Inativa"}</Badge>
+              <Switch aria-label={`${rule.enabled ? "Desativar" : "Ativar"} ${rule.nome}`} checked={rule.enabled} onChange={(event) => void toggle(rule, event.currentTarget.checked)} />
+              <Button variant="subtle" rightSection={<IconArrowRight size={15} />} onClick={() => navigate(`/automations/${encodeURIComponent(rule.id)}`)}>Ver detalhes</Button>
+            </Group>
+          </Group>
+        </Card>)}
+      </Stack> : <Card withBorder radius="md"><Text c="dimmed">Ainda não criaste automações.</Text><Button mt="sm" variant="light" onClick={() => navigate("/automations/new")}>Criar a primeira</Button></Card>}
     </section>
 
-    <Modal opened={proposalOpened} onClose={proposalModal.close} title="Rever proposta" centered><Stack><Alert color="blue">{proposal?.summary}</Alert><Text><b>{proposal?.draft.nome}</b> · Objeto: {proposal?.draft.objeto}</Text><Text size="sm">Ações: {proposal?.draft.acoes.map((action) => `${action.dispositivo} (${action.brilho ?? "ligar"})`).join(" · ")}</Text><Text size="sm" c="dimmed">Guardar a regra não executa ações físicas.</Text><Group justify="flex-end"><Button variant="default" onClick={proposalModal.close}>Cancelar</Button><Button loading={busy} onClick={() => proposal && void save(proposal.draft)}>Confirmar e guardar</Button></Group></Stack></Modal>
-    <Modal opened={suggestionOpened} onClose={suggestionModal.close} title="Confirmar sugestão" centered><Stack><Badge color="yellow" w="fit-content">SIMULADA</Badge><Text fw={600}>{selectedSuggestion?.title}</Text><Text>{selectedSuggestion?.statement}</Text><Text size="sm">Proposta: {selectedSuggestion?.proposedRule.nome} · {selectedSuggestion?.proposedRule.objeto}</Text><Text size="sm" c="dimmed">Aceitar guarda a regra após esta confirmação; não a ativa automaticamente nem executa dispositivos.</Text><Group justify="flex-end"><Button variant="default" onClick={suggestionModal.close}>Cancelar</Button><Button loading={busy} onClick={() => selectedSuggestion && void save(selectedSuggestion.proposedRule)}>Confirmar e guardar</Button></Group></Stack></Modal>
-    <Modal opened={removeOpened} onClose={removeModal.close} title="Apagar regra?" centered><Stack><Alert color="orange" icon={<IconAlertCircle />}>A regra “{removeTarget?.nome}” será removida.</Alert><Group justify="flex-end"><Button variant="default" onClick={removeModal.close}>Cancelar</Button><Button color="red" loading={busy} onClick={() => void remove()}>Confirmar eliminação</Button></Group></Stack></Modal>
+    <section>
+      <Group justify="space-between" mb="sm" align="baseline"><Title order={4}>Sugestões</Title><Text size="sm" c="dimmed">Ideias para as tuas rotinas</Text></Group>
+      {source !== "mock" ? <Text size="sm" c="dimmed">Ainda não há sugestões disponíveis.</Text> : suggestions.length ? <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
+        {suggestions.map((suggestion) => <Card key={suggestion.id} withBorder radius="md" padding="md">
+          <Text fw={600}>{suggestion.title}</Text>
+          <Text size="sm" c="dimmed" mt={4}>{suggestion.statement}</Text>
+          <Group mt="md" justify="space-between">
+            <Button variant="subtle" px={0} onClick={() => navigate(`/automations/suggestions/${encodeURIComponent(suggestion.id)}`)}>Ver sugestão</Button>
+            <Button variant="subtle" color="gray" onClick={() => ignoreSuggestion(suggestion.id)}>Ignorar</Button>
+          </Group>
+        </Card>)}
+      </SimpleGrid> : <Text size="sm" c="dimmed">Não há sugestões pendentes nesta sessão.</Text>}
+    </section>
   </Stack>;
 }
