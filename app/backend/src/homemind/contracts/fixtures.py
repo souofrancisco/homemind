@@ -10,7 +10,16 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 
-from homemind.contracts import agent, billing, devices, domain_events, energy, notification
+from homemind.contracts import (
+    agent,
+    billing,
+    devices,
+    domain_events,
+    energy,
+    notification,
+    safety,
+    sensors,
+)
 from homemind.contracts import household as hh
 from homemind.contracts import presence as pr
 from homemind.contracts.common import (
@@ -54,6 +63,8 @@ CONSUMPTION = stable_id("consumption", "aquecedor-sala")
 NOTIFICATION = stable_id("notification", "aquecedor-sala")
 CORRELATION = stable_id("correlation", "aquecedor-sala")
 BILL_A, BILL_B, BILL_C = (stable_id("bill", n) for n in "abc")
+WINDOW_SENSOR = stable_id("device", "janela-sala")
+SMOKE_SENSOR = stable_id("device", "fumo-cozinha")
 
 _NAMES = {ANA: "Ana", BRUNO: "Bruno", CARLA: "Carla", DIOGO: "Diogo"}
 _ROOMS = {ANA: ROOM_ANA, BRUNO: ROOM_BRUNO, CARLA: ROOM_CARLA, DIOGO: ROOM_DIOGO}
@@ -224,6 +235,7 @@ def consumption(closed: bool = False) -> energy.ConsumptionEvent:
         energy_wh=wh,
         location=energy.LocationKind.common,
         room_id=ROOM_SALA,
+        appliance_owner_resident_id=BRUNO,
         cost_estimate=energy.CostEstimate(
             cents=cost_cents(wh, PRICE_MILLICENTS), price_millicents_per_kwh=PRICE_MILLICENTS
         ),
@@ -252,6 +264,113 @@ def person_presence() -> pr.PersonPresence:
     )
 
 
+def appliance_cue() -> pr.PresenceEvent:
+    """O aquecedor do Bruno ligou: pista de que o Bruno está em casa (não de quem o usa)."""
+    return pr.PresenceEvent(
+        id=stable_id("cue", "aquecedor-bruno"),
+        household_id=HOUSEHOLD,
+        resident_id=BRUNO,
+        ts=T0,
+        state=pr.PresenceState.home,
+        source=pr.PresenceSource.appliance,
+        confidence=0.6,
+        provenance=SIM_INFERRED,
+        consumption_event_id=CONSUMPTION,
+    )
+
+
+def presence_confirmation() -> pr.PresenceConfirmationRequest:
+    return pr.PresenceConfirmationRequest(
+        id=stable_id("presence-check", "carla"),
+        resident_id=CARLA,
+        reason=pr.UncertainReason.conflicting_cues,
+        expires_at=T0 + timedelta(minutes=30),
+    )
+
+
+def occupancy() -> pr.HouseOccupancy:
+    """Três pessoas dentro: dois moradores e uma visita (só o número)."""
+    return pr.HouseOccupancy(
+        ts=T0,
+        state=pr.OccupancyState.occupied,
+        people_inside=3,
+        visitors=1,
+        residents_home=2,
+        provenance=SIM_INFERRED,
+    )
+
+
+def presence_device() -> pr.PresenceDevice:
+    return pr.PresenceDevice(
+        id=stable_id("presence-device", "carla"),
+        household_id=HOUSEHOLD,
+        resident_id=CARLA,
+        label="Telemóvel C.",
+        match_key="sha256:" + "0" * 64,
+        wifi_opt_in=True,
+        consented_at=T0 - timedelta(days=1),
+        created_at=T0 - timedelta(days=1),
+    )
+
+
+def camera_status() -> pr.CameraStatus:
+    return pr.CameraStatus(
+        source=pr.VideoSourceKind.clip,
+        origin=Origin.simulated,
+        camera_ok=True,
+        fps=12.0,
+        last_frame_at=T0,
+        door_mask_configured=True,
+    )
+
+
+# --- sensores e segurança ------------------------------------------------------------------------
+
+
+def window_open() -> sensors.SensorReading:
+    return sensors.SensorReading(
+        id=stable_id("sensor-reading", "janela-sala"),
+        device_id=WINDOW_SENSOR,
+        room_id=ROOM_SALA,
+        ts=T0,
+        kind=sensors.SensorKind.contact,
+        status=sensors.SensorStatus.ok,
+        contact=sensors.ContactState.open,
+        provenance=SIM_MEASURED,
+    )
+
+
+def window_alert() -> safety.SafetyAlert:
+    """Janela da sala aberta há 5 min com o aquecedor ligado: sugere desligar (com confirmação)."""
+    return safety.SafetyAlert(
+        id=stable_id("safety", "janela-sala"),
+        household_id=HOUSEHOLD,
+        kind=safety.SafetyAlertKind.window_open_heating,
+        severity=notification.NotificationSeverity.warning,
+        room_id=ROOM_SALA,
+        sensor_device_id=WINDOW_SENSOR,
+        consumption_event_id=CONSUMPTION,
+        suggested_command=agent.DeviceCommand(
+            target_device_id=METER, capability=agent.DeviceCapability.power, power=False
+        ),
+        started_at=T0 + timedelta(minutes=5),
+        provenance=SIM_INFERRED,
+    )
+
+
+def smoke_alert() -> safety.SafetyAlert:
+    return safety.SafetyAlert(
+        id=stable_id("safety", "fumo-cozinha"),
+        household_id=HOUSEHOLD,
+        kind=safety.SafetyAlertKind.smoke,
+        severity=notification.NotificationSeverity.critical,
+        sensor_device_id=SMOKE_SENSOR,
+        notify_landlord=True,
+        started_at=T0,
+        provenance=SIM_MEASURED,
+    )
+
+
 # --- confirmação e notificação -------------------------------------------------------------------
 
 
@@ -268,7 +387,12 @@ def confirmation_request() -> notification.ConfirmationRequest:
 def confirmation_notification() -> notification.Notification:
     """«De quem é esta conta?» para a casa; qualquer inquilino ativo pode responder."""
     req = confirmation_request()
-    labels = {"mine": "É minha", "everyone": "É de todos", "unknown": "Não sei"}
+    labels = {
+        "mine": "É minha",
+        "everyone": "É de todos",
+        "unknown": "Não sei",
+        "other": "É de outra pessoa",
+    }
     return notification.Notification(
         id=NOTIFICATION,
         household_id=HOUSEHOLD,
@@ -380,9 +504,10 @@ def bill_b() -> tuple[billing.ElectricityBill, list[billing.BillAllocation]]:
 
 
 def bill_c() -> tuple[billing.ElectricityBill, list[billing.BillAllocation]]:
-    """Arredondamento: 100 € por 3 moradores iguais → 33,34 / 33,33 / 33,33 €."""
+    """Arredondamento: 100 € por 3 moradores iguais → 33,34 / 33,33 / 33,33 €. O cêntimo extra
+    vai a sorteio reproduzível (D-34, `billing.allocation.draw_order`): nesta fatura, a Carla."""
     bill = _bill(BILL_C, total=10_000, fixed=2_500, total_wh=468_750)
-    rows = [(ANA, 0, 834, 2500), (BRUNO, 0, 833, 2500), (CARLA, 0, 833, 2500)]
+    rows = [(ANA, 0, 833, 2500), (BRUNO, 0, 833, 2500), (CARLA, 0, 834, 2500)]
     return bill, _allocations(BILL_C, rows)
 
 
@@ -506,6 +631,11 @@ def event_samples() -> list[domain_events.EventBase]:
         e.EnergyConsumptionClosed(**d, provenance=SIM_INFERRED, data=consumption(closed=True)),
         e.PresenceDoorCrossed(**d, provenance=SIM_INFERRED, data=door_crossed()),
         e.PresenceChanged(**d, provenance=SIM_INFERRED, data=person_presence()),
+        e.PresenceCueRecorded(**d, provenance=SIM_INFERRED, data=appliance_cue()),
+        e.PresenceConfirmationNeeded(**d, provenance=SIM_INFERRED, data=presence_confirmation()),
+        e.PresenceOccupancyChanged(**d, provenance=SIM_INFERRED, data=occupancy()),
+        e.SensorReadingRecorded(**d, provenance=SIM_MEASURED, data=window_open()),
+        e.SafetyAlertRaised(**d, provenance=SIM_INFERRED, data=window_alert()),
         e.BillingConfirmationNeeded(**d, provenance=SIM_INFERRED, data=confirmation_request()),
         e.BillingAttributionChanged(**d, provenance=attrib.provenance, data=attrib),
         e.BillingBillCreated(**d, provenance=SIM_MEASURED, data=e.BillRef(bill_id=bill.id)),

@@ -28,7 +28,9 @@ from homemind.contracts.household import (
 )
 from homemind.contracts.notification import (
     ConfirmationChoice,
+    ConfirmationOutcome,
     ConfirmationRequest,
+    ConfirmationVerdict,
     NotificationRef,
     NotificationResponse,
     RefType,
@@ -217,14 +219,15 @@ def resolve_policy(
     )
 
 
-def apply_response(
+def apply_confirmation_outcome(
     decision: PolicyDecision,
     response: NotificationResponse,
     ref: NotificationRef | None,
+    outcome: ConfirmationOutcome,
     *,
     now,
 ) -> PolicyDecision:
-    """First valid reply wins. Unknown consumes the vote but leaves a timeout fallback."""
+    """Map P3's persisted D-32 outcome; HOUSE-04 never counts or resolves votes."""
     if decision.status is not PolicyStatus.pending or decision.confirmation_request is None:
         raise PolicyConflictError("não há confirmação aberta")
     if (
@@ -233,40 +236,46 @@ def apply_response(
         or ref.id != decision.consumption_event_id
     ):
         raise PolicyConflictError("resposta não corresponde ao consumo")
-    if now >= decision.expires_at or response.responded_at >= decision.expires_at:
+    # P3 timestamps and persists the vote before publishing its event. Delivery may be delayed;
+    # the vote's timestamp, not handler time, decides whether it met the deadline.
+    if response.responded_at >= decision.expires_at:
         raise PolicyExpiredError("pedido expirado")
     if response.responded_at < decision.decided_at or response.responded_at > now:
         raise PolicyConflictError("instante da resposta inválido")
     if response.resident_id not in decision.confirmation_request.eligible_resident_ids:
         raise PolicyConflictError("morador não elegível")
-    try:
-        choice = ConfirmationChoice(response.action_id)
-    except ValueError as exc:
-        raise PolicyConflictError("resposta desconhecida") from exc
-    if choice is ConfirmationChoice.unknown:
-        return replace(
-            decision,
-            reason=PolicyReason.response_unknown,
-            decided_at=now,
-            confirmation_request=None,
-        )
-    if choice is ConfirmationChoice.everyone:
-        return replace(
-            decision,
-            status=PolicyStatus.confirmed,
-            reason=PolicyReason.response_everyone,
-            target_type=AttributionTarget.common,
-            method=AttributionMethod.confirmation,
-            confirmation_request=None,
-            expires_at=None,
-            decided_at=now,
-        )
+    if outcome.verdict is ConfirmationVerdict.pending:
+        return decision
+    if outcome.verdict is ConfirmationVerdict.self_claimed:
+        if (
+            response.action_id != ConfirmationChoice.mine
+            or outcome.resident_id != response.resident_id
+        ):
+            raise PolicyConflictError("outcome self_claimed não corresponde ao voto decisivo")
+        reason = PolicyReason.response_mine
+        target = AttributionTarget.resident
+        resident = response.resident_id
+    elif outcome.verdict is ConfirmationVerdict.accusation_accepted:
+        if (
+            response.action_id != ConfirmationChoice.other
+            or response.target_resident_id != outcome.resident_id
+        ):
+            raise PolicyConflictError("outcome accusation_accepted não corresponde ao voto")
+        reason = PolicyReason.response_other
+        target = AttributionTarget.resident
+        resident = outcome.resident_id
+    elif outcome.verdict is ConfirmationVerdict.everyone:
+        reason = PolicyReason.response_everyone
+        target = AttributionTarget.common
+        resident = None
+    else:  # pragma: no cover - StrEnum/Pydantic makes this unreachable
+        raise PolicyConflictError("outcome de confirmação desconhecido")
     return replace(
         decision,
         status=PolicyStatus.confirmed,
-        reason=PolicyReason.response_mine,
-        target_type=AttributionTarget.resident,
-        target_resident_id=response.resident_id,
+        reason=reason,
+        target_type=target,
+        target_resident_id=resident,
         method=AttributionMethod.confirmation,
         confirmation_request=None,
         expires_at=None,
@@ -274,15 +283,23 @@ def apply_response(
     )
 
 
-def expire_decision(decision: PolicyDecision, *, now) -> PolicyDecision:
-    """Only confirmation-pending decisions can fallback, never unknown location or room."""
+def expire_decision(
+    decision: PolicyDecision,
+    outcome: ConfirmationOutcome,
+    *,
+    expired: bool,
+    now,
+) -> PolicyDecision:
+    """Apply P3's timeout outcome; a local timer alone cannot create the fallback."""
     if (
         decision.status is not PolicyStatus.pending
         or decision.expires_at is None
         or now < decision.expires_at
+        or not expired
+        or outcome.verdict is not ConfirmationVerdict.everyone
     ):
         return decision
-    if decision.reason not in (PolicyReason.awaiting_confirmation, PolicyReason.response_unknown):
+    if decision.reason is not PolicyReason.awaiting_confirmation:
         return decision
     return replace(
         decision,
@@ -330,12 +347,8 @@ def as_attribution(
     if decision.status is PolicyStatus.pending:
         raise PolicyConflictError("consumo ainda não atribuído")
     if decision.method is AttributionMethod.confirmation:
-        if actor.by_resident_id != decision.target_resident_id and (
-            decision.target_type is AttributionTarget.resident
-        ):
-            raise PolicyConflictError("ator diferente do responsável que confirmou")
         if actor.by_resident_id is None:
-            raise PolicyConflictError("a confirmação exige ator humano")
+            raise PolicyConflictError("a confirmação exige o votante decisivo como ator")
     return Attribution(
         id=attribution_id,
         household_id=decision.household_id,

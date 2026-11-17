@@ -14,11 +14,15 @@ from uuid import UUID
 from homemind.contracts.common import stable_id
 from homemind.contracts.energy import ConsumptionEvent, ConsumptionStatus
 from homemind.contracts.household import Membership, Room
-from homemind.contracts.notification import NotificationRef, NotificationResponse
+from homemind.contracts.notification import (
+    ConfirmationOutcome,
+    NotificationRef,
+    NotificationResponse,
+)
 from homemind.contracts.policy import PolicyDecision, PolicyReason, PolicyStatus, PolicyVersion
 from homemind.features.households.policies import (
     PolicyConflictError,
-    apply_response,
+    apply_confirmation_outcome,
     expire_decision,
     resolve_policy,
 )
@@ -197,6 +201,11 @@ def transition_decision(
     current = load_decision(conn, decision.household_id, decision.consumption_event_id)
     if current is None or current.revision != expected_revision:
         raise PolicyConflictError("decisão alterada entretanto")
+    if conn.execute(
+        "SELECT 1 FROM household_policy_audit WHERE source_event_id = ?",
+        (str(source_event_id),),
+    ).fetchone():
+        return current
     old = current.decision
     if (
         old.status is not PolicyStatus.pending
@@ -211,21 +220,13 @@ def transition_decision(
     elif old.reason is PolicyReason.awaiting_confirmation:
         if decision.reason not in (
             PolicyReason.response_mine,
+            PolicyReason.response_other,
             PolicyReason.response_everyone,
-            PolicyReason.response_unknown,
             PolicyReason.confirmation_timeout,
         ):
             raise PolicyConflictError("transição inválida de confirmação")
-    elif old.reason is PolicyReason.response_unknown:
-        if decision.reason is not PolicyReason.confirmation_timeout:
-            raise PolicyConflictError("só o timeout termina uma resposta desconhecida")
     else:
         raise PolicyConflictError("decisão pendente requer revisão explícita")
-    if conn.execute(
-        "SELECT 1 FROM household_policy_audit WHERE source_event_id = ?",
-        (str(source_event_id),),
-    ).fetchone():
-        return current
     cur = conn.execute(
         "UPDATE household_policy_decision SET revision = revision + 1, status = ?,"
         " decision_json = ? WHERE household_id = ? AND consumption_event_id = ?"
@@ -303,21 +304,32 @@ def resolve_and_store(
     return create_decision(conn, result, source_event_id=source_event_id)
 
 
-def respond_and_store(
+def record_confirmation_outcome(
     conn: sqlite3.Connection,
     household_id: UUID,
     consumption_id: UUID,
     response: NotificationResponse,
     ref: NotificationRef | None,
+    outcome: ConfirmationOutcome,
     *,
     now: datetime,
     source_event_id: UUID,
 ) -> StoredPolicy:
-    """P4 notification.responded handler; caller must verify event.household_id."""
+    """P4 notification.responded adapter; votes/outcome are resolved and persisted by P3."""
     current = load_decision(conn, household_id, consumption_id)
     if current is None:
         raise PolicyConflictError("decisão não existe")
-    decision = apply_response(current.decision, response, ref, now=now)
+    if conn.execute(
+        "SELECT 1 FROM household_policy_audit WHERE source_event_id = ?",
+        (str(source_event_id),),
+    ).fetchone():
+        return current
+    if current.decision.status is not PolicyStatus.pending:
+        # A final P3 outcome wins over delayed intermediate votes or a duplicate event.
+        return current
+    decision = apply_confirmation_outcome(current.decision, response, ref, outcome, now=now)
+    if decision == current.decision:
+        return current
     return transition_decision(
         conn,
         decision,
@@ -330,19 +342,21 @@ def expire_and_store(
     conn: sqlite3.Connection,
     household_id: UUID,
     consumption_id: UUID,
+    outcome: ConfirmationOutcome,
     *,
+    expired: bool,
     now: datetime,
 ) -> StoredPolicy | None:
-    """P4 calls this from a periodic sweep or before bill finalization (no P4 money here)."""
+    """P4 maps P3's persisted `Notification.outcome(now)` when its timeout has elapsed."""
     current = load_decision(conn, household_id, consumption_id)
     if current is None:
         return None
-    expired = expire_decision(current.decision, now=now)
-    if expired is current.decision:
+    resolved = expire_decision(current.decision, outcome, expired=expired, now=now)
+    if resolved is current.decision:
         return current
     return transition_decision(
         conn,
-        expired,
+        resolved,
         expected_revision=current.revision,
         source_event_id=stable_id("house-04.timeout", str(household_id), str(consumption_id)),
     )

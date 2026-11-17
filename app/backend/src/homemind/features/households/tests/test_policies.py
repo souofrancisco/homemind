@@ -1,7 +1,6 @@
-"""HOUSE-04 deterministic fixtures; no live hardware, network, LLM or monetary allocations."""
+"""HOUSE-04 deterministic fixtures and P3/P4 contract integration."""
 
 import asyncio
-import threading
 from datetime import date, timedelta
 
 import pytest
@@ -17,14 +16,23 @@ from homemind.contracts.household import (
     MembershipRole,
     MembershipStatus,
 )
-from homemind.contracts.notification import NotificationRef, NotificationResponse, RefType
+from homemind.contracts.notification import (
+    AlreadyRespondedError,
+    ConfirmationOutcome,
+    ConfirmationVerdict,
+    NotificationRef,
+    NotificationResponse,
+    NotificationStatus,
+    RefType,
+)
 from homemind.contracts.policy import PolicyReason, PolicyStatus, PolicyVersion
 from homemind.core.db import Database, migrate
 from homemind.core.events import EventBus
+from homemind.features.billing.allocation import allocate, shares_from_attributions
 from homemind.features.households.policies import (
     PolicyConflictError,
     PolicyExpiredError,
-    apply_response,
+    apply_confirmation_outcome,
     as_attribution,
     confirmation_intent,
     expire_decision,
@@ -35,10 +43,13 @@ from homemind.features.households.policy_store import (
     expire_and_store,
     load_decision,
     policy_at,
+    record_confirmation_outcome,
     resolve_and_store,
-    respond_and_store,
 )
 from homemind.features.households.repo import seed_demo
+from homemind.features.notifications.directory import SqliteResidentDirectory
+from homemind.features.notifications.service import NotificationNotFoundError, NotificationService
+from homemind.features.notifications.sqlite import SqliteNotificationRepository
 
 
 @pytest.fixture
@@ -90,16 +101,160 @@ def decision(db, c=None, *, now=None, verified=True, policy=None, memberships=No
     )
 
 
-def reply(choice, resident=fx.CARLA, at=None):
+def reply(choice, resident=fx.CARLA, at=None, target=None):
     return NotificationResponse(
         notification_id=fx.NOTIFICATION,
         action_id=choice,
         resident_id=resident,
         responded_at=at or fx.T0 + timedelta(hours=3),
+        target_resident_id=target,
     )
 
 
 REF = NotificationRef(type=RefType.consumption_event, id=fx.CONSUMPTION)
+
+
+def test_confirmation_intermediate_outcome_keeps_policy_pending(db):
+    pending = decision(db, policy=replace(context(db)[0], ask_threshold_cents=40))
+    response = reply("other", fx.ANA, target=fx.DIOGO)
+    result = apply_confirmation_outcome(
+        pending,
+        response,
+        REF,
+        ConfirmationOutcome(verdict=ConfirmationVerdict.pending, votes=1, votes_needed=2),
+        now=fx.T0 + timedelta(hours=3),
+    )
+    assert result == pending
+    assert result.confirmation_request is not None
+
+
+def test_confirmation_outcome_uses_p3_majority_and_allows_decisive_voter_as_auditor(db):
+    pending = decision(db, policy=replace(context(db)[0], ask_threshold_cents=40))
+    response = reply("other", fx.BRUNO, target=fx.DIOGO)
+    majority = ConfirmationOutcome(
+        verdict=ConfirmationVerdict.accusation_accepted,
+        resident_id=fx.DIOGO,
+        votes=2,
+        votes_needed=2,
+    )
+    resolved = apply_confirmation_outcome(
+        pending, response, REF, majority, now=fx.T0 + timedelta(hours=3)
+    )
+    assert resolved.reason is PolicyReason.response_other
+    assert resolved.target_resident_id == fx.DIOGO
+    attribution = as_attribution(
+        resolved,
+        attribution_id=stable_id("attr", "majority"),
+        actor=Audit(at=resolved.decided_at, by_resident_id=fx.BRUNO),
+    )
+    assert attribution.target_resident_id == fx.DIOGO
+
+
+def test_actual_p3_votes_drive_household_policy_and_p4_attribution(db):
+    db.run_sync(
+        lambda c: c.execute(
+            "UPDATE household SET ask_threshold_cents=40 WHERE id=?", (str(fx.HOUSEHOLD),)
+        )
+    )
+    opened = db.run_sync(
+        lambda c: resolve_and_store(
+            c,
+            episode(),
+            now=fx.T0 + timedelta(hours=2),
+            location_verified=True,
+            source_event_id=stable_id("energy", "p3-integration"),
+        )
+    )
+    request = opened.decision.confirmation_request
+    assert request is not None
+
+    def create_notification(conn):
+        svc = NotificationService(
+            SqliteNotificationRepository(conn),
+            SqliteResidentDirectory(conn),
+            lambda: fx.T0 + timedelta(hours=2),
+        )
+        return svc.on_confirmation_needed(
+            request,
+            source_event_id=stable_id("billing.confirmation_needed", "p3-integration"),
+            household_id=fx.HOUSEHOLD,
+            correlation_id=fx.CORRELATION,
+            provenance=fx.SIM_INFERRED,
+        )
+
+    created = db.run_sync(create_notification)
+    assert created.notification is not None
+    assert created.notification.status is NotificationStatus.unread
+    notification_id = created.notification.id
+
+    def p3_vote(resident, target):
+        def vote(conn):
+            svc = NotificationService(
+                SqliteNotificationRepository(conn),
+                SqliteResidentDirectory(conn),
+                lambda: fx.T0 + timedelta(hours=3),
+            )
+            return svc.respond(
+                notification_id,
+                household_id=fx.HOUSEHOLD,
+                resident_id=resident,
+                action_id="other",
+                target_resident_id=target,
+            )
+
+        return db.run_sync(vote)
+
+    first_vote = p3_vote(fx.ANA, fx.DIOGO)
+    first_event = first_vote.events[0]
+    first_result = db.run_sync(
+        lambda c: record_confirmation_outcome(
+            c,
+            fx.HOUSEHOLD,
+            fx.CONSUMPTION,
+            first_event.data.response,
+            first_event.data.ref,
+            first_event.data.outcome,
+            now=first_event.ts,
+            source_event_id=first_event.id,
+        )
+    )
+    assert first_result.revision == 1
+    assert first_result.decision.status is PolicyStatus.pending
+
+    second_vote = p3_vote(fx.BRUNO, fx.DIOGO)
+    second_event = second_vote.events[0]
+    final = db.run_sync(
+        lambda c: record_confirmation_outcome(
+            c,
+            fx.HOUSEHOLD,
+            fx.CONSUMPTION,
+            second_event.data.response,
+            second_event.data.ref,
+            second_event.data.outcome,
+            now=second_event.ts,
+            source_event_id=second_event.id,
+        )
+    )
+    assert final.decision.status is PolicyStatus.confirmed
+    assert final.decision.reason is PolicyReason.response_other
+    assert final.decision.target_resident_id == fx.DIOGO
+    assert final.revision == 2
+    attr = as_attribution(
+        final.decision,
+        attribution_id=stable_id("attr", "p3-integration"),
+        actor=Audit(at=final.decision.decided_at, by_resident_id=fx.BRUNO),
+    )
+    assert attr.method is AttributionMethod.confirmation
+    assert_single_active([attr])
+    closed = episode()
+    shares = shares_from_attributions([attr], {closed.id: closed})
+    assert shares[0].resident_id == fx.DIOGO
+    bill, _ = fx.bill_a()
+    allocations = allocate(bill, {tenant: None for tenant in fx.TENANTS}, shares)
+    assert sum(allocation.amount_cents for allocation in allocations) == bill.total_cents
+    assert sum(allocation.attributed_total_wh for allocation in allocations) == closed.energy_wh
+    with pytest.raises(AlreadyRespondedError):
+        p3_vote(fx.BRUNO, fx.DIOGO)
 
 
 def test_bedroom_contract_not_appliance_owner(db):
@@ -185,6 +340,18 @@ def test_uncertain_room_and_unverified_location_never_assign(db):
     assert decision(db, unknown_room).target_resident_id is None
 
 
+def test_vacant_room_and_common_appliance_never_use_owner_as_payer(db):
+    vacant = decision(db, episode(fx.ROOM_ANA), memberships=[])
+    assert vacant.status is PolicyStatus.pending
+    assert vacant.reason is PolicyReason.room_occupancy_unknown
+
+    p = replace(context(db)[0], common_area_rule=CommonAreaRule.equal)
+    common_appliance = replace(episode(), appliance_owner_resident_id=None)
+    result = decision(db, common_appliance, policy=p)
+    assert result.target_type is AttributionTarget.common
+    assert result.target_resident_id is None
+
+
 def test_common_equal_is_automatic_even_if_heater_is_personal(db):
     p = PolicyVersion(
         household_id=fx.HOUSEHOLD,
@@ -201,6 +368,15 @@ def test_common_equal_is_automatic_even_if_heater_is_personal(db):
 def test_common_ask_threshold_missing_cost_and_open_episode(db):
     p, _, _ = context(db)
     assert decision(db, policy=p).reason is PolicyReason.below_threshold  # 48c < 50c
+    use_at_threshold = replace(
+        episode(),
+        cost_estimate=replace(
+            episode().cost_estimate,
+            cents=50,
+            price_millicents_per_kwh=16_667,
+        ),
+    )
+    assert decision(db, use_at_threshold, policy=p).reason is PolicyReason.awaiting_confirmation
     requested = replace(p, ask_threshold_cents=40)
     assert decision(db, policy=requested).reason is PolicyReason.awaiting_confirmation
     without_cost = replace(episode(), cost_estimate=None)
@@ -216,8 +392,20 @@ def test_personal_heater_borrowed_by_carla_and_three_choices(db):
     p = replace(context(db)[0], ask_threshold_cents=40)
     pending = decision(db, policy=p)
     assert pending.confirmation_request.eligible_resident_ids == sorted(fx.TENANTS, key=str)
-    mine = apply_response(pending, reply("mine"), REF, now=fx.T0 + timedelta(hours=3))
+    mine = apply_confirmation_outcome(
+        pending,
+        reply("mine"),
+        REF,
+        ConfirmationOutcome(
+            verdict=ConfirmationVerdict.self_claimed,
+            resident_id=fx.CARLA,
+            votes=1,
+            votes_needed=2,
+        ),
+        now=fx.T0 + timedelta(hours=3),
+    )
     assert mine.status is PolicyStatus.confirmed
+    assert mine.reason is PolicyReason.response_mine
     assert mine.target_resident_id == fx.CARLA  # not its owner Bruno
     attr = as_attribution(
         mine,
@@ -226,37 +414,88 @@ def test_personal_heater_borrowed_by_carla_and_three_choices(db):
     )
     assert attr.method is AttributionMethod.confirmation
     with pytest.raises(PolicyConflictError):
-        apply_response(mine, reply("everyone"), REF, now=fx.T0 + timedelta(hours=3))
-    everyone = apply_response(pending, reply("everyone"), REF, now=fx.T0 + timedelta(hours=3))
+        apply_confirmation_outcome(
+            mine,
+            reply("everyone"),
+            REF,
+            ConfirmationOutcome(verdict=ConfirmationVerdict.everyone, votes=4, votes_needed=2),
+            now=fx.T0 + timedelta(hours=3),
+        )
+    everyone = apply_confirmation_outcome(
+        pending,
+        reply("unknown", fx.DIOGO),
+        REF,
+        ConfirmationOutcome(verdict=ConfirmationVerdict.everyone, votes=4, votes_needed=2),
+        now=fx.T0 + timedelta(hours=3),
+    )
     assert everyone.status is PolicyStatus.confirmed
     assert everyone.target_type is AttributionTarget.common
-    unknown = apply_response(pending, reply("unknown"), REF, now=fx.T0 + timedelta(hours=3))
-    assert unknown.status is PolicyStatus.pending
-    assert unknown.reason is PolicyReason.response_unknown
-    assert unknown.confirmation_request is None
-    with pytest.raises(PolicyConflictError):
-        apply_response(unknown, reply("mine"), REF, now=fx.T0 + timedelta(hours=3))
-    assert expire_decision(unknown, now=fx.T0 + timedelta(hours=27)).status is PolicyStatus.fallback
+    pending_vote = apply_confirmation_outcome(
+        pending,
+        reply("unknown"),
+        REF,
+        ConfirmationOutcome(verdict=ConfirmationVerdict.pending, votes=1, votes_needed=2),
+        now=fx.T0 + timedelta(hours=3),
+    )
+    assert pending_vote == pending
 
 
 def test_unauthorized_wrong_ref_and_expired_reply_are_rejected(db):
     p = replace(context(db)[0], ask_threshold_cents=40)
     pending = decision(db, policy=p)
+    self_claim = ConfirmationOutcome(
+        verdict=ConfirmationVerdict.self_claimed,
+        resident_id=fx.LANDLORD,
+        votes=1,
+        votes_needed=2,
+    )
     with pytest.raises(PolicyConflictError):
-        apply_response(pending, reply("mine", fx.LANDLORD), REF, now=fx.T0 + timedelta(hours=3))
+        apply_confirmation_outcome(
+            pending, reply("mine", fx.LANDLORD), REF, self_claim, now=fx.T0 + timedelta(hours=3)
+        )
     wrong = NotificationRef(type=RefType.consumption_event, id=stable_id("other"))
     with pytest.raises(PolicyConflictError):
-        apply_response(pending, reply("mine"), wrong, now=fx.T0 + timedelta(hours=3))
+        apply_confirmation_outcome(
+            pending,
+            reply("mine"),
+            wrong,
+            ConfirmationOutcome(
+                verdict=ConfirmationVerdict.self_claimed,
+                resident_id=fx.CARLA,
+                votes=1,
+                votes_needed=2,
+            ),
+            now=fx.T0 + timedelta(hours=3),
+        )
     with pytest.raises(PolicyExpiredError):
-        apply_response(
+        apply_confirmation_outcome(
             pending,
             reply("mine", at=fx.T0 + timedelta(hours=27)),
             REF,
+            ConfirmationOutcome(
+                verdict=ConfirmationVerdict.self_claimed,
+                resident_id=fx.CARLA,
+                votes=1,
+                votes_needed=2,
+            ),
             now=fx.T0 + timedelta(hours=27),
         )
-    expired = expire_decision(pending, now=fx.T0 + timedelta(hours=27))
+    expired = expire_decision(
+        pending,
+        ConfirmationOutcome(verdict=ConfirmationVerdict.everyone, votes=1, votes_needed=2),
+        expired=True,
+        now=fx.T0 + timedelta(hours=27),
+    )
     assert expired.method is AttributionMethod.equal_fallback
-    assert expire_decision(expired, now=fx.T0 + timedelta(hours=100)) == expired
+    assert (
+        expire_decision(
+            expired,
+            ConfirmationOutcome(verdict=ConfirmationVerdict.everyone, votes=1, votes_needed=2),
+            expired=True,
+            now=fx.T0 + timedelta(hours=100),
+        )
+        == expired
+    )
     with pytest.raises(PolicyConflictError):
         as_attribution(
             pending,
@@ -272,7 +511,7 @@ def test_presence_c_is_model_only_even_with_evidence(db):
     assert result.target_resident_id is None
 
 
-def test_repository_duplicate_and_first_reply_wins(db):
+def test_repository_processes_intermediate_and_final_p3_outcomes_once(db):
     db.run_sync(
         lambda c: c.execute(
             "UPDATE household SET ask_threshold_cents=40 WHERE id=?", (str(fx.HOUSEHOLD),)
@@ -298,34 +537,70 @@ def test_repository_duplicate_and_first_reply_wins(db):
         )
     )
     assert initial == again and initial.revision == 1
-    results = []
-
-    def attempt(which, who):
-        try:
-            r = db.run_sync(
-                lambda conn: respond_and_store(
-                    conn,
-                    fx.HOUSEHOLD,
-                    fx.CONSUMPTION,
-                    reply(which, who),
-                    REF,
-                    now=fx.T0 + timedelta(hours=3),
-                    source_event_id=stable_id("notification", which),
-                )
-            )
-            results.append(("ok", r))
-        except PolicyConflictError:
-            results.append(("409", None))
-
-    a = threading.Thread(target=attempt, args=("mine", fx.CARLA))
-    b = threading.Thread(target=attempt, args=("everyone", fx.BRUNO))
-    a.start()
-    b.start()
-    a.join()
-    b.join()
-    assert sorted(x[0] for x in results) == ["409", "ok"]
+    pending_outcome = ConfirmationOutcome(
+        verdict=ConfirmationVerdict.pending, votes=1, votes_needed=2
+    )
+    intermediate_event_id = stable_id("notification", "intermediate")
+    intermediate = db.run_sync(
+        lambda conn: record_confirmation_outcome(
+            conn,
+            fx.HOUSEHOLD,
+            fx.CONSUMPTION,
+            reply("unknown", fx.ANA),
+            REF,
+            pending_outcome,
+            now=fx.T0 + timedelta(hours=3),
+            source_event_id=intermediate_event_id,
+        )
+    )
+    assert intermediate.revision == 1 and intermediate.decision.status is PolicyStatus.pending
+    final_outcome = ConfirmationOutcome(
+        verdict=ConfirmationVerdict.self_claimed,
+        resident_id=fx.CARLA,
+        votes=2,
+        votes_needed=2,
+    )
+    final_event_id = stable_id("notification", "final")
+    final = db.run_sync(
+        lambda conn: record_confirmation_outcome(
+            conn,
+            fx.HOUSEHOLD,
+            fx.CONSUMPTION,
+            reply("mine", fx.CARLA),
+            REF,
+            final_outcome,
+            now=fx.T0 + timedelta(hours=4),
+            source_event_id=final_event_id,
+        )
+    )
+    repeated = db.run_sync(
+        lambda conn: record_confirmation_outcome(
+            conn,
+            fx.HOUSEHOLD,
+            fx.CONSUMPTION,
+            reply("mine", fx.CARLA),
+            REF,
+            final_outcome,
+            now=fx.T0 + timedelta(hours=4),
+            source_event_id=final_event_id,
+        )
+    )
+    # A delayed intermediate event after the final decision cannot roll it back.
+    delayed = db.run_sync(
+        lambda conn: record_confirmation_outcome(
+            conn,
+            fx.HOUSEHOLD,
+            fx.CONSUMPTION,
+            reply("unknown", fx.BRUNO),
+            REF,
+            pending_outcome,
+            now=fx.T0 + timedelta(hours=5),
+            source_event_id=stable_id("notification", "delayed-intermediate"),
+        )
+    )
     final = db.run_sync(lambda conn: load_decision(conn, fx.HOUSEHOLD, fx.CONSUMPTION))
-    assert final.revision == 2 and final.decision.status is PolicyStatus.confirmed
+    assert final.decision.status is PolicyStatus.confirmed and final.revision == 2
+    assert repeated == final and delayed == final
     assert (
         db.run_sync(
             lambda c: c.execute("SELECT count(*) FROM household_policy_audit").fetchone()[0]
@@ -349,11 +624,24 @@ def test_timeout_once_no_late_or_repeated_response(db):
             source_event_id=stable_id("energy", "timeout"),
         )
     )
+    before_deadline = db.run_sync(
+        lambda conn: expire_and_store(
+            conn,
+            fx.HOUSEHOLD,
+            fx.CONSUMPTION,
+            ConfirmationOutcome(verdict=ConfirmationVerdict.pending, votes=1, votes_needed=2),
+            expired=False,
+            now=fx.T0 + timedelta(hours=25),
+        )
+    )
+    assert before_deadline.decision.status is PolicyStatus.pending
     expired = db.run_sync(
         lambda conn: expire_and_store(
             conn,
             fx.HOUSEHOLD,
             fx.CONSUMPTION,
+            ConfirmationOutcome(verdict=ConfirmationVerdict.everyone, votes=1, votes_needed=2),
+            expired=True,
             now=fx.T0 + timedelta(hours=27),
         )
     )
@@ -364,23 +652,126 @@ def test_timeout_once_no_late_or_repeated_response(db):
                 conn,
                 fx.HOUSEHOLD,
                 fx.CONSUMPTION,
+                ConfirmationOutcome(verdict=ConfirmationVerdict.everyone, votes=1, votes_needed=2),
+                expired=True,
                 now=fx.T0 + timedelta(hours=50),
             )
         )
         == expired
     )
-    with pytest.raises(PolicyConflictError):
+    late = db.run_sync(
+        lambda conn: record_confirmation_outcome(
+            conn,
+            fx.HOUSEHOLD,
+            fx.CONSUMPTION,
+            reply("mine"),
+            REF,
+            ConfirmationOutcome(
+                verdict=ConfirmationVerdict.self_claimed,
+                resident_id=fx.CARLA,
+                votes=1,
+                votes_needed=2,
+            ),
+            now=fx.T0 + timedelta(hours=28),
+            source_event_id=stable_id("late"),
+        )
+    )
+    assert late == expired  # P3 already resolved the request; delayed events cannot replace it.
+
+
+def test_real_p3_expiration_outcome_controls_household_fallback(db):
+    db.run_sync(
+        lambda c: c.execute(
+            "UPDATE household SET ask_threshold_cents=40 WHERE id=?", (str(fx.HOUSEHOLD),)
+        )
+    )
+    opened = db.run_sync(
+        lambda conn: resolve_and_store(
+            conn,
+            episode(),
+            now=fx.T0 + timedelta(hours=2),
+            location_verified=True,
+            source_event_id=stable_id("energy", "p3-timeout"),
+        )
+    )
+    request = opened.decision.confirmation_request
+    assert request is not None
+    now = {"value": fx.T0 + timedelta(hours=2)}
+
+    def notification_service(conn):
+        return NotificationService(
+            SqliteNotificationRepository(conn),
+            SqliteResidentDirectory(conn),
+            lambda: now["value"],
+        )
+
+    created = db.run_sync(
+        lambda conn: notification_service(conn).on_confirmation_needed(
+            request,
+            source_event_id=stable_id("billing.confirmation_needed", "p3-timeout"),
+            household_id=fx.HOUSEHOLD,
+            correlation_id=fx.CORRELATION,
+            provenance=fx.SIM_INFERRED,
+        )
+    )
+    assert created.notification is not None
+    notification_id = created.notification.id
+    original_eligible = created.notification.responder_ids
+
+    db.run_sync(
+        lambda conn: conn.execute(
+            "UPDATE membership SET status='ended', ends_on='2026-11-17'"
+            " WHERE household_id=? AND resident_id=?",
+            (str(fx.HOUSEHOLD), str(fx.ANA)),
+        )
+    )
+    with pytest.raises(NotificationNotFoundError):
         db.run_sync(
-            lambda conn: respond_and_store(
-                conn,
-                fx.HOUSEHOLD,
-                fx.CONSUMPTION,
-                reply("mine"),
-                REF,
-                now=fx.T0 + timedelta(hours=28),
-                source_event_id=stable_id("late"),
+            lambda conn: notification_service(conn).respond(
+                notification_id,
+                household_id=fx.HOUSEHOLD,
+                resident_id=fx.ANA,
+                action_id="mine",
             )
         )
+    # P3 freezes the eligible list at notification creation; current membership gates new votes.
+    stored_before_expiry = db.run_sync(
+        lambda conn: SqliteNotificationRepository(conn).get(notification_id)
+    )
+    assert stored_before_expiry.responder_ids == original_eligible
+
+    now["value"] = fx.T0 + timedelta(hours=25)
+    early_outcome = created.notification.outcome(now["value"])
+    assert early_outcome.verdict is ConfirmationVerdict.pending
+    early = db.run_sync(
+        lambda conn: expire_and_store(
+            conn,
+            fx.HOUSEHOLD,
+            fx.CONSUMPTION,
+            early_outcome,
+            expired=created.notification.is_expired(now["value"]),
+            now=now["value"],
+        )
+    )
+    assert early.decision.status is PolicyStatus.pending
+
+    now["value"] = fx.T0 + timedelta(hours=26)
+    expired = db.run_sync(lambda conn: notification_service(conn).expire_due())
+    (p3_notification,) = [n for n in expired if n.id == notification_id]
+    p3_outcome = p3_notification.outcome(now["value"])
+    assert p3_outcome.verdict is ConfirmationVerdict.everyone
+    fallback = db.run_sync(
+        lambda conn: expire_and_store(
+            conn,
+            fx.HOUSEHOLD,
+            fx.CONSUMPTION,
+            p3_outcome,
+            expired=p3_notification.is_expired(now["value"]),
+            now=now["value"],
+        )
+    )
+    assert fallback.decision.status is PolicyStatus.fallback
+    assert fallback.decision.method is AttributionMethod.equal_fallback
 
 
 def test_new_policy_affects_future_only_and_old_decision_is_untouched(db):

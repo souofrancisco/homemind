@@ -33,11 +33,13 @@ def test_private_models_and_fields_never_reach_the_frontend(spec):
     internal_models = (
         *("Device", "Resident", "Membership", "StoredEvent", "ApplianceSignature"),
         *("PresenceEvent", "Notification", "DoorCrossed", "ConfirmationRequest"),
+        *("PresenceDevice", "PresenceConfirmationRequest", "SensorReading", "SafetyAlert"),
     )
     for internal in internal_models:
         assert internal not in schemas, internal
     props = {p for s in schemas.values() for p in s.get("properties", {})}
     assert not props & {"external_ref", "auth_subject", "image", "frame", "frames", "token"}
+    assert not props & {"match_key", "mac", "rtsp_url", "url"}
     # ids de terceiros que a app não precisa: a notificação pública não traz quem pode responder
     assert "responder_ids" not in schemas["NotificationView"]["properties"]
     assert "presence_opt_in" not in schemas["MemberView"]["properties"]
@@ -45,7 +47,7 @@ def test_private_models_and_fields_never_reach_the_frontend(spec):
 
 def test_no_fake_endpoints_for_shared_models(spec):
     paths = set(spec["paths"])
-    for banned in ("/api/contracts", "/api/schemas", "/api/models", "/api/presence", "/api/bills"):
+    for banned in ("/api/contracts", "/api/schemas", "/api/models", "/api/bills"):
         assert banned not in paths
     # as rotas existentes antes da fundação continuam
     for kept in ("/healthz", "/api/me", "/api/status", "/api/state", "/api/events", "/api/rules"):
