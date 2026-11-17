@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     oidc_client_id: str = "homemind"
     # Origens dos clientes autorizados (CORS), separadas por vírgulas.
     cors_origins: str = "http://localhost:5173,http://localhost,https://localhost"
+    # Vídeo: URL RTSP ou caminho de clip. Nunca logar nem devolver (pode conter credenciais).
+    video_source: str = ""
+    video_sem_frame_s: float = 3.0  # sem frame há mais do que isto -> camara_ok False
+    video_fps_max: float = 15.0  # cadência máxima do MJPEG de GET /api/video
+    video_jpeg_qualidade: int = 80
 
 
 @lru_cache
