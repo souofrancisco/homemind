@@ -24,7 +24,8 @@ def test_migrate_creates_schema_and_is_idempotent(db):
     names = {
         r["name"] for r in db.run_sync(lambda c: c.execute("SELECT name FROM schema_migration"))
     }
-    assert {"0001_core_households.sql", "0002_core_events.sql"} <= names
+    assert {"0001_core_households.sql", "0002_core_events.sql",
+            "0003_core_membership_invitations.sql"} <= names
     assert migrate(db) == []  # repetir não faz nada
     tables = {
         r["name"]
@@ -195,8 +196,8 @@ def test_core_lifespan_starts_before_and_stops_after_features(monkeypatch, tmp_p
     app = _app_with_probe(seen)
     with TestClient(app):
         db = app.state.db
-        assert seen == [2]
-    assert seen == [2, "feature-stopped"]
+        assert seen == [3]
+    assert seen == [3, "feature-stopped"]
     with pytest.raises(DatabaseClosedError):  # fechou no shutdown
         db.run_sync(lambda c: None)
     get_settings.cache_clear()
