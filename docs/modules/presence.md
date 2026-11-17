@@ -1,6 +1,6 @@
 # Módulo `presence` — câmara na porta e presença
 
-**Dono: P2 (1Mii).** **IMPLEMENTADO** (PRES-03 #107): telemóveis com opt-in, pistas Wi-Fi e resposta a «estás em casa?». **Não há check-in manual «cheguei/saí»**: a presença regista-se só pela câmara (porta) e pelo telemóvel no Wi-Fi (decisão do dono). **IMPLEMENTADO** também: estado da câmara (PRES-01) e contagem na porta (PRES-02). **PLANEADO**: fusão (PRES-04 #108), ocupação (PRES-05). Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
+**Dono: P2 (1Mii).** **IMPLEMENTADO** (PRES-03 #107, PRES-04 #108): telemóveis com opt-in, pistas Wi-Fi, resposta a «estás em casa?» e fusão em casa/fora/incerto. **Não há check-in manual «cheguei/saí»**: a presença regista-se só pela câmara (porta) e pelo telemóvel no Wi-Fi (decisão do dono). **PLANEADO**: câmara na porta (PRES-01/02; a fusão já consome `presence.door_crossed`, hoje só com fixtures), ocupação (PRES-05). Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
 
 ## Responsabilidade
 
@@ -27,6 +27,19 @@ Saber **quando alguém entra ou sai** e, a partir daí, **quem está em casa** �
 | — | `presence.changed` por pessoa; `presence.confirmation_needed` (pistas em conflito); `presence.occupancy_changed` (anónimo; «casa possivelmente vazia» só na fase 2) |
 
 Contratos novos (`PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`, `PresenceDevice`, `CameraStatus`, `SensorReading`, `SafetyAlert`): **PROPOSTA** (D-31), em `contracts/{presence,sensors,safety}.py`.
+
+## Segurança e conforto (`features/safety`, SAFE-01 #114)
+
+**IMPLEMENTADO (SAFE-01, lógica + consumidor do barramento; sem rotas, sem migrações):**
+- `engine.py` (puro): janela (`SensorReading` contacto) aberta **e** aquecimento a decorrer em simultâneo durante ≥ 5 min no mesmo quarto (`ConsumptionEvent` `ongoing` cujo aparelho é de aquecimento) → `SafetyAlert(window_open_heating, warning)` com `suggested_command` = `power=false` na tomada do consumo. É só uma **proposta**: nunca escreve no MCP nem usa `ENABLE_PHYSICAL_WRITES`; a confirmação e a execução são de P3/P1.
+- Relógio = `ts` do evento em processamento (determinístico). Um alerta por episódio (`id` estável); resolve-se (mesmo `id`, `resolved`) quando a janela fecha ou o aquecimento acaba; reabre só com novo episódio (janela fechada e reaberta, ou aquecimento religado). `unknown`/`stale` nunca disparam nem resolvem; sensor sem quarto, quarto diferente ou aparelho não-aquecimento não disparam. `coverage()` identifica sensores ausentes (`absent`).
+- `service.py`: consumidor `safety` (`sensor.reading_recorded`, `energy.consumption_detected/closed`) → `safety.alert_raised`. O estado refaz-se do registo de eventos ao arrancar.
+- `texts.py`: texto pt-PT com origem (SIMULADO/REAL) e o aviso de que a tomada pode alimentar mais do que o aquecedor (na demo, a tomada agregada corta todas as cargas). `simulation.py`: leituras/consumos **SIMULADOS** para demo e testes.
+- **Fumo (SAFE-03):** leitura `smoke` `ok` com `smoke_detected=true` → `SafetyAlert(smoke, critical)` deduplicado por episódio, com origem (`provenance`), sem `suggested_command` (nunca sugere cortes) e `notify_landlord=false` por omissão (o contrato não tem política de autorização do senhorio; só se liga por parâmetro do serviço). Resolve-se com leitura `ok` sem fumo. `unknown`/`stale` não geram alerta nem limpam; sensor ausente aparece em `coverage()` (`absent`). O texto diz que o sistema não substitui detetores certificados.
+
+**Decisões para a demo (dono P2; não definitivas):** os 5 min contam desde que **ambas** as condições coincidem (janela aberta há 10 min e aquecedor que liga → só avisa 5 min depois; se o aquecedor desligar e religar, ou a janela fechar, o relógio recomeça); não há resolvedor de aquecedor de demo — **a regra da janela fica inativa até ENERGY-03 #81**; `notify_landlord=false` por omissão (onde vive a política: provavelmente `HouseholdPolicy`, com P5 — em aberto, P-26); o aviso da tomada agregada fica em `texts.py` para P3, sem mudar o contrato (P-27). O consumidor é idempotente por evento: se a transação do barramento falhar depois do handler, o retry reemite o mesmo alerta.
+
+**PLANEADO:** o router arranca o serviço **sem** resolvedor de aquecedores (por omissão nada é «aquecimento»), porque depende de ENERGY-03 #81 (identificar aparelhos/`ApplianceCategory.heating`); sem leituras reais de contacto/fumo até MCP-03 #76 (o fumo funciona já com eventos reais ou simulados, quando existirem); entrega ao utilizador e confirmação da proposta em APP-02 #95 / MCP-04 #77. Até lá só os cenários simulados exercitam a regra.
 
 ## Passos
 
@@ -85,12 +98,13 @@ ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` →
 
 ## Pistas por pessoa (PRES-03) — IMPLEMENTADO
 
-`features/presence/{wifi,repo,service,router,hostscan}.py`, migração `core/migrations/0200_presence_tables.sql` (convenção D-29, `02xx` = P2; tabelas `presence_device`, `presence_confirmation`, `presence_state` — a última só é usada pela fusão, PRES-04).
+`features/presence/{wifi,repo,service,router,hostscan}.py`, migração `core/migrations/0200_presence_tables.sql` (convenção D-29, `02xx` = P2; tabelas `presence_device`, `presence_confirmation`, `presence_state` — a última é a da fusão, PRES-04).
 
 **API** (todas com `?household_id=`; só inquilino com membership ativa; **senhorio e operador `403 forbidden_role`**, não-membro `404`; a pessoa é sempre a da sessão):
 
 | Rota | Efeito |
 |---|---|
+| `GET /api/presence` | o **meu** `PersonPresence` (PRES-04); mais ninguém o vê |
 | `GET /api/presence/devices` | os **meus** telemóveis (`PresenceDeviceView`) |
 | `POST /api/presence/devices` | regista um telemóvel: `{label, wifi_address, consent: true}`; só guarda o hash; `409` se já registado ou acima de 5; `503` sem `PRESENCE_MATCH_SALT` |
 | `DELETE /api/presence/devices/{id}` | opt-out: deixa de ser reconhecido de imediato e o hash é **apagado** (idempotente) |
@@ -108,6 +122,32 @@ ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` →
 
 **Pontos em aberto.** P-19: a resposta à pergunta fica `real/measured` (o que o contrato já faz). `PresenceMeIn` e `PresenceSource.manual` mantêm-se no contrato (a `PresenceMeIn` sem uso; mudança de contrato é com P5). Alinhado com o PRIV-02 #146 (decisão do dono): `Resource.presence` leitura `own`, `presence_wifi_collection_enabled` e os dois consentimentos. Sem dependência do código do #146 (`privacy.py`): ordem de merge, #146 primeiro e este PR faz rebase (conflitos esperados e triviais em `config.py`, `access.py`, `test_authorization.py`, `features/presence/__init__.py`). A retenção dos eventos de pista (P-20) mantém-se por decidir.
 
+## Fusão (PRES-04) — IMPLEMENTADO
+
+`features/presence/fusion.py` (lógica **pura**, `now` injetado) + consumidores em `service.py`. Estado por morador: `PersonPresence` (`in`/`out`/`uncertain`, `since`, `confidence`, `provenance`, `sources`, `reason`).
+
+| Entrada | Tratamento |
+|---|---|
+| `presence.cue_recorded` (`wifi`, `manual`, `appliance`) | recalcula o morador da pista |
+| `presence.door_crossed` (anónimo; PRES-02, hoje só fixtures) | reavalia **todos** os moradores da casa (a câmara não sabe quem) |
+| `energy.consumption_detected` com `appliance_owner_resident_id` | consumidor `presence.appliance`: pista `in` (`appliance`, 0,6, `consumption_event_id`) **só se o aparelho ligou há menos de `PRESENCE_APPLIANCE_FRESH_S`** (300 s); um que já estava ligado (PC esquecido) não prova nada; uma pista por consumo |
+| `notification.responded` (`presence_check`) | pista manual (PRES-03) |
+| passagem do tempo | *ticker* (`PRESENCE_FUSION_TICK_S`, 30 s): a tolerância passa sem eventos |
+
+**Regras.** (1) Wi-Fi e aparelho a ligar contam a favor; a ausência de pistas não conta contra: um telemóvel «a dormir» (10 min, ou horas) sem passar a porta **continua `in`** (a confiança desce a 0,6 passada a tolerância). (2) **`out`** só por saída pela porta (`presence.door_crossed`, sentido `out`, confiança ≥ 0,5) seguida de `PRESENCE_TOLERANCE_MIN` minutos (20–30, omissão **25**) sem nenhuma pista **desse** morador (única exceção: a resposta «não» à pergunta «estás em casa?», para resolver uma contradição); durante a tolerância continua `in` (confiança 0,5, fonte `camera_door`); uma pista dele refuta a saída (era de outra pessoa). (3) A saída pela porta é **anónima**: só se atribui ao morador se o silêncio do seu Wi-Fi é informativo (telemóvel com opt-in **e** varrimento vivo: um varrimento bem-sucedido nos últimos 3 intervalos) ou, sem Wi-Fi, se mais ninguém está `in`. Caso contrário o estado é `uncertain/no_recent_cues` + pergunta, **nunca `out`**: uma falha do Wi-Fi ou da câmara não vira «fora». (4) **Contradição** → `uncertain/conflicting_cues`: uma pista Wi-Fi ou de aparelho depois de o morador estar «fora» sem nenhuma entrada pela porta (a entrada vale desde que ele saiu até 120 s depois da pista). Só a resposta à pergunta (ou a entrada pela porta) a resolve. (5) Sem nenhuma pista → `uncertain/no_recent_cues` na API (nunca se grava nem se publica); a porta sozinha nunca cria um estado.
+
+**Saídas.** `presence.changed` (`PersonPresence`) só quando o estado ou a razão mudam; `presence.confirmation_needed` (`PresenceConfirmationRequest`: só `id`, `resident_id`, `reason`, `expires_at`, validade 30 min) quando há dúvida, no máximo um por morador por 30 min (`presence_confirmation`). P3 transforma-o em notificação pessoal «estás em casa?» (APP-02, **PLANEADO**); a resposta volta por `notification.responded`.
+
+**API.** `GET /api/presence?household_id=` devolve **só o próprio** `PersonPresence` (decisão do dono, alinhada com o PRIV-02 #146: nem colegas, mesmo com `presence_opt_in`); senhorio e operador `403`. Os outros módulos (regra C da P4) recebem o estado por eventos `presence.changed`. **Privacidade:** nada de imagens; o senhorio nunca vê presença nem horários; as pistas e os estados só têm origem em Wi-Fi/aparelho/declaração/porta anónima.
+
+**Consentimento.** Todas as pistas individuais (Wi-Fi, aparelho a ligar, resposta à pergunta) exigem `Membership.presence_opt_in`; o Wi-Fi exige também `wifi_opt_in`. `apply_fusion` não grava estado de quem não tem opt-in. **Câmara em baixo:** caso por tratar (decisão do dono); a fusão limita-se a não inventar «fora» sem saída pela porta.
+
+**Provenance.** `simulated` se qualquer entrada for simulada; `inferred` quando decide a porta ou o tempo; `measured` só quando o estado vem só de uma resposta do morador (P-19).
+
+**Decisões para a demo (aceites pelo dono).** Varrimento Wi-Fi parado (3 intervalos) com telemóvel registado → pergunta (`uncertain/no_recent_cues`), nunca `out`; saída anónima com vários moradores `in` e sem Wi-Fi → pergunta; único `in` → a saída atribui-se-lhe (limite: uma visita a sair engana-o até à PRES-05).
+
+**Limites assumidos.** Com vários moradores em casa e sem Wi-Fi uma saída pela porta nunca fica atribuída (pergunta-se). Um telemóvel que fica em casa com o dono «fora» e Wi-Fi ativo mantém a dúvida (volta a perguntar de 30 em 30 min). A fusão lê as pistas das últimas 48 h. Os parâmetros (0,6; 0,5; 120 s; 30 min) **não estão medidos**: valores iniciais.
+
 ## Limites reais
 
 - Acesso à imagem da câmara do kit (MEARI) **não está provado** para este caso de uso: só há leitura RTSP de 10 min via relay (medição herdada, ver [altice-mcp.md](../integrations/altice-mcp.md)) e a câmara do kit é fixa. Plano B: telemóvel como câmara IP ou clip gravado — dito sempre como tal.
@@ -120,7 +160,7 @@ ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` →
 
 ## Ficheiros novos previstos
 
-`features/presence/{door,fusion,router,service,tests}` (`router`, `service`, `repo`, `wifi`, `hostscan` já existem), `contracts/presence.py`. Pesos YOLO e `torch` continuam fora do Docker e do CI (extra `visao`).
+`features/presence/{door,fusion,router,service,tests}` (`router`, `service`, `repo`, `wifi`, `hostscan`, `fusion` já existem; `door` é da PRES-02), `contracts/presence.py`. Pesos YOLO e `torch` continuam fora do Docker e do CI (extra `visao`).
 
 ## Dependências
 
