@@ -103,6 +103,7 @@ Prefixo `/api`. JSON UTF-8, `snake_case`, horas ISO 8601 UTC. Todas as rotas `/a
 | `GET` | `/api/households/{id}/rooms` | `[RoomView]` |
 | `GET` | `/api/households/{id}/members` | `[MemberView]`: senhorio vê todos os estados, inquilino só ativos; operador `403`; nunca `presence_opt_in` nem `sub` |
 | `PATCH` | `/api/households/{id}/memberships/{mid}` | corpo `{ "presence_opt_in": bool }` (`extra=forbid`) → `MembershipSelfView`; só a própria membership de um inquilino (`403` a de outro, `404` se não é desta casa) |
+| `POST` | `/api/households/{id}/agent/messages` | corpo `{ "text": "…" }` → `AgentResponse` (`proposed_actions` vazio); só inquilino (`403 forbidden_role` ao senhorio e ao operador) · `404 household_not_found` (não-membro). Dados **SIMULADOS** (casa demo); LLM desligado por omissão (`AGENT_LLM_ENABLED`), sem escritas (**Conta Certa, P3**) |
 
 ### `HomeState`
 
