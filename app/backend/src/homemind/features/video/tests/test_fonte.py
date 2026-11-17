@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 from types import SimpleNamespace
@@ -113,6 +114,20 @@ def test_sem_frames_devolve_none_e_camara_nao_ok():
         assert fonte.camara_ok is False
     finally:
         fonte.parar()
+
+
+def test_falha_rtsp_nao_regista_url_credenciais(caplog):
+    secret_url = "rtsp://utilizador:segredo@camera.invalid/entrada"
+    fonte = FonteRtsp(
+        secret_url,
+        abrir=lambda url: (_ for _ in ()).throw(RuntimeError(f"falhou {url}")),
+        relogio=Relogio(),
+    )
+    with caplog.at_level(logging.WARNING, logger="homemind.features.video.fonte"):
+        fonte._sessao()
+    assert "RuntimeError" in caplog.text
+    assert secret_url not in caplog.text
+    assert "segredo" not in caplog.text
 
 
 def test_so_o_frame_mais_recente_fica_guardado():
@@ -266,6 +281,7 @@ def test_criar_fonte_escolhe_camara_ou_clip():
             video_timeout_abrir_ms=5000,
         )
 
-    assert isinstance(criar_fonte(settings("rtsp://camara/stream")), FonteRtsp)
+    with pytest.raises(ValueError, match="RTSP desativadas"):
+        criar_fonte(settings("rtsp://camara/stream"))
     clip = criar_fonte(settings("clips/demo.mp4"))
     assert isinstance(clip, FonteClip) and clip.ao_vivo is False

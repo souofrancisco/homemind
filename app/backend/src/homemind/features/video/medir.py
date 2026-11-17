@@ -1,14 +1,11 @@
-"""Mede a estabilidade da fonte de vídeo: `python -m homemind.features.video.medir --minutos 10`.
-
-Lê `VIDEO_SOURCE` do ambiente. Não grava frames nem imprime o URL. Mede o lado do backend
-(cadência e falhas); o atraso câmara->ecrã mede-se à parte, com um cronómetro em `GET /api/video`.
-"""
+"""Mede um clip sintético allowlisted em PROFILE=demo; não abre RTSP nem mede MJPEG."""
 
 import argparse
 import time
 
 from homemind.core.config import get_settings
 from homemind.features.video.fonte import criar_fonte
+from homemind.features.video.service import fonte_dev_permitida
 
 
 def main() -> None:
@@ -19,8 +16,8 @@ def main() -> None:
     args = parser.parse_args()
 
     settings = get_settings()
-    if not settings.video_source:
-        raise SystemExit("VIDEO_SOURCE não está definido.")
+    if not fonte_dev_permitida(settings):
+        raise SystemExit("Só são permitidos clips sintéticos locais em PROFILE=demo.")
 
     fonte = criar_fonte(settings)
     fonte.iniciar()
