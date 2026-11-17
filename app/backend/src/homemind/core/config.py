@@ -82,6 +82,22 @@ class Settings(BaseSettings):
     visao_intervalo_max_s: float = 1.0  # buraco entre frames reais > isto reinicia janelas
     # --- fim P2 ---
 
+    # --- P2 — presença (PRES-03/04) ---
+    # Sal do `match_key` dos telemóveis (hash do MAC). Segredo: só em app/.env, nunca em logs.
+    # Vazio = registo de telemóveis e pistas Wi-Fi desligados (falha fechada).
+    # Pista individual por Wi-Fi: sem recolha antes de ativação explícita (alinhado com o PRIV-02).
+    presence_wifi_collection_enabled: bool = False
+    presence_match_salt: str = ""
+    # Origem das observações Wi-Fi: off | simulated (SIMULADO, MACs fictícios abaixo) | arp (varre
+    # a sub-rede a partir deste processo) | ingest (um varrimento no anfitrião publica hashes).
+    presence_wifi_mode: Literal["off", "simulated", "arp", "ingest"] = "off"
+    presence_wifi_subnet: str = ""  # ex.: 192.168.1.0/24 (rede do hub do kit; só redes privadas)
+    presence_wifi_interval_s: float = Field(default=30.0, ge=10.0)
+    presence_wifi_sim_addresses: str = ""  # modo simulated: MACs fictícios «vistos», por vírgulas
+    # Token do varrimento no anfitrião (modo ingest). Vazio = rota desligada.
+    presence_ingest_token: str = ""
+    # --- fim P2 — presença ---
+
     # --- P1 — visão (YOLO objetos + pose + ByteTrack; extra opcional `visao`) ---
     visao_pasta_modelos: str = "data/modelos"  # pesos .pt (ignorados pelo Git; ver pesos.py)
     visao_variante: Literal["s", "n"] = "s"  # "n" só se o FPS não chegar

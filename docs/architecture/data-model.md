@@ -130,8 +130,9 @@ Quem altera um estado de outro módulo fá-lo **por evento**, não por escrita d
 | `domain_event` | IMPLEMENTADA | `seq AUTOINCREMENT` (único, global), `id` único, `origin`+`kind`, `payload_json` = só `data`; **imutável** (triggers) |
 | `processed_event(consumer, event_id)` | IMPLEMENTADA | PK composta; guarda **todos** os ids processados, na transação do efeito |
 | `event_failure(consumer, event_id)` | IMPLEMENTADA | tentativas, tipo do erro (nunca a mensagem), `dead` |
+| `presence_device`, `presence_confirmation`, `presence_state` | IMPLEMENTADAS (`0200_presence_tables.sql`) | `presence_device.match_key` = HMAC do MAC com sal (revogar substitui-o por `revoked:<id>`); `presence_confirmation` só aceita 1 resposta; `presence_state` usada pela fusão (PRES-04). As pistas (`presence.cue_recorded`) ficam em `domain_event` |
 | `notification`, `notification_read`, `notification_preferences` | IMPLEMENTADAS | `0300_notifications_core.sql`; `notification.json` validado + colunas escalares; índice único parcial de pedido aberto; *compare-and-set* no estado |
-| devices, appliances, readings, consumption, presence, billing, agent | PLANEADAS | cada dono cria a sua migração; ver «Persistência dos contratos» abaixo |
+| devices, appliances, readings, consumption, billing, agent | PLANEADAS | cada dono cria a sua migração; ver «Persistência dos contratos» abaixo |
 
 Persistência dos contratos (PLANEADO, estratégia): uma tabela por entidade com colunas escalares para o que se consulta (ids, `ts`, estado, `origin`/`kind`) e `*_cents`/`*_wh` inteiros; entidades de histórico nunca se atualizam no sítio (`Attribution` → índice único parcial `(consumption_event_id) WHERE status='active'`; `ElectricityBill` → revisão nova; `Notification` → *compare-and-set* no estado). `external_ref` só na tabela `device`.
 

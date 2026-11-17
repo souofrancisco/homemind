@@ -47,7 +47,7 @@ def test_private_models_and_fields_never_reach_the_frontend(spec):
 
 def test_no_fake_endpoints_for_shared_models(spec):
     paths = set(spec["paths"])
-    for banned in ("/api/contracts", "/api/schemas", "/api/models", "/api/presence", "/api/bills"):
+    for banned in ("/api/contracts", "/api/schemas", "/api/models", "/api/bills"):
         assert banned not in paths
     # as rotas existentes antes da fundação continuam
     for kept in ("/healthz", "/api/me", "/api/status", "/api/state", "/api/events", "/api/rules"):
