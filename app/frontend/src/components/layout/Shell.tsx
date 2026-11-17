@@ -32,6 +32,7 @@ export default function Shell() {
   const current = pages.find((page) => page.path === active);
   const primaryMobile = pages.filter((page) => page.mobile);
   const moreMobile = pages.filter((page) => !page.mobile);
+  const activeInMore = moreMobile.some((page) => page.path === active);
   const hasMore = moreMobile.length > 0;
 
   useEffect(() => {
@@ -56,6 +57,9 @@ export default function Shell() {
   return (
     <>
       <a href="#main" className="conta-skip-link">Saltar para o conteúdo</a>
+      <Box className="conta-visually-hidden" aria-live="polite" aria-atomic="true">
+        {current?.label ?? "Conta Certa"}
+      </Box>
       <AppShell
         header={{ height: 76 }}
         navbar={{ width: 258, breakpoint: "sm", collapsed: { mobile: !opened } }}
@@ -73,6 +77,7 @@ export default function Shell() {
             </Group>
             <Group gap="xs" wrap="nowrap">
               {role && <Badge size="sm" variant="light" visibleFrom="sm">{roleNames[role]}</Badge>}
+              {role && session.memberships.length <= 1 && <Badge size="xs" variant="light" hiddenFrom="sm">{roleNames[role]}</Badge>}
               {session.memberships.length > 1 && (
                 <Select
                   size="sm"
@@ -83,7 +88,7 @@ export default function Shell() {
                     value: m.id,
                     label: `Casa ${index + 1} · ${roleNames[m.role]}`,
                   }))}
-                  w={{ base: 126, sm: 195 }}
+                  w={{ base: 104, sm: 195 }}
                   allowDeselect={false}
                 />
               )}
@@ -167,8 +172,14 @@ export default function Shell() {
               );
             })}
             {hasMore && (
-              <UnstyledButton onClick={toggle} aria-label={opened ? "Fechar mais páginas" : "Abrir mais páginas"} aria-expanded={opened} ta="center" c="dimmed">
-                <Stack gap={3} align="center"><IconDots size={22} aria-hidden="true" /><Text size="xs" fw={500}>Mais</Text></Stack>
+              <UnstyledButton
+                onClick={toggle}
+                aria-label={opened ? "Fechar mais páginas" : "Abrir mais páginas"}
+                aria-expanded={opened}
+                ta="center"
+                c={activeInMore ? "var(--mantine-primary-color-filled)" : "dimmed"}
+              >
+                <Stack gap={3} align="center"><IconDots size={22} aria-hidden="true" /><Text size="xs" fw={activeInMore ? 700 : 500}>Mais</Text></Stack>
               </UnstyledButton>
             )}
           </SimpleGrid>

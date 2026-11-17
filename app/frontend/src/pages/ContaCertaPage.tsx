@@ -3,42 +3,46 @@ import {
   Stack, Text, ThemeIcon, Title,
 } from "@mantine/core";
 import { IconAlertCircle, IconArrowRight, IconBuildingCommunity, IconInfoCircle, IconReceipt, IconActivity } from "@tabler/icons-react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { AppRole, SectionId } from "../app/routes";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { useAuth } from "../app/providers/AuthProvider";
+import { listBills, type BillView } from "../services/billing/api";
+import { getCameraStatus, listMcpTools, type CameraStatus, type McpTool } from "../services/diagnostics/api";
+import { listNotifications, type NotificationView } from "../services/notifications/api";
 
-type Placeholder = { title: string; detail: string; dependency: string };
+type Placeholder = { title: string; detail: string; dependency: string; badge?: string };
 const placeholders: Record<"consumption" | "appliances" | "bills" | "notifications" | "assistant" | "diagnostics", Placeholder> = {
   consumption: {
     title: "O consumo ainda não está disponível",
-    detail: "Este ecrã receberá apenas leituras e resumos autorizados, com origem e grau de confiança visíveis.",
-    dependency: "Integração futura: energia e resumos de consumo.",
+    detail: "O collector MCP já produz leituras internamente, mas ainda não existe uma API de produto para consultar medições ou resumos nesta página.",
+    dependency: "Faltam os motores ENERGY e os endpoints de leitura. Não apresentamos métricas inventadas.",
   },
   appliances: {
-    title: "O catálogo de aparelhos está em preparação",
-    detail: "O registo e a identificação de aparelhos serão ligados ao catálogo da casa. Aqui não existem aparelhos inventados.",
-    dependency: "Integração futura: HOUSE-03 e identificação de aparelhos.",
+    title: "O catálogo de aparelhos ainda não está disponível",
+    detail: "O contrato distingue aparelhos consumidores de dispositivos físicos e medidores. Não existe ainda uma API de catálogo integrada.",
+    dependency: "HOUSE-03 (#86, PR #142) continua aberto. Não inferimos propriedade nem quem paga.",
   },
   bills: {
-    title: "Ainda não existem contas ou recibos para apresentar",
-    detail: "Quando a faturação estiver disponível, cada valor terá uma explicação e a origem identificada.",
-    dependency: "Integração futura: APP-05/06 e faturação.",
+    title: "Não existem faturas visíveis nesta casa",
+    detail: "A API de faturas está disponível. Moradores recebem apenas faturas finalizadas; rascunhos ficam visíveis apenas ao senhorio.",
+    dependency: "Os recibos detalhados e alocações ainda não têm endpoint de leitura. Nenhum cálculo é feito no frontend.",
   },
   notifications: {
-    title: "O centro de notificações está em preparação",
-    detail: "Os pedidos de confirmação e os alertas serão recebidos aqui. Não há notificações de exemplo a fingir que foram entregues.",
-    dependency: "Integração futura: centro de notificações P3.",
+    title: "Não existem notificações visíveis",
+    detail: "O centro consulta apenas notificações que o backend autoriza para a tua membership. O senhorio não recebe pedidos de confirmação.",
+    dependency: "A votação e as ações detalhadas continuam em APP-02/03. Esta lista não cria votos nem aplica a regra 'primeira resposta'.",
   },
   assistant: {
-    title: "O assistente ainda não está ligado",
-    detail: "Quando estiver disponível, as respostas usarão apenas ferramentas e dados a que tens acesso. Nenhuma ação será executada sem confirmação.",
-    dependency: "Integração futura: assistente P3.",
+    title: "A interface do assistente está por integrar",
+    detail: "O endpoint P3 existe e usa ferramentas de leitura. Na casa de demonstração os dados são SIMULADOS; o LLM está desligado por omissão e a resposta não contém ações executáveis.",
+    dependency: "A interface de conversa pertence a APP-06. Não adicionamos outro LLM nem ferramentas de escrita.",
   },
   diagnostics: {
-    title: "Diagnóstico técnico ainda não integrado",
-    detail: "O estado da ligação MCP, da tomada e da câmara será apresentado depois da integração autorizada. Não existem comandos de controlo neste ecrã.",
-    dependency: "Integração futura: ferramentas de diagnóstico do operador.",
+    title: "Diagnóstico do kit indisponível",
+    detail: "A shell consulta apenas a lista de ferramentas MCP e o estado resumido da câmara, autorizados ao operador. Nunca carrega frames nem executa comandos físicos.",
+    dependency: "O collector de energia não está ligado ao barramento nem exposto por API; não há métricas ou estados de medidor para apresentar.",
   },
 };
 
@@ -47,7 +51,7 @@ function NoData({ value }: { value: Placeholder }) {
     <Card withBorder radius="lg" p={{ base: "lg", sm: "xl" }}>
       <Stack align="start" gap="md">
         <ThemeIcon size={48} radius="xl" color="indigo" variant="light"><IconInfoCircle size={25} aria-hidden="true" /></ThemeIcon>
-        <Badge color="gray" variant="light">Por integrar</Badge>
+        <Badge color="gray" variant="light">{value.badge ?? "Por integrar"}</Badge>
         <Title order={3} size="h3">{value.title}</Title>
         <Text c="dimmed" maw={650}>{value.detail}</Text>
         <Divider w="100%" />
@@ -71,6 +75,192 @@ const screenLabels: Record<SectionId, string> = {
 
 function PageHeading({ title, description }: { title: string; description: string }) {
   return <Stack gap={5}><Title order={2}>{title}</Title><Text c="dimmed" size="md">{description}</Text></Stack>;
+}
+
+type LoadState<T> = { key: string; value: T | null; status: "loading" | "ready" | "error" };
+
+function useHouseholdData<T>(
+  householdId: string | undefined,
+  loader: (id: string) => Promise<T>,
+) {
+  const [retry, setRetry] = useState(0);
+  const [result, setResult] = useState<LoadState<T> | null>(null);
+
+  useEffect(() => {
+    if (!householdId) return;
+    let active = true;
+    loader(householdId)
+      .then((value) => { if (active) setResult({ key: householdId, value, status: "ready" }); })
+      .catch(() => { if (active) setResult({ key: householdId, value: null, status: "error" }); });
+    return () => { active = false; };
+  }, [householdId, loader, retry]);
+
+  const current = result?.key === householdId ? result : null;
+  return {
+    data: current?.value ?? null,
+    status: householdId ? current?.status ?? "loading" : "error",
+    retry: () => setRetry((value) => value + 1),
+  } as const;
+}
+
+const dateTimeFormat = new Intl.DateTimeFormat("pt-PT", { dateStyle: "medium", timeStyle: "short" });
+const dateFormat = new Intl.DateTimeFormat("pt-PT", { dateStyle: "medium", timeZone: "UTC" });
+const moneyFormat = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" });
+const provenanceKindLabels: Record<BillView["provenance"]["kind"], string> = {
+  measured: "medida",
+  estimated: "estimada",
+  inferred: "inferida",
+};
+
+const billStatusLabels: Record<BillView["status"], string> = {
+  draft: "Rascunho",
+  finalized: "Finalizada",
+  superseded: "Substituída",
+};
+
+function BillsContent() {
+  const session = useHouseholdSession();
+  const householdId = session.membership?.household_id;
+  const result = useHouseholdData<BillView[]>(householdId, listBills);
+
+  if (result.status === "loading") return <Group role="status"><Loader size="sm" /><Text>A carregar faturas…</Text></Group>;
+  if (result.status === "error") return (
+    <Alert color="red" icon={<IconAlertCircle />} title="Não foi possível consultar as faturas">
+      <Stack gap="sm"><Text size="sm">A API não devolveu dados. Tenta novamente.</Text>
+        <Button w="fit-content" color="red" variant="light" onClick={result.retry}>Tentar novamente</Button>
+      </Stack>
+    </Alert>
+  );
+  if (!result.data?.length) return <NoData value={{
+    title: "Não existem faturas visíveis nesta casa",
+    detail: session.membership?.role === "tenant"
+      ? "Só as faturas finalizadas são devolvidas aos moradores. Não há rascunhos privados nesta lista."
+      : "Ainda não foi registada uma fatura nesta casa.",
+    dependency: "A lista usa o endpoint real BILL-01. Os recibos detalhados ainda não estão disponíveis por API.",
+    badge: "Sem resultados",
+  }} />;
+
+  return <Stack gap="md">
+    {result.data.map((bill) => (
+      <Card key={bill.id} withBorder radius="lg" p="lg">
+        <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
+          <Stack gap="xs">
+            <Title order={3} size="h4">Fatura · {dateFormat.format(new Date(`${bill.period.start}T00:00:00Z`))} – {dateFormat.format(new Date(`${bill.period.end}T00:00:00Z`))}</Title>
+            <Text size="sm" c="dimmed">Registada em {dateTimeFormat.format(new Date(bill.created_at))}</Text>
+          <Text size="sm">Origem {bill.provenance.origin === "simulated" ? "simulada" : "real"}; natureza {provenanceKindLabels[bill.provenance.kind]}.</Text>
+          </Stack>
+          <Stack align="flex-end" gap="xs">
+            <Title order={3} size="h3">{moneyFormat.format(bill.total_cents / 100)}</Title>
+            <Badge color={bill.status === "finalized" ? "green" : "gray"} variant="light">
+              {billStatusLabels[bill.status]}
+            </Badge>
+          </Stack>
+        </Group>
+      </Card>
+    ))}
+    <Text size="sm" c="dimmed">Esta vista mostra apenas o cabeçalho BillView. A API ainda não disponibiliza recibos ou alocações detalhadas.</Text>
+  </Stack>;
+}
+
+const notificationStatusLabels: Record<NotificationView["status"], string> = {
+  unread: "Por ler",
+  read: "Lida",
+  actioned: "Concluída",
+  expired: "Expirada",
+  dismissed: "Dispensada",
+};
+
+const verdictLabels: Record<NonNullable<NotificationView["voting"]>["verdict"], string> = {
+  pending: "Votação em curso",
+  self_claimed: "Consumo assumido",
+  accusation_accepted: "Atribuição aceite por votação",
+  everyone: "Atribuído à casa",
+};
+
+function NotificationsContent() {
+  const session = useHouseholdSession();
+  const householdId = session.membership?.household_id;
+  const result = useHouseholdData<NotificationView[]>(householdId, listNotifications);
+
+  if (result.status === "loading") return <Group role="status"><Loader size="sm" /><Text>A carregar notificações…</Text></Group>;
+  if (result.status === "error") return (
+    <Alert color="red" icon={<IconAlertCircle />} title="Não foi possível consultar as notificações">
+      <Stack gap="sm"><Text size="sm">A API não devolveu dados. Tenta novamente.</Text>
+        <Button w="fit-content" color="red" variant="light" onClick={result.retry}>Tentar novamente</Button>
+      </Stack>
+    </Alert>
+  );
+  if (!result.data?.length) return <NoData value={{
+    title: "Não existem notificações visíveis",
+    detail: "O backend filtra a lista pela tua membership, papel e destinatário.",
+    dependency: "O centro de leitura está ligado; votar, responder e gerir preferências ficam para APP-02/03.",
+    badge: "Sem resultados",
+  }} />;
+
+  return <Stack gap="md">
+    {result.data.map((notification) => (
+      <Card key={notification.id} withBorder radius="lg" p="lg">
+        <Stack gap="sm">
+          <Group justify="space-between" align="flex-start" wrap="wrap">
+            <Title order={3} size="h4">{notification.title}</Title>
+            <Group gap="xs">
+              <Badge variant="light">{notificationStatusLabels[notification.status]}</Badge>
+              {notification.origin === "simulated" && <Badge color="yellow" variant="light">SIMULADO</Badge>}
+            </Group>
+          </Group>
+          <Text>{notification.body}</Text>
+          {notification.voting && (
+            <Alert color={notification.voting.verdict === "pending" ? "blue" : "gray"} variant="light" title={verdictLabels[notification.voting.verdict]}>
+              {notification.voting.votes} votos registados; o backend calcula o desfecho segundo a regra D-32. Esta vista não recolhe votos.
+            </Alert>
+          )}
+          <Text size="sm" c="dimmed">{notification.scope === "personal" ? "Pessoal" : "Da casa"} · {dateTimeFormat.format(new Date(notification.created_at))}</Text>
+        </Stack>
+      </Card>
+    ))}
+    <Text size="sm" c="dimmed">Lista de leitura. Esta página não regista votos nem expõe a identidade de quem respondeu.</Text>
+  </Stack>;
+}
+
+function DiagnosticCard<T>({
+  title,
+  data,
+  status,
+  retry,
+  children,
+}: {
+  title: string;
+  data: T | null;
+  status: "loading" | "ready" | "error";
+  retry: () => void;
+  children: (data: T) => React.ReactNode;
+}) {
+  return <Card withBorder radius="lg" p="lg">
+    <Stack gap="sm">
+      <Title order={3} size="h4">{title}</Title>
+      {status === "loading" ? <Group role="status"><Loader size="sm" /><Text>A consultar estado…</Text></Group> :
+        status === "error" ? <><Text c="dimmed" size="sm">Estado indisponível. Não foi possível confirmar a ligação.</Text><Button w="fit-content" variant="light" onClick={retry}>Tentar novamente</Button></> :
+          data ? children(data) : <Text c="dimmed">Sem informação.</Text>}
+    </Stack>
+  </Card>;
+}
+
+function DiagnosticsContent() {
+  const householdId = useHouseholdSession().membership?.household_id;
+  const tools = useHouseholdData<McpTool[]>(householdId, listMcpTools);
+  const camera = useHouseholdData<CameraStatus>(householdId, getCameraStatus);
+  return <Stack gap="md">
+    <DiagnosticCard title="Ligação MCP" {...tools}>
+      {(value) => <Text>{value.length} ferramentas anunciadas pela API de diagnóstico.</Text>}
+    </DiagnosticCard>
+    <DiagnosticCard title="Câmara da porta" {...camera}>
+      {(value) => <Stack gap="xs">
+        <Text>{value.camera_ok ? "Fonte disponível" : "Fonte indisponível"} · origem {value.origin === "simulated" ? "SIMULADA" : "REAL"}.</Text>
+        <Text size="sm" c="dimmed">Fonte: {value.source}. A vista não carrega imagens nem frames.</Text>
+      </Stack>}
+    </DiagnosticCard>
+    <Text size="sm" c="dimmed">Diagnóstico somente de leitura. O endpoint de preview MJPEG não é usado.</Text>
+  </Stack>;
 }
 
 function HouseContent() {
@@ -182,7 +372,7 @@ function HomeContent({ role }: { role: AppRole }) {
           <Card withBorder radius="lg" p="lg">
             <ThemeIcon size={40} radius="xl" variant="light"><IconReceipt size={22} aria-hidden="true" /></ThemeIcon>
             <Title order={3} size="h4" mt="md">Contas e recibos</Title>
-            <Text c="dimmed" size="sm" mt="xs">Sem faturas integradas. Os recibos detalhados são responsabilidade do módulo de faturação.</Text>
+            <Text c="dimmed" size="sm" mt="xs">Consulta faturas visíveis nesta casa. Os recibos detalhados ainda não têm endpoint.</Text>
             <Button component={Link} to="/contas" variant="subtle" mt="md" px={0}>Consultar a secção</Button>
           </Card>
         )}
@@ -190,7 +380,7 @@ function HomeContent({ role }: { role: AppRole }) {
           <Card withBorder radius="lg" p="lg">
             <ThemeIcon size={40} radius="xl" variant="light"><IconActivity size={22} aria-hidden="true" /></ThemeIcon>
             <Title order={3} size="h4" mt="md">Diagnóstico</Title>
-            <Text c="dimmed" size="sm" mt="xs">As ferramentas de diagnóstico ainda não estão integradas.</Text>
+            <Text c="dimmed" size="sm" mt="xs">Consulta ferramentas MCP e o estado resumido da câmara; não há preview nem comandos físicos.</Text>
             <Button component={Link} to="/diagnostico" variant="subtle" mt="md" px={0}>Consultar a secção</Button>
           </Card>
         )}
@@ -216,6 +406,26 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
       <HouseContent />
     </Stack>
   );
+  if (section === "bills") return (
+    <Stack gap="xl">
+      <PageHeading title={screenLabels.bills} description={role === "landlord"
+        ? "Faturas registadas e estado do processamento. Os rascunhos são visíveis apenas ao senhorio."
+        : "Faturas finalizadas que o backend disponibiliza à tua membership."} />
+      <BillsContent />
+    </Stack>
+  );
+  if (section === "notifications") return (
+    <Stack gap="xl">
+      <PageHeading title={screenLabels.notifications} description="Notificações autorizadas para a tua conta e esta casa." />
+      <NotificationsContent />
+    </Stack>
+  );
+  if (section === "diagnostics") return (
+    <Stack gap="xl">
+      <PageHeading title={screenLabels.diagnostics} description="Estado técnico de leitura, disponível apenas para o papel de operador." />
+      <DiagnosticsContent />
+    </Stack>
+  );
   if (section === "settings") return (
     <Stack gap="xl" maw={760}>
       <PageHeading title="Definições" description="A tua sessão e o contexto de acesso." />
@@ -238,8 +448,6 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
     ? "Apenas totais agregados mensais por quarto, sem horários nem perfis individuais."
     : section === "consumption" ? "O teu consumo e a parte comum, sempre com proveniência."
     : section === "appliances" && role === "operator" ? "Diagnóstico de dispositivos sem dados pessoais."
-    : section === "bills" && role === "landlord" ? "Gestão de faturas e totais autorizados."
-    : section === "notifications" ? "Mensagens dirigidas à tua conta, sem notificações de outros moradores."
     : "Esta área será ligada ao módulo responsável.";
   return <Stack gap="xl">
     <PageHeading title={screenLabels[section]} description={description} />
