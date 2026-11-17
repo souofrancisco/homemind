@@ -67,7 +67,7 @@ def invite(
 def accept(client, token, headers=None):
     return client.post(
         "/api/invitations/accept",
-        json={"token": token},
+        json={"code": token},
         headers=headers or verified(),
     )
 
@@ -96,7 +96,7 @@ def test_invitation_is_one_use_and_restores_context(client, app):
     issued = invite(client, room)
     assert issued.status_code == 201, issued.text
     data = issued.json()
-    assert set(data) == {"invitation_id", "token", "expires_at"}
+    assert set(data) == {"invitation_id", "code", "expires_at"}
     assert len(data["token"]) >= 40
     assert (
         app.state.db.run_sync(
@@ -132,7 +132,7 @@ def test_invitation_is_one_use_and_restores_context(client, app):
 def test_invalid_expired_unverified_and_wrong_account(client, now):
     room = create_room(client)
     issued = invite(client, room)
-    token = issued.json()["token"]
+    token = issued.json()["code"]
     assert error(accept(client, "x" * 45)) == (404, "invitation_not_found")
     assert error(accept(client, token, as_("sub-guest"))) == (403, "verified_email_required")
     assert error(accept(client, token, verified(email="wrong@example.test"))) == (
@@ -141,14 +141,11 @@ def test_invalid_expired_unverified_and_wrong_account(client, now):
     )
     attacker = verified(sub="sub-attacker", email="wrong@example.test")
     assert error(accept(client, token, attacker)) == (404, "invitation_not_found")
-    assert error(accept(client, token, verified(email="guest@example.test"))) != (
-        404,
-        "invitation_not_found",
-    )  # não consome numa tentativa errada
+    assert accept(client, token, verified(email="guest@example.test")).status_code == 200  # tentativa errada não consumiu
     next_room = create_room(client, name="Outra suite")
     future = invite(client, next_room)
     now["value"] = NOW + timedelta(hours=73)
-    assert error(accept(client, future.json()["token"])) == (404, "invitation_not_found")
+    assert error(accept(client, future.json()["code"])) == (404, "invitation_not_found")
 
 
 def test_invite_rejects_role_escalation_and_cross_house_room(client):
@@ -169,7 +166,7 @@ def test_invite_rejects_role_escalation_and_cross_house_room(client):
 
 def test_revoke_immediately_denies_and_preserves_history(client, app):
     room = create_room(client)
-    token = invite(client, room).json()["token"]
+    token = invite(client, room).json()["code"]
     membership_id = accept(client, token).json()["id"]
     resp = client.post(
         f"/api/households/{HOUSE_A}/memberships/{membership_id}/revoke",
@@ -209,7 +206,7 @@ def test_revoke_invite_prevents_accept_and_house_swap_keeps_history(client, app)
     assert client.post(path, headers=as_("sub-senhorio")).status_code == 200
     issued = invite(client, str(fx.ROOM_ANA))
     assert issued.status_code == 201
-    new_id = accept(client, issued.json()["token"]).json()["id"]
+    new_id = accept(client, issued.json()["code"]).json()["id"]
     assert new_id != old
     rows = app.state.db.run_sync(
         lambda c: c.execute(
@@ -237,13 +234,13 @@ def test_revoke_invite_prevents_accept_and_house_swap_keeps_history(client, app)
         ).status_code
         == 200
     )
-    assert error(accept(client, invite_pending.json()["token"])) == (404, "invitation_not_found")
+    assert error(accept(client, invite_pending.json()["code"])) == (404, "invitation_not_found")
 
 
 def test_future_contract_and_tenant_list_use_household_local_date(client, now):
     room = create_room(client)
     created = invite(client, room, starts="2026-12-01", ends="2027-01-01")
-    assert accept(client, created.json()["token"]).status_code == 200
+    assert accept(client, created.json()["code"]).status_code == 200
     assert error(client.get(f"/api/households/{HOUSE_A}", headers=verified())) == (
         404,
         "household_not_found",
@@ -262,7 +259,7 @@ def test_future_contract_and_tenant_list_use_household_local_date(client, now):
 def test_existing_resident_reused_across_houses(client):
     room = create_room(client)
     issued = invite(client, room, email="eva@example.test")
-    accepted = accept(client, issued.json()["token"], verified("sub-eva", "eva@example.test"))
+    accepted = accept(client, issued.json()["code"], verified("sub-eva", "eva@example.test"))
     assert accepted.status_code == 200, accepted.text
     context = client.get("/api/me/context", headers=as_("sub-eva")).json()
     assert context["resident"]["id"] == str(UUID(str(context["resident"]["id"])))
