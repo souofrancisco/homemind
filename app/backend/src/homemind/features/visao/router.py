@@ -15,6 +15,7 @@ from homemind.core.config import get_settings
 from homemind.features.gestos.ponte import PublicadorFila
 from homemind.features.gestos.processador import ProcessadorObjectOS
 from homemind.features.video import service as video
+from homemind.features.visao.anotar import desenhar
 from homemind.features.visao.thread import DetetorIndisponivel, ThreadVisao, carregar_detetor
 
 log = logging.getLogger(__name__)
@@ -46,10 +47,17 @@ async def lifespan(app: FastAPI):
         PublicadorFila(engine.loop, engine.fila),
     )
     thread.iniciar()
+
+    def anotar(imagem):
+        det = thread.ultima_deteccao()
+        return imagem if det is None else desenhar(imagem, det)
+
+    video.anotador = anotar
     log.info("visão ligada ao motor (%s)", especificacao)
     try:
         yield
     finally:
+        video.anotador = None
         thread.parar()
 
 
