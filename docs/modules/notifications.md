@@ -1,6 +1,6 @@
 # Módulo `notifications` — centro de notificações
 
-**Dono: P3 (RafaelMat0s-Dev).** UI: páginas desenhadas por P5 com P3. **Estado: IMPLEMENTADO (backend parcial)**: persistência SQLite, lista, leitura, votação/resposta, preferências e os consumidores de `billing.confirmation_needed`, `presence.confirmation_needed`, `safety.alert_raised`, `billing.attribution_changed` e `billing.allocation_published` (ver «Estado de implementação»); UI, WebSocket, limiares/picos (`alerts.*`), varrimento de expiração e push são **PLANEADO**.
+**Dono: P3 (RafaelMat0s-Dev).** UI: páginas desenhadas por P5 com P3. **Estado: IMPLEMENTADO (backend parcial)**: persistência SQLite, lista, leitura, votação/resposta, preferências e os consumidores de `billing.confirmation_needed`, `presence.confirmation_needed`, `safety.alert_raised`, `billing.attribution_changed` e `billing.allocation_published` (ver «Estado de implementação»); UI, WebSocket, limiares/picos (`alerts.*`) e push são **PLANEADO**.
 
 > **REGRA B = VOTAÇÃO (D-32, prevalece):** em `confirmation_request` cada inquilino vota uma vez; um «É minha» fecha; atribuir a outro exige ≥ metade dos elegíveis com o mesmo alvo (fecha antes se o próprio assumir); todos votaram sem decisão ou 24 h → por todos. Fonte única: `confirmation_outcome` em `contracts/notification.py`. **Quem fizer merge (pessoa ou agente) adapta o código de P3/P5/billing a esta regra; não reintroduzir «primeira resposta vence» nas confirmações.** Substitui todas as interações que o PDF previa no Telegram (D-01 em [decisions.md](../decisions.md)).
 
@@ -64,7 +64,7 @@ Rotas por casa (o papel e o `resident_id` vêm de `core/access`): `GET …/notif
 
 ## Ficheiros (backend IMPLEMENTADO; frontend PLANEADO)
 
-`features/notifications/` (`router`, `service`, `sqlite`, `handlers`, `directory`, `compose`, `ports`, `repository`, `preferences`, `tests`) e `core/migrations/0300_notifications_core.sql` já existem; falta o frontend: `pages/NotificationsPage.tsx`, `components/notifications/*`, `hooks/useNotifications.ts`.
+`features/notifications/` (`router`, `service`, `sqlite`, `handlers`, `directory`, `compose`, `ports`, `repository`, `preferences`, `sweeper`, `config`, `tests`) e `core/migrations/0300_notifications_core.sql` já existem; falta o frontend: `pages/NotificationsPage.tsx`, `components/notifications/*`, `hooks/useNotifications.ts`.
 
 ## Dependências
 
@@ -94,6 +94,7 @@ Refs #95 (APP-02) e #96 (APP-03); não as fecham (faltam UI, WebSocket e os prod
 | Leitura | `POST …/read`: recibo por residente; o estado partilhado só muda nas pessoais |
 | Resposta / voto | `POST …/respond` (corpo `NotificationRespondIn`: `action_id` e, com `other`, `target_resident_id`). Confirmações: um voto por inquilino (409 `already_responded` ao repetir ou depois de fechada), fecha segundo `confirmation_outcome` (D-32); alvo inválido 400 `invalid_request`; 409 `notification_expired`. Outros tipos: a primeira resposta vence. `notification.responded` **por voto**, com `outcome`, gravado na mesma transação; se o CAS perde, relê e reaplica a regra |
 | Preferências | `GET|PUT …/notification-preferences` (por casa; `security_alert` não se desliga: 400) |
+| Varrimento de expiração | `sweeper.py`: a cada 60 s (`NOTIFICATIONS_EXPIRY_SWEEP_S`, 0 desliga) o lifespan chama `expire_due`; só grava o estado `expired` (a leitura já o deduzia do tempo), sem evento; a tarefa é cancelada no `finally` |
 | Consumidores | Nomes permanentes (chave de `processed_event`), subscritos no lifespan (`handlers.CONSUMERS`); todos idempotentes (ids derivados e `processed_event`). Ver a tabela seguinte |
 
 | Consumidor | Evento | Efeito |
@@ -112,7 +113,6 @@ Todos: membership terminada ou papel que não seja inquilino -> nada; origem sim
 | Limiar de orçamento (`alerts.threshold_crossed`) | `BudgetThreshold` sem destinatário nem limite; subscrever marcaria eventos como processados e perdê-los-ia |
 | Picos e aparelho esquecido (`alerts.alert_raised`) | `AlertRaisedData` sem potência, duração nem divisão; **continua sem consumidor** |
 | Botões nos alertas de conforto e `notify_landlord` do fumo | sem executor físico (P1) nem decisão de audiência; o senhorio continua sem ver `security_alert` |
-| Varrimento de expiração | `expire_due` existe no serviço mas nada o agenda; o estado expirado deduz-se do tempo na leitura |
 | Push, aplicação das preferências, dispensar, histórico | sem serviço de push; sem operação de dispensar |
 | Acordar consumidores após o commit | `_publish` na rota só acorda consumidores (os eventos já estão na outbox); falta um `bus.wake()` público (pedido à P5) em vez de `publish` |
 | Produtores | `safety.alert_raised` (SAFE-01/03) e `presence.confirmation_needed` (PRES-04) já produzem na `main`; `billing.confirmation_needed`, `billing.attribution_changed` e `billing.allocation_published` ainda não (P4): os consumidores estão prontos e só testados com eventos das fixtures |

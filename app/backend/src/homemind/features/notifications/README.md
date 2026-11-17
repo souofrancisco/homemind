@@ -12,6 +12,7 @@ Refs #95 (APP-02) e #96 (APP-03); não as fecha (faltam UI, WebSocket e os produ
 | `compose.py` | Pedido de confirmação, aviso de orçamento, «estás em casa?», alertas de conforto/fumo e informações pessoais de faturação -> `Notification`; ids determinísticos (uuid5, por evento ou por referência e destinatário). |
 | `repository.py` | Protocolo `NotificationRepository` + versão em memória (referência e testes). |
 | `sqlite.py` | `SqliteNotificationRepository` (compare-and-set real sobre estado e n.º de votos), recibos de leitura e preferências. |
+| `sweeper.py`, `config.py` | Varrimento de expiração a cada 60 s no lifespan (`NOTIFICATIONS_EXPIRY_SWEEP_S`, 0 desliga): chama `expire_due`, sem eventos; cancelado no `finally`. |
 | `directory.py` | `SqliteResidentDirectory`: papel de um residente numa casa e data (cópia de `core.access.find_membership`, por `resident_id`; pedir à P5 um helper), `room` (nome e tipo da divisão) e `room_tenants` (inquilinos ativos do quarto). |
 | `handlers.py` | Os cinco consumidores (nomes permanentes) e `CONSUMERS`, que o lifespan subscreve: `notifications.confirmation_needed`, `notifications.presence_check`, `notifications.safety_alert`, `notifications.attribution_changed`, `notifications.allocation_published`. `alerts.*` não tem consumidor de propósito. |
 | `preferences.py` | `delivery_for`: `now`/`deferred`/`suppressed` (só afeta o push, ainda inexistente). |
@@ -63,8 +64,8 @@ Regras que os testes garantem:
 - WebSocket (`notification`, `notification_update`): o único `/api/ws` é o do ObjectOS, sem hook.
 - `bus.wake()` público (pedido à P5): `_publish` no router só acorda consumidores depois do
   commit (os eventos já estão na outbox), por isso usa `publish`.
-- Varrimento de expiração periódico (`expire_due` existe no serviço, ninguém o chama) e o evento
-  `notification.expired` para a P4.
+- O evento `notification.expired` para a P4 (o varrimento periódico já existe, `sweeper.py`, mas
+  não emite eventos).
 - Subscrição de `alerts.threshold_crossed` e `alerts.alert_raised` (faltam destinatário/limite e
   potência/duração nos contratos; subscrever agora perderia eventos).
 - Aplicação das preferências (push, silêncio noturno), dispensar, histórico com filtros, produtor
