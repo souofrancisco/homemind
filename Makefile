@@ -3,7 +3,7 @@ SHELL := bash
 BACKEND  := app/backend
 FRONTEND := app/frontend
 
-.PHONY: dev auth down test lint contracts build android smoke check worktree mcp-login mcp-doctor mcp-up mcp-down mcp-demo mcp-demo-down mcp-writes-on mcp-writes-off mcp-writes-status mcp-verify
+.PHONY: dev auth down test lint contracts build android smoke check worktree mcp-login mcp-doctor mcp-up mcp-down mcp-demo mcp-demo-reload mcp-demo-build mcp-demo-logs mcp-demo-check mcp-demo-down mcp-writes-on mcp-writes-off mcp-writes-status mcp-verify
 
 dev:  ## ambiente completo com hot reload (Docker)
 	docker compose -f app/compose.yaml up --build
@@ -57,8 +57,24 @@ mcp-down:  ## parar apenas o projeto MCP isolado
 	docker compose -p homemind-altice -f app/compose.mcp.yaml down
 
 MCP_DEMO := -p homemind-mcpdemo -f app/compose.yaml -f app/compose.mcp-demo.yaml
-mcp-demo:  ## demo completa: frontend + Authentik + backend com HOME_BACKEND=mcp (escritas bloqueadas)
-	docker compose $(MCP_DEMO) up --build -d --wait
+mcp-demo:  ## demo completa; reutiliza containers/imagens (sem --build), não toca no Authentik se nada mudou
+	docker compose $(MCP_DEMO) up -d
+	@app/infra/mcp-demo-check.sh heal
+	docker compose $(MCP_DEMO) up -d --wait
+	@app/infra/mcp-demo-check.sh
+
+mcp-demo-reload:  ## restart rápido só de backend+frontend (Authentik/Postgres intactos)
+	docker compose $(MCP_DEMO) restart backend frontend
+
+mcp-demo-build:  ## rebuild só de backend+frontend e recria-os (Authentik/volumes intactos)
+	docker compose $(MCP_DEMO) build backend frontend
+	docker compose $(MCP_DEMO) up -d --no-deps --wait backend frontend
+
+mcp-demo-logs:  ## logs de backend+frontend (Ctrl-C para sair)
+	docker compose $(MCP_DEMO) logs -f --tail=100 backend frontend
+
+mcp-demo-check:  ## diagnóstico: containers, rede/DNS, proxy, REST, WebSocket, modo MCP (só leitura)
+	@app/infra/mcp-demo-check.sh
 
 mcp-demo-down:
 	docker compose $(MCP_DEMO) down

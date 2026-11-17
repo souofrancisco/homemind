@@ -83,8 +83,12 @@ O ficheiro de exemplo já arranca em modo simulado. Variáveis principais:
 ```bash
 make mcp-login      # OAuth no browser, uma vez; tokens em app/.mcp-auth/ (fora do Git)
 make mcp-doctor     # só leitura: initialize + tools/list
-make mcp-demo       # painel + Authentik + backend com HOME_BACKEND=mcp
-make mcp-demo-down
+make mcp-demo         # arranque (reutiliza containers/imagens; 1.ª vez constrói); repara e valida
+make mcp-demo-reload  # restart só de backend+frontend (Authentik/Postgres intactos)
+make mcp-demo-build   # rebuild só de backend+frontend (após mudar dependências/Dockerfile)
+make mcp-demo-logs    # logs de backend+frontend
+make mcp-demo-check   # diagnóstico: rede/DNS, proxy, REST, WS, modo MCP (só leitura)
+make mcp-demo-down    # paragem (sem -v: volumes e tokens preservados)
 ```
 
 Sem mais nada, o modo MCP é **só leitura**. As escritas físicas exigem `ENABLE_PHYSICAL_WRITES=true` **e** uma autorização temporária (`make mcp-writes-on stack=demo minutes=15`). Detalhes e estados de erro: [docs/mcp-demo.md](docs/mcp-demo.md).

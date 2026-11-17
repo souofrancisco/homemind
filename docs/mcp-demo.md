@@ -33,6 +33,21 @@ make mcp-demo                         # demo completa: frontend + Authentik + ba
 make mcp-down | make mcp-demo-down
 ```
 
+Ciclo rápido (nunca reinicia Authentik; Python e React recarregam sozinhos pelos bind mounts):
+
+```bash
+make mcp-demo-reload  # restart só de backend+frontend (Authentik/Postgres intactos)
+make mcp-demo-build   # rebuild só de backend+frontend (após mudar dependências/Dockerfile)
+make mcp-demo-logs    # logs de backend+frontend
+make mcp-demo-check   # diagnóstico: rede/DNS, proxy, REST, WS, modo MCP (só leitura)
+make mcp-demo-down    # paragem (sem -v: volumes e tokens preservados)
+```
+
+**502 em `/api/*`:** se a porta 8000 estiver ocupada no arranque, o Docker falha a ligar o backend à rede
+mas o container fica a correr e `healthy` (o healthcheck é interno). O frontend não o resolve (DNS) → 502.
+`make mcp-demo` deteta e recria só o backend; `make mcp-demo-check` mostra o diagnóstico. Libertar a
+porta com `BACKEND_PORT=<outra> make mcp-demo`. Um `401` em `/api/*` sem token é normal (a API respondeu).
+
 Com `ENABLE_PHYSICAL_WRITES=false` (omissão) nenhuma escrita é feita; leituras a cada 5 s.
 `POST /api/simulate` responde 403 com `HOME_BACKEND=mcp`. Para a demo completa a câmara usa
 `VIDEO_SOURCE` e `VISAO_DETETOR` do `.env`, como em `make dev`.
