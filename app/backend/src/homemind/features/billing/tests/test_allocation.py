@@ -1,7 +1,7 @@
 """Repartição (BILL-02) e arredondamento (BILL-04): fixtures do PDF (SIMULADAS) e propriedades."""
 
 import random
-from datetime import timedelta
+from datetime import date, timedelta
 from fractions import Fraction
 
 import pytest
@@ -13,6 +13,7 @@ from homemind.contracts.billing import (
     AttributionStatus,
     AttributionTarget,
     BillInconsistentError,
+    BillPeriod,
     BreakdownKind,
 )
 from homemind.contracts.common import Audit, replace, stable_id
@@ -70,12 +71,30 @@ def test_fixture_a_em_euros():
 
 
 def test_fixture_c_arredondamento_maior_resto():
-    """100 € por 3 iguais: 33,34 / 33,33 / 33,33; o cêntimo vai para o resident_id menor."""
+    """100 € por 3 iguais: 33,34 / 33,33 / 33,33; o cêntimo extra vai a sorteio (Carla aqui)."""
     bill, esperado = fx.bill_c()
     residents = {fx.ANA: None, fx.BRUNO: None, fx.CARLA: None}
     allocs = allocate(bill, residents, [])
-    assert sorted(_amounts(allocs).values()) == sorted(_amounts(esperado).values())
-    assert _amounts(allocs)[min(residents)] == 3334
+    assert _amounts(allocs) == _amounts(esperado)
+    assert _amounts(allocs)[fx.CARLA] == 3334
+
+
+def test_centimo_extra_sorteado_por_mes_e_reproduzivel():
+    """Mesma casa e mês → mesmo sorteado (recibos auditáveis); meses diferentes → varia."""
+    bill, _ = fx.bill_c()
+    residents = {fx.ANA: None, fx.BRUNO: None, fx.CARLA: None}
+    sorteados = set()
+    for mes in range(1, 13):
+        b = replace(
+            bill,
+            id=stable_id("bill", str(mes)),
+            period=BillPeriod(start=date(2026, mes, 1), end=date(2026, mes, 28)),
+        )
+        primeira = _amounts(allocate(b, residents, []))
+        revisao = _amounts(allocate(replace(b, id=stable_id("bill", str(mes), "r")), residents, []))
+        assert primeira == revisao
+        sorteados.add(next(r for r, c in primeira.items() if c == 3334))
+    assert sorteados == set(residents)  # em 12 meses calhou a todos
 
 
 def test_zona_comum_divide_por_igual_e_mostra_linha():

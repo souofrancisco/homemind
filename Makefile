@@ -3,7 +3,7 @@ SHELL := bash
 BACKEND  := app/backend
 FRONTEND := app/frontend
 
-.PHONY: dev auth down test lint contracts build android smoke check worktree mcp-login mcp-doctor mcp-up mcp-down mcp-demo mcp-demo-reload mcp-demo-build mcp-demo-logs mcp-demo-check mcp-demo-down mcp-writes-on mcp-writes-off mcp-writes-status mcp-verify
+.PHONY: dev auth down test lint contracts build android smoke check worktree mcp-login mcp-doctor mcp-up mcp-down mcp-demo mcp-demo-reload mcp-demo-build mcp-demo-logs mcp-demo-check mcp-demo-down mcp-writes-on mcp-writes-off mcp-writes-status mcp-verify presence-wifi-scan
 
 dev:  ## ambiente completo com hot reload (Docker)
 	docker compose -f app/compose.yaml up --build
@@ -99,6 +99,9 @@ mcp-writes-status:
 
 mcp-verify:  ## verificação física controlada (what=lamp|plug), pede autorização explícita
 	uv run --project $(BACKEND) --env-file app/.env python -m homemind.connectors.mcp_verify $(what)
+
+presence-wifi-scan:  ## varrimento Wi-Fi no anfitrião -> backend (PRESENCE_WIFI_MODE=ingest; ver docs/modules/presence.md)
+	uv run --project $(BACKEND) --env-file app/.env python -m homemind.features.presence.hostscan
 
 worktree:  ## make worktree b=feat/US-12-nome -> ../homemind-US-12-nome (a partir de origin/main)
 	@test -n "$(b)" || { echo "uso: make worktree b=feat/US-xx-nome"; exit 1; }
