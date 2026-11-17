@@ -53,6 +53,7 @@ from homemind.features.engine.schemas import (
     RulePatch,
     Status,
 )
+from homemind.features.video import service as video
 
 
 def criar_home(s: EngineSettings) -> Home:
@@ -79,11 +80,15 @@ async def lifespan(app: FastAPI):
     engine = criar_engine(get_engine_settings())
     await engine.iniciar()
     app.state.engine = engine  # a visão publica com engine.publicar_de_thread(evento)
-    consumidor = asyncio.create_task(engine.consumir())
+    tarefas = [
+        asyncio.create_task(engine.consumir()),
+        asyncio.create_task(engine.vigiar_camara(video.camara_ok)),  # sinal de vida da P1
+    ]
     try:
         yield
     finally:
-        consumidor.cancel()
+        for t in tarefas:
+            t.cancel()
         await engine.parar()
 
 

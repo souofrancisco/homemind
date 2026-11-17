@@ -158,6 +158,23 @@ class Engine:
         """Loop do motor (para o `PublicadorEventos` da P2); None antes do arranque."""
         return self._loop
 
+    async def vigiar_camara(self, ler: Callable[[], bool], intervalo_s: float = 1.0) -> None:
+        """Copia `camara_ok` da visão e publica no WS só quando muda (tarefa da vida da app)."""
+        while True:
+            try:
+                ok = bool(ler())
+            except Exception:
+                log.exception("camara_ok indisponível")
+                ok = False
+            if ok != self.camara_ok:
+                self.camara_ok = ok
+                if ok:
+                    self._log("Câmara disponível")
+                else:
+                    self._log("Câmara indisponível", "warning")
+                await self.notificar()
+            await asyncio.sleep(intervalo_s)
+
     def publicar_de_thread(self, evento: ObjetoLevantado | Presenca) -> None:
         """Para a thread de visão: entrega o evento ao loop sem bloquear."""
         if self._loop is None:
