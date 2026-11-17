@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from homemind.connectors.mcp_sensors import sensor_readings_from_device
+from homemind.contracts.common import Origin
 from homemind.contracts.domain_events import SensorReadingRecorded
 from homemind.contracts.sensors import SensorKind, SensorReading
 
@@ -29,12 +30,14 @@ class SensorCollector:
         publish: Callable[[SensorReadingRecorded], object],
         stale_after: Mapping[SensorKind, timedelta] | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        origin: Origin = Origin.real,
     ) -> None:
         self._household_id = household_id
         self._bindings = bindings
         self._publish = publish
         self._stale_after = stale_after
         self._clock = clock
+        self._origin = origin
         self._last_readings: dict[tuple[UUID, SensorKind], SensorReading] = {}
         self._fingerprints: dict[tuple[UUID, SensorKind], tuple] = {}
 
@@ -58,6 +61,7 @@ class SensorCollector:
                 room_id=binding.room_id,
                 now=self._clock(),
                 stale_after=self._stale_after,
+                origin=self._origin,
             )
             for reading in readings:
                 key = (reading.device_id, reading.kind)
