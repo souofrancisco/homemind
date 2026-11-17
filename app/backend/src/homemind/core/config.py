@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings
@@ -12,8 +13,17 @@ class Settings(BaseSettings):
     # Nunca logar nem devolver este valor (header X-API-Key do MCP Altice).
     mcp_api_key: str = ""
     mcp_client_type: str = "core"
-    # Nunca logar nem devolver este valor.
-    mcp_auth_token: str = ""
+    mcp_oauth_client_id: str = "mcp-client"
+    mcp_oauth_callback_port: int = 5434
+    mcp_oauth_callback_url: str = "http://mcp-redirect.futurelabsinnovations.com:5434/callback"
+    # Tokens MCP ficam fora do código, numa diretoria 0700 montada no container (não o ficheiro:
+    # a escrita atómica com os.replace falha em bind mounts de ficheiros).
+    mcp_token_path: Path = Path(__file__).resolve().parents[4] / ".mcp-auth" / "tokens.json"
+    # Autorização temporária de escritas físicas (ficheiro de grant) e IDs opcionais da demo.
+    mcp_write_grant_path: Path = Path("data/mcp-write-grant.json")
+    mcp_write_max_minutes: int = 60
+    mcp_lamp_id: str = ""
+    mcp_plug_id: str = ""
     llm_api_key: str = ""
     enable_physical_writes: bool = False
     # Authentik (OIDC). Issuer = URL pública do provider (campo `iss` dos tokens);

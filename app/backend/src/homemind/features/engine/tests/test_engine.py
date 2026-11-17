@@ -287,3 +287,47 @@ def test_gesto_com_casa_suspensa_repoe_e_mantem_modo(tmp_path):
         assert e.estado == Estado.ATIVO and e.modo.id == "leitura" and home.tomada.ligada
 
     correr(cenario())
+
+
+class HomeFalha(HomeContada):
+    ultima_falha = "sem sessão de escritas autorizada"
+
+    async def definir_lampada(self, ligada, cor=None, brilho=None):
+        return False
+
+    async def definir_tomada(self, ligada):
+        return False
+
+
+def test_falha_fisica_nao_ativa_modo_nem_poupanca(tmp_path):
+    async def cenario():
+        e, _, _ = montar(tmp_path)
+        e.home = HomeFalha()
+        await e.iniciar()
+        await e.processar(levantar("caneca"))
+        assert e.modo is None and e.estado == Estado.INATIVO
+        assert any(
+            i.level == "error" and "falha física" in i.message for i in e.registo.recentes(10)
+        )
+        res = await e.desligar_tudo()
+        assert res.code == "mcp_unavailable" and "autorizada" in res.message
+        assert res.devices.lampada == "unknown"
+        assert e.home_state().energy_saved_wh == 0
+
+    correr(cenario())
+
+
+def test_polling_do_home_empurra_estado_para_o_ws(tmp_path):
+    async def cenario():
+        e, home, _ = montar(tmp_path)
+        home.ao_estado = None  # FakeHome não tem polling; simula o McpHome
+        e.home.ao_estado = e._casa_atualizada
+        await e.iniciar()
+        fila = e.subscrever()
+        casa = (await home.estado()).model_copy(update={"mcp_ok": True})
+        e.home.ao_estado(casa, True)
+        msg = fila.get_nowait()
+        assert msg.type == "home_state" and msg.data.mcp_ok is True
+        assert e.home_state().mcp_ok is True
+
+    correr(cenario())

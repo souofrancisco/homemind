@@ -5,6 +5,8 @@
 *.pem
 *.key
 credentials*.json
+app/.mcp-tokens.json
+app/.mcp-auth/
 # data
 *.db
 *.sqlite

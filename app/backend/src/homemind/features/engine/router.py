@@ -22,6 +22,7 @@ from fastapi import (
 from fastapi.security import HTTPAuthorizationCredentials
 
 from homemind.connectors.fake_home import FakeHome
+from homemind.connectors.mcp_home import McpHome
 from homemind.contracts.eventos import Evento
 from homemind.contracts.home import Home
 from homemind.contracts.regras import Rule
@@ -58,7 +59,7 @@ from homemind.features.video import service as video
 
 def criar_home(s: EngineSettings) -> Home:
     if s.home_backend == "mcp":
-        raise RuntimeError("HOME_BACKEND=mcp ainda não disponível (McpHome, issue #11)")
+        return McpHome()
     return FakeHome()
 
 
@@ -78,6 +79,9 @@ def criar_engine(s: EngineSettings) -> Engine:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     engine = criar_engine(get_engine_settings())
+    iniciar_home = getattr(engine.home, "iniciar", None)
+    if iniciar_home is not None:
+        await iniciar_home()
     await engine.iniciar()
     app.state.engine = engine  # a visão publica com engine.publicar_de_thread(evento)
     tarefas = [
@@ -90,6 +94,9 @@ async def lifespan(app: FastAPI):
         for t in tarefas:
             t.cancel()
         await engine.parar()
+        parar_home = getattr(engine.home, "parar", None)
+        if parar_home is not None:
+            await parar_home()
 
 
 router = APIRouter(prefix="/api", tags=["engine"], lifespan=lifespan)

@@ -133,6 +133,8 @@ class Engine:
         self._ouvintes: set[asyncio.Queue[WsMessage]] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
         registo.ao_registar = lambda item: self._emitir(EventMessage(data=item))
+        if hasattr(home, "ao_estado"):  # McpHome: o polling empurra o estado (sem 2.º motor)
+            home.ao_estado = self._casa_atualizada
 
     # ---- ciclo de vida -------------------------------------------------------------------
     async def iniciar(self) -> None:
@@ -207,7 +209,13 @@ class Engine:
             success=all(ok.values()), state=self.estado, backend=self._backend(), devices=devices
         )
         if not any(ok.values()):
-            res.code, res.message = "mcp_unavailable", "Não foi possível contactar o kit"
+            motivo = getattr(self.home, "ultima_falha", None)
+            res.code = "mcp_unavailable"
+            res.message = (
+                f"Não foi possível desligar: {motivo}"
+                if motivo
+                else ("Não foi possível contactar o kit")
+            )
         elif not all(ok.values()):
             falhou = "a lâmpada" if not ok["lampada"] else "a tomada"
             res.code = "partial_failure"
@@ -218,6 +226,13 @@ class Engine:
         """Publica o estado atual (ex.: depois de mudar regras ou `camara_ok`)."""
         async with self._lock:
             await self._ler_casa()
+            self._publicar()
+
+    def _casa_atualizada(self, casa: EstadoCasa, mudou: bool) -> None:
+        """Chamado pelo polling do Home, sem locks: atualiza a cópia e publica se relevante."""
+        self._casa = casa
+        self.registo.source = casa.backend
+        if mudou:
             self._publicar()
 
     def home_state(self) -> HomeState:
@@ -269,9 +284,18 @@ class Engine:
         self._cancelar_timer()
         self._fechar_poupanca()
         self._guardado, self._avisado, self.espera_ate = None, False, None
-        await self._aplicar(regra.acoes)
+        ok = await self._aplicar(regra.acoes)
+        if not any(ok.values()):
+            self._log(f"«{regra.nome}» não aplicada: falha física nos dispositivos", "error")
+            return
         self.modo = regra
-        self._mudar(Estado.ATIVO, f"«{regra.nome}» ativado")
+        if all(ok.values()):
+            self._mudar(Estado.ATIVO, f"«{regra.nome}» ativado")
+        else:
+            falhou = ", ".join(d for d, v in ok.items() if not v)
+            self._mudar(
+                Estado.ATIVO, f"«{regra.nome}» ativado parcialmente (falhou: {falhou})", "warning"
+            )
 
     async def _presenca(self, ev: Presenca, prefixo: str) -> None:
         if ev.ha_alguem == self.presenca:
@@ -337,12 +361,21 @@ class Engine:
             log.exception("ler_consumo falhou")
         if watts is None:
             self._log("Consumo indisponível: poupança não contabilizada", "warning")
-        await self._aplicar(_DESLIGAR)
-        self._watts_suspensos = watts or 0.0
+        ok = await self._aplicar(_DESLIGAR)
+        # Poupança só conta com a tomada confirmadamente desligada.
+        self._watts_suspensos = (watts or 0.0) if ok["tomada"] else 0.0
         self.suspenso_desde = self.relogio()
         self.espera_ate = None
-        consumo = f"{watts:.0f} W" if watts is not None else "consumo desconhecido"
-        self._mudar(Estado.SUSPENSO, f"Suspenso: luz e tomada desligadas ({consumo})")
+        if all(ok.values()):
+            consumo = f"{watts:.0f} W" if watts is not None else "consumo desconhecido"
+            self._mudar(Estado.SUSPENSO, f"Suspenso: luz e tomada desligadas ({consumo})")
+        else:
+            falhou = ", ".join(d for d, v in ok.items() if not v)
+            self._mudar(
+                Estado.SUSPENSO,
+                f"Suspensão não confirmada (falhou: {falhou}); poupança não contabilizada",
+                "error",
+            )
 
     # ---- auxiliares ----------------------------------------------------------------------
     def _log(self, mensagem: str, level: Nivel = "info") -> None:
@@ -351,10 +384,10 @@ class Engine:
     def _backend(self) -> Backend:
         return self._casa.backend if self._casa else self.registo.source
 
-    def _mudar(self, novo: Estado, mensagem: str | None = None) -> None:
+    def _mudar(self, novo: Estado, mensagem: str | None = None, level: Nivel = "info") -> None:
         self.estado = novo
         if mensagem:
-            self._log(mensagem)
+            self._log(mensagem, level)
 
     def _limpar(self, estado: Estado, mensagem: str | None = None) -> None:
         self.modo, self._guardado, self._avisado = None, None, False
@@ -417,7 +450,12 @@ class Engine:
             log.exception("escrita em %s falhou", dispositivo)
             ok = False
         if not ok:
-            self._log(f"Falha ao atuar em {dispositivo} (não confirmado)", "error")
+            motivo = getattr(self.home, "ultima_falha", None)
+            self._log(
+                f"Falha ao atuar em {dispositivo} (não confirmado)"
+                + (f": {motivo}" if motivo else ""),
+                "error",
+            )
         return ok
 
     async def _ler_casa(self) -> EstadoCasa | None:
