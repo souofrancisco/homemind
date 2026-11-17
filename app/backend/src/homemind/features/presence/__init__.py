@@ -1,1 +1,1 @@
-"""Presença (P2). IMPLEMENTADO: pistas Wi-Fi opt-in (PRES-03)."""
+"""Presença (P2). IMPLEMENTADO: câmara (PRES-01), porta (PRES-02), Wi-Fi opt-in (PRES-03)."""

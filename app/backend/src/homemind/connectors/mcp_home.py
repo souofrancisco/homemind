@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from homemind.connectors.altice_auth import OAuthReauthRequired, altice_session, needs_login
 from homemind.connectors.write_grant import read_grant
+from homemind.connectors.write_policy import Decision, RuleWritePolicy, WriteOutcome, WriteResult
 from homemind.contracts.home import (
     CORES,
     Cor,
@@ -29,6 +30,7 @@ from homemind.core.config import Settings, get_settings
 
 if TYPE_CHECKING:
     from homemind.connectors.mcp_collector import EnergyCollector
+    from homemind.connectors.mcp_sensor_collector import SensorCollector
 
 log = logging.getLogger(__name__)
 
@@ -328,7 +330,11 @@ class McpHome:
         # alterações relevantes (estado, consumo, disponibilidade), não por timestamps.
         self.ao_estado: EstadoOuvinte | None = None
         self.coletor: EnergyCollector | None = None
+        self.sensores: SensorCollector | None = None
         self._falhas_consecutivas = 0
+        self.ultimo_resultado: WriteResult | None = None
+        self._politica = RuleWritePolicy()
+        self._lock_regras = asyncio.Lock()
         self.ultima_falha: str | None = None  # motivo (sem segredos) da última escrita recusada
         self.tempos_ms: dict[str, float] = {}  # duração da última operação de cada tipo
         self._mcp_ok = False
@@ -365,6 +371,16 @@ class McpHome:
     async def definir_lampada(
         self, ligada: bool, cor: Cor | None = None, brilho: int | None = None
     ) -> bool:
+        return await self._escrever_lampada(ligada, cor, brilho, None, False)
+
+    async def _escrever_lampada(
+        self,
+        ligada: bool,
+        cor: Cor | None,
+        brilho: int | None,
+        decision: Decision | None,
+        regra: bool,
+    ) -> bool | WriteResult:
         if not ligada:
             cor = brilho = None  # ignorados ao desligar, também na verificação
         if (cor is not None and cor not in CORES) or (
@@ -389,6 +405,8 @@ class McpHome:
                 and (brilho is None or casa.brilho == brilho)
             )
 
+        if regra:
+            return await self._escrever_regra("lamp", changes, confirmado, decision)
         return await self._escrever("lamp", changes, confirmado)
 
     async def definir_tomada(self, ligada: bool) -> bool:
@@ -397,6 +415,49 @@ class McpHome:
             [{"type": "power", "value": "on" if ligada else "off"}],
             lambda d: _power(d) is ligada,
         )
+
+    def _agora(self) -> datetime:
+        return datetime.now(UTC)
+
+    async def _escrever_regra(
+        self,
+        role: str,
+        changes: list[dict[str, Any]],
+        confirmado: Callable[[dict[str, Any]], bool],
+        decision: Decision | None,
+    ) -> WriteResult:
+        async with self._lock_regras:
+            agora = self._agora()
+            motivo = self._politica.check(role, changes, decision, agora)
+            if motivo is not None:
+                return WriteResult(WriteOutcome.refused, motivo)
+            await self._escrever(role, changes, confirmado)
+            assert self.ultimo_resultado is not None
+            resultado = self.ultimo_resultado
+            self._politica.record(role, resultado.outcome, self._agora())
+            return resultado
+
+    async def tomada_por_regra(self, ligada: bool, decision: Decision | None) -> WriteResult:
+        return await self._escrever_regra(
+            "plug",
+            [{"type": "power", "value": "on" if ligada else "off"}],
+            lambda d: _power(d) is ligada,
+            decision,
+        )
+
+    async def lampada_por_regra(
+        self,
+        ligada: bool,
+        cor: Cor | None = None,
+        brilho: int | None = None,
+        *,
+        decision: Decision | None,
+    ) -> WriteResult:
+        resultado = await self._escrever_lampada(ligada, cor, brilho, decision, True)
+        if isinstance(resultado, bool):
+            assert self.ultimo_resultado is not None
+            return self.ultimo_resultado
+        return resultado
 
     async def listar_ferramentas(self) -> list[dict[str, Any]]:
         """`tools/list` pela sessão partilhada (só leitura), para o endpoint de descoberta."""
@@ -466,6 +527,13 @@ class McpHome:
                 self.coletor.unavailable()
             except Exception as erro:
                 log.exception("falha no coletor (%s)", type(erro).__name__, exc_info=False)
+        if self.sensores is not None:
+            try:
+                self.sensores.unavailable()
+            except Exception as erro:
+                log.exception(
+                    "falha no coletor de sensores (%s)", type(erro).__name__, exc_info=False
+                )
         self._mcp_ok = False
         self._lampada, self._tomada = EstadoLampada(), EstadoTomada()
         self._consumo_w = self._lido_em = self._consumo_em = None
@@ -551,6 +619,16 @@ class McpHome:
             )
         )
         self._aplicar_leitura(lamp, plug)
+        if self.sensores is not None:
+            payload = _payload(await session.call_tool(TOOL_HOME_DEVICES, {}))
+            if not isinstance(payload, dict) or not isinstance(payload.get("devices"), list):
+                raise RuntimeError("Unexpected home-device-list response")
+            try:
+                self.sensores.ingest(payload["devices"])
+            except Exception as erro:
+                log.exception(
+                    "falha no coletor de sensores (%s)", type(erro).__name__, exc_info=False
+                )
 
     def _aplicar_leitura(self, lamp: dict | None, plug: dict | None) -> None:
         if lamp is not None:
@@ -574,6 +652,7 @@ class McpHome:
     # ---- escritas --------------------------------------------------------------------------
     def _recusar(self, motivo: str) -> bool:
         self.ultima_falha = motivo
+        self.ultimo_resultado = WriteResult(WriteOutcome.refused, motivo)
         log.warning("escrita MCP recusada: %s", motivo)
         return False
 
@@ -602,11 +681,13 @@ class McpHome:
         erro: str | None = None
         falha_transporte: Exception | None = None
         enviado = False
+        erro_mcp = False
+        sem_contacto = False
         device_id: str | None = None
         atual: dict[str, Any] | None = None
 
         async def job(session: Any) -> dict[str, Any] | None:
-            nonlocal enviado, device_id, erro
+            nonlocal enviado, device_id, erro, erro_mcp
             await self._garantir_ferramentas(session)
             if self._ids is None:
                 await self._descobrir(session)
@@ -617,6 +698,7 @@ class McpHome:
                 enviado = True
                 res = await session.call_tool(TOOL_UPDATE, {"deviceId": device_id, "body": change})
                 if res.isError:
+                    erro_mcp = True
                     erro = "MCP recusou a alteração"
                     break
             # Releitura na mesma sessão. O estado pode demorar a refletir-se na cloud: só se
@@ -654,11 +736,25 @@ class McpHome:
                     # Diagnóstico: o MCP aceita escritas para dispositivos que não as recebem.
                     minutos = _minutos_sem_contacto(atual)
                     if minutos is not None and minutos >= _SEM_CONTACTO_MIN:
+                        sem_contacto = True
                         erro += f" (dispositivo sem contactar a cloud há {minutos} min)"
             elif enviado:  # nem a releitura funcionou: estado desconhecido, não o de antes
                 self._falha(falha_transporte or ConnectionError("sem releitura"))
             self.tempos_ms[f"escrita_{role}"] = round((time.monotonic() - inicio) * 1000)
         self.ultima_falha = None if ok else (erro or "sem confirmação")
+        # `unknown` = «pode ter sido aplicado»: só se a escrita chegou a ser enviada. Falha antes
+        # de enviar (ligação, OAuth, ferramentas) é `failed`: sabe-se que nada foi aplicado.
+        incerto = enviado and (falha_transporte is not None or atual is None or sem_contacto)
+        outcome = (
+            WriteOutcome.confirmed
+            if ok
+            else WriteOutcome.failed
+            if erro_mcp
+            else WriteOutcome.unknown
+            if incerto
+            else WriteOutcome.failed
+        )
+        self.ultimo_resultado = WriteResult(outcome, self.ultima_falha)
         log.info(
             "escrita MCP %s: %s em %d ms",
             role,

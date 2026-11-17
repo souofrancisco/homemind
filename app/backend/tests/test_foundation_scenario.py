@@ -67,24 +67,30 @@ def stand_in_notifications(conn, stored):
 
 
 def respond(conn, notification_id, resident_id, action_id, now):
-    """P3 (stand-in da rota `respond`): regra pura + compare-and-set na base de dados."""
-    row = conn.execute(
-        "SELECT json FROM t_notification WHERE id=?", (str(notification_id),)
-    ).fetchone()
-    n = notification.Notification.model_validate_json(row["json"])
-    done = n.respond(resident_id, action_id, now)  # levanta 403/409 conforme o caso
-    cur = conn.execute(
-        "UPDATE t_notification SET status='actioned', json=?"
-        " WHERE id=? AND status IN ('unread','read')",
-        (done.model_dump_json(), str(notification_id)),
-    )
-    if cur.rowcount != 1:  # perdeu a corrida contra uma resposta simultânea
-        raise notification.AlreadyRespondedError("já respondida")
-    return done
+    """P3 (stand-in da rota `respond`): regra pura + compare-and-set na base de dados.
+
+    Regra B (D-32): cada voto conta; o CAS é sobre o número de votos lido. Se outro voto
+    entrou entretanto, relê e volta a aplicar a regra (que pode dar 409 se já fechou)."""
+    while True:
+        row = conn.execute(
+            "SELECT json FROM t_notification WHERE id=?", (str(notification_id),)
+        ).fetchone()
+        n = notification.Notification.model_validate_json(row["json"])
+        done = n.respond(resident_id, action_id, now)  # levanta 403/409 conforme o caso
+        cur = conn.execute(
+            "UPDATE t_notification SET status=?, json=?"
+            " WHERE id=? AND status IN ('unread','read')"
+            " AND json_array_length(json, '$.responses') = ?",
+            (done.status.value, done.model_dump_json(), str(notification_id), len(n.responses)),
+        )
+        if cur.rowcount == 1:
+            return done
 
 
 def stand_in_attribution(conn, stored):
-    """P4 (stand-in): «É minha» => Attribution da Carla; nunca duas ativas para o consumo."""
+    """P4 (stand-in): votação decidida => Attribution de quem paga; nunca duas ativas."""
+    outcome = stored.event.data.outcome
+    assert outcome.decided and outcome.resident_id == fx.CARLA
     resp = stored.event.data.response
     assert resp.action_id == "mine"
     a = billing.Attribution(
@@ -175,7 +181,8 @@ def test_energy_to_notification_to_attribution_to_bill(tmp_path):
         )
         assert n.origin.value == "simulated"
 
-        # 9-10. a Carla responde «É minha»: um só vencedor mesmo com respostas simultâneas
+        # 9-10. a Carla diz «É minha» e a Ana «É de todos» ao mesmo tempo: nenhum voto se
+        # perde; a votação fecha com a Carla (D-32); se a Carla votou primeiro, a Ana leva 409
         outcomes = []
 
         def attempt(who, action):
@@ -191,12 +198,14 @@ def test_energy_to_notification_to_attribution_to_bill(tmp_path):
         ]
         [t.start() for t in threads]
         await asyncio.to_thread(lambda: [t.join() for t in threads])
-        assert sorted(o for _, o in outcomes) == ["409", "ok"]
-        winner = next(w for w, o in outcomes if o == "ok")
+        assert (fx.CARLA, "ok") in outcomes
+        assert sorted(o for _, o in outcomes) in (["409", "ok"], ["ok", "ok"])
         stored_n = notification.Notification.model_validate_json(
             one(db, "SELECT json FROM t_notification")
         )
-        assert stored_n.response.resident_id == winner  # autor e hora gravados
+        assert stored_n.status is notification.NotificationStatus.actioned
+        assert stored_n.response.resident_id == fx.CARLA  # voto decisivo: autor e hora
+        assert stored_n.response.action_id == "mine"
         assert stored_n.response.responded_at == RESPONDED_AT
         # o evento reflete a resposta que realmente venceu
         resp_event = de.NotificationResponded(
@@ -208,6 +217,7 @@ def test_energy_to_notification_to_attribution_to_bill(tmp_path):
                 ref=notification.NotificationRef(
                     type=notification.RefType.consumption_event, id=fx.CONSUMPTION
                 ),
+                outcome=stored_n.outcome(RESPONDED_AT),
             ),
         )
         await bus.publish(resp_event)
@@ -215,7 +225,9 @@ def test_energy_to_notification_to_attribution_to_bill(tmp_path):
         # 11. Attribution tipada (única ativa), 12-13. fatura e alocações de referência
         await until(lambda: one(db, "SELECT count(*) FROM t_attribution") == 1)
         attr = billing.Attribution.model_validate_json(one(db, "SELECT json FROM t_attribution"))
-        assert attr.target_resident_id == winner and attr.status is billing.AttributionStatus.active
+        assert (
+            attr.target_resident_id == fx.CARLA and attr.status is billing.AttributionStatus.active
+        )
         bill, allocations = fx.bill_a()
         billing.validate_allocations(bill, allocations)  # Σ = 120,00 € exatos
         assert sum(a.amount_cents for a in allocations) == 12_000

@@ -171,3 +171,24 @@ def require_access(resource: Resource, op: Operation = Operation.read):
         return await resolve_access(db, user.sub, household_id, resource, op, clock())
 
     return dependency
+
+
+async def require_operator(user: CurrentUser, db: DbDep, clock: ClockDep) -> None:
+    """A rota não tem casa no caminho: exige papel `operator` numa membership ativa. Senhorio,
+    inquilino ou sem membership recebem 403 (nunca se revela o que existe)."""
+    now = clock()
+
+    def query(conn) -> bool:
+        casas = conn.execute(
+            "SELECT DISTINCT m.household_id FROM membership m JOIN resident r"
+            " ON r.id = m.resident_id WHERE r.auth_subject = ? AND m.role = ?",
+            (user.sub, MembershipRole.operator.value),
+        ).fetchall()
+        for (casa,) in casas:
+            row = find_membership(conn, user.sub, UUID(casa), now)
+            if row is not None and row["role"] == MembershipRole.operator.value:
+                return True
+        return False
+
+    if not await db.run(query):
+        raise HTTPException(403, {"code": "forbidden_role", "message": "Sem permissão"})
