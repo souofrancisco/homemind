@@ -197,7 +197,7 @@ flowchart LR
 
 ### Câmara: fonte de vídeo e pipeline (PLANEADO)
 
-- **Fonte, por ordem:** (a) câmara do kit, **só leitura**, por app/link (acesso não provado, ver «Limites reais»); (b) plano B: telemóvel como câmara IP ou clip, **sempre rotulado SIMULADO** (`CameraStatus.origin`) na UI e no pitch; (c) sem câmara: declaração manual + Wi-Fi.
+- **Fonte, por ordem:** (a) câmara do kit, **só leitura**, por app/link (acesso não provado, ver «Limites reais»); (b) plano B: telemóvel como câmara IP ou clip, **sempre rotulado SIMULADO** (`CameraStatus.origin`) na UI e no pitch; (c) sem câmara: só Wi-Fi, que nunca dá `out`; o caso «câmara em baixo» não é tratado por agora (decisão do dono).
 - **Pipeline:** frame → máscara preta fora da soleira → `DetetorYolo` (só «pessoa») + ByteTrack → linha virtual → `DoorCrossed` (sentido, confiança) → frame descartado **a cada ciclo** do detetor. Só a soleira é analisada; sem reconhecimento facial; `track_id` nunca persistido; visitas só como número.
 - **Teste exigido (PRES-02):** varrer o diretório de dados e falhar se existir qualquer imagem; nenhum evento com URL, caminho de frame ou identidade.
 - Clips de desenvolvimento: só com consentimento de quem aparece, em `app/backend/data/` (fora do Git).
@@ -208,21 +208,23 @@ flowchart LR
 - **Mecanismo:** varrimento ping + ARP numa sub-rede privada configurável (`PRESENCE_WIFI_SUBNET`; na demo, a rede do hub do kit). Recolha desligada por omissão (`PRESENCE_WIFI_COLLECTION_ENABLED=false`, #146).
 - **Modo `ingest`:** o anfitrião calcula o HMAC de **todos** os MACs vistos e envia-os; o **backend descarta os não registados** (não persiste, não regista em logs).
 - **`match_key`:** HMAC-SHA256 com **um segredo único da instalação** (`PRESENCE_MATCH_SALT`). É **pseudonimização**: quem tenha o segredo pode testar MACs conhecidos. Sal por casa: **PLANEADO**, não existe (P-30). O MAC em claro nunca sai em API.
-- **Efeito na fusão:** presença Wi-Fi é pista a favor de `in`; ausência **não renova** o `in` e **nunca** prova saída (Wi-Fi nunca produz `out`, D-30). Só a fusão (PRES-04, PR #159, ainda não na `main`) passa a `out`, após 20–30 min **e** saída pela porta.
+- **Efeito na fusão:** presença Wi-Fi é pista a favor de `in`. A ausência de Wi-Fi **não renova** o `in` nem o passa a `uncertain`/`out`: só baixa a confiança (Wi-Fi nunca produz `out`, D-30). `out` só pela fusão (PRES-04, PR #159, ainda não na `main`): saída pela porta + tolerância de 20–30 min, e só se a saída for atribuível ao morador (Wi-Fi esperado e vivo, ou nenhum outro morador em casa); caso contrário `uncertain` + pergunta «estás em casa?».
+- **Consentimentos:** todas as pistas individuais (Wi-Fi, aparelho a ligar, resposta a «estás em casa?») exigem `presence_opt_in`; o Wi-Fi exige também `wifi_opt_in`.
+- **`make presence-wifi-scan`** passa a respeitar `PRESENCE_WIFI_COLLECTION_ENABLED` (a corrigir no PR #153).
 - **Revogação** (`DELETE /api/presence/devices/{id}`, PRES-03, PR #153, ainda não na `main`; rotas de presença e o `403` ao senhorio idem): apaga o `match_key` e para novas pistas, mas **não apaga as pistas já gravadas**; `domain_event` é append-only sem expurgo (P-20, P-25 do bloco anterior).
 
-### Plano alternativo sem câmara
+### Plano sem câmara
 
-Presença manual + Wi-Fi (ambos com opt-in). Sem contagem de visitas nem confirmação de saída pela porta: mais `uncertain` e mais perguntas «estás em casa?». A regra C funciona com menos precisão, dito na UI.
+A presença regista-se **só pela câmara (porta) e pelo Wi-Fi do telemóvel**; não há «cheguei/saí» manual na app (decisão do dono; em remoção no PR #153). Sem câmara, fica só o Wi-Fi, que nunca dá `out`: o estado fica `in` ou `uncertain`, com mais perguntas «estás em casa?» (a resposta mantém-se para resolver contradições). A regra C funciona com menos precisão, dito na UI.
 
 ### Informação a prestar e UI (PLANEADO)
 
 Os textos abaixo são **rascunho — não usar até PRES-02 e #146 estarem implementados e validados**; a rever por P5 e jurista (P-24 do bloco anterior; inclui o aviso e o pictograma).
 
 - **Aviso à entrada (visitantes e moradores), rascunho:** «Nesta porta há um sensor ótico que conta entradas e saídas. Não grava nem guarda imagens e não identifica pessoas. Só a pessoa que vive na casa vê o seu próprio estado.»
-- **Moradores, rascunho:** finalidades, o que não acontece, como registar e retirar o telemóvel, como declarar manualmente, que recusar não tem consequências.
+- **Moradores, rascunho:** finalidades, o que não acontece, como registar e retirar o telemóvel, que recusar não tem consequências.
 - **UI (APP):** indicador «Câmara na porta: ativa/desligada · REAL/SIMULADO» (`CameraStatus`); lista de telemóveis com «Retirar»; interruptores separados para `wifi_opt_in` e `presence_opt_in`, com o aviso de que o Wi-Fi precisa dos dois.
 
 ### Base legal por finalidade — candidatas, por validar
 
-Contagem na porta: interesse legítimo + votação da casa (PDF §10.2). Wi-Fi: consentimento (PDF §10.2). **Declaração manual: base candidata nossa (consentimento/pedido do próprio), não consta do §10.2.** Nenhuma está validada (P-24 do bloco anterior).
+Contagem na porta: interesse legítimo + votação da casa (PDF §10.2). Wi-Fi: consentimento (PDF §10.2). A resposta a «estás em casa?» é pedido do próprio: base candidata nossa, não consta do §10.2. Nenhuma está validada (P-24 do bloco anterior).
