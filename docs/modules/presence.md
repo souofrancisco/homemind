@@ -40,6 +40,49 @@ Contratos novos (`PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`
 
 Regras de fusão (PDF §6.8): presença no Wi-Fi conta muito, ausência conta pouco; só se considera que alguém saiu se houver uma saída pela porta e passarem 20–30 min; um aparelho a continuar ligado não prova presença, só um a **ligar** prova; contradição (entrada + aparelho a ligar sem ninguém «em casa») → `uncertain` e pergunta na aplicação.
 
+## Fontes de vídeo e estado da câmara (PRES-01) — IMPLEMENTADO
+
+`VIDEO_SOURCE` (URL ou caminho; segredo, só em `app/.env`) + `VIDEO_SOURCE_KIND` escolhem a fonte; o
+pipeline `features/video` (RTSP/TCP ou clip, reconexão com backoff, só o último frame em memória) é o
+mesmo para todas.
+
+| Fonte (`VideoSourceKind`) | Como | Origem |
+|---|---|---|
+| `kit` | link/stream RTSP partilhado pela app da câmara MEARI; só leitura, sem passar pelo MCP | REAL (só depois de validada, ver guia: **não validada**) |
+| `rtsp` | outra câmara IP na porta | REAL |
+| `phone` | telemóvel como câmara IP (RTSP ou MJPEG por `http(s)://`) | SIMULADO |
+| `clip` | clip pré-gravado da porta, em loop | SIMULADO |
+
+Em dúvida a fonte é SIMULADA: `kit`/`rtsp` sem URL `rtsp://` caem para `clip`; sem tipo declarado,
+`http(s)://` é `phone`. Sem `VIDEO_SOURCE` o estado é `clip`/simulada com `camera_ok=false`.
+
+`GET /api/presence/camera/status` devolve `CameraStatus` (fonte, origem, `camera_ok`, `fps`,
+`last_frame_at`, `door_mask_configured`), nunca imagem nem URL. Só o papel `operator` em **qualquer** casa (sem `household_id` na rota). **Decisão para a demo (uma casa); definitivo: `household_id` na rota (PLANEADO)**, ver P-28 em `decisions.md`. Senhorio, inquilino e sem membership recebem `403 forbidden_role`. Fonte ausente ou sem frame
+há mais de `VIDEO_SEM_FRAME_S` ⇒ `camera_ok=false` e sem `fps`; **nunca** se conclui «casa vazia». O
+`fps` é a cadência de frames novos entre duas consultas (`null` na primeira).
+`door_mask_configured` é `true` quando a soleira (PRES-02) está configurada e válida. `GET /api/video` (MJPEG): política final desligado por omissão (`ENABLE_DEV_VIDEO_PREVIEW=false`, PR #146) **e**, quando ligado (dev), só `operator` (PR #158); a rota mantém-se (remoção/adaptação: BASE-04).
+
+## Contagem na porta (PRES-02) — IMPLEMENTADO (lógica testada com detetor falso)
+
+`features/presence/{door,runner,yolo}.py`. Cadeia: `FonteVideo` → **recorte à soleira (o resto é descartado)**
+(`recortar`: o detetor só recebe o recorte da soleira, uma cópia, e as caixas voltam ao frame inteiro) → `DetetorYoloPessoas` (YOLO11 só classe «pessoa» +
+ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` → `presence.door_crossed`
+(`DoorCrossed`, `provenance.kind=inferred`, `origin` da fonte: SIMULADA com clip/telemóvel).
+
+- Só liga com `VIDEO_SOURCE`, `PRESENCE_HOUSEHOLD_ID`, `PRESENCE_DETETOR`, `PRESENCE_DOOR_ROI` e
+  `PRESENCE_DOOR_LINE` (coordenadas normalizadas 0–1 `x1,y1,x2,y2`) válidos. `PRESENCE_DOOR_INSIDE_SIGN`
+  (`1`/`-1`) diz de que lado da linha orientada fica o interior (ver `door.py`). Ponto usado: os pés.
+- Anti-dupla contagem: histerese à volta da linha (oscilar não conta); um cruzamento só é emitido
+  após `PRESENCE_DOOR_CONFIRM_S` e, se a mesma pessoa voltar para trás nesse tempo, anulam-se; no mesmo
+  sentido uma 2.ª passagem em `PRESENCE_DOOR_COOLDOWN_S` é ignorada (mesma pessoa em duas pistas;
+  duas pessoas coladas contam como uma: **limitação conhecida, aceite para a demo**: preferimos contar a menos a inventar entradas).
+- A soleira configura-se só por variáveis de ambiente, sem UI: **aceite para a demo**.
+- `track_id` vive só em memória e é esquecido; pistas sem ID confirmado não contam. Visitas não são
+  distinguidas aqui: são só mais passagens anónimas (o número de visitas é da PRES-05).
+- `confidence` é a média da confiança do detetor nessa pessoa, **não** uma precisão medida.
+- Sem frames novos não há eventos e nada daqui conclui «casa vazia». O código ObjectOS (`visao`,
+  gestos) fica intacto e deixa de ser necessário neste caminho (remoção: BASE-04 #74).
+
 ## Pistas por pessoa (PRES-03) — IMPLEMENTADO
 
 `features/presence/{wifi,repo,service,router,hostscan}.py`, migração `core/migrations/0200_presence_tables.sql` (convenção D-29, `02xx` = P2; tabelas `presence_device`, `presence_confirmation`, `presence_state` — a última é a da fusão, PRES-04).
@@ -120,3 +163,147 @@ P5 (`households`, barramento), P3 (UI e notificações de «estás em casa?»). 
 ## Testes
 
 Lógica pura com detetor falso e relógio simulado (como em `gestos/tests`); nunca YOLO real, rede ou câmara em `pytest`. Câmara real: [guia de validação](../development/guia-validacao-manual.md) (VID-01…03, YOLO-01/02).
+
+## PRIV-02 #119 — Investigação e arquitetura de privacidade (17/11/2026)
+
+**Estado:** RECOMENDAÇÃO técnica para MVP; controlos em código identificados como IMPLEMENTADOS abaixo. **Não é parecer jurídico nem declaração de conformidade com RGPD.** Consultar o documento Conta Certa v5.1 §§5, 6.8, 10 e 21; contratos F0 `contracts/presence.py`; matriz em `core/access.py`; fluxo real de vídeo em `features/video/{router,service,fonte}.py`.
+
+### Avaliação comparada (A/B/C)
+
+Pontuação qualitativa de **1 (inadequado) a 5 (favorável)**; pesos refletem proporcionalidade ao objetivo de atribuir consumos e explicar dúvidas na casa partilhada. **Não são medições de precisão nem validação de campo.** A questão jurídica é um critério de incerteza, não uma conclusão de legalidade.
+
+| Critério (peso %) | A Manual | B Câmara efémera | C Câmara + Wi-Fi voluntário |
+|---|---:|---:|---:|
+| Baixa intrusividade (15) | 5 | 3 | 2 |
+| Minimização de dados (10) | 4 | 4 | 2 |
+| Baixo risco de reidentificação indireta (10) | 5 | 3 | 1 |
+| Proteção de visitantes (10) | 5 | 3 | 2 |
+| Segurança e superfície de ataque (10) | 5 | 3 | 2 |
+| Robustez perante erros humanos/técnicos (8) | 3 | 3 | 3 |
+| Independência de hardware (7) | 5 | 2 | 1 |
+| Manutenção (5) | 5 | 2 | 1 |
+| Precisão realista para a finalidade (5) | 2 | 3 | 4 |
+| Desativação e revogação (5) | 5 | 4 | 2 |
+| Adequação ao MVP (5) | 5 | 3 | 1 |
+| Menor incerteza jurídica (10) | 4 | 2 | 1 |
+| **Total ponderado (/5)** | **4,49** | **2,93** | **1,81** |
+
+- **A — recomendada:** morador opta pela presença e declara «cheguei/saí» na aplicação. Falhas e esquecimentos tornam o estado **incerto**, nunca «fora» por omissão. Não há prova independente de quem atravessou a porta. Não é fonte obrigatória para faturação: as regras **igual** ou **perguntar** continuam a funcionar.
+- **B — evolução experimental condicionada:** detetor local, apenas região da soleira mascarada *antes* da inferência, contagem anónima e passageira. Frames só em RAM e descartados; nenhuma imagem é enviada à API ou cliente. Sem identidade, sem armazenamento de `track_id`, sem rosto, pose identificadora ou embeddings. O timestamp e a correlação com outros dados podem ainda ser dados pessoais. Processamento local **não elimina** a aplicação potencial do RGPD nem substitui finalidade, base legal, transparência, segurança e direitos. A precisão não foi medida. Instalação, enquadramento legal, informação a moradores e visitantes, ameaça de exfiltração e retenção têm de ser revistos antes de captar pessoas reais.
+- **C — não ativar no MVP/piloto sem revisão:** Wi-Fi voluntário fornece no máximo uma **pista positiva**, não prova de saída; falhas de cobertura, MAC aleatório, standby e telemóveis partilhados afetam inferência. Não ligar nomes, MAC, IP ou identificadores do AP a eventos publicados. Uma eventual tabela de correspondência fica separada, cifrada, com acesso próprio e eliminação imediata à revogação, após desenho e revisão próprios da PRES-03. Não existe coletor Wi-Fi implementado.
+
+**Alternativa sem câmara:** A, com confirmação de consumos na app e fallback A (igual). Presença não é requisito para fechar a fatura; se a regra C da conta depender de informação insuficiente, nunca presumir quem estava em casa. Sem sensor: `uncertain`, não `out`. O senhorio não pode exigir opt-in como condição de acesso às funções base.
+
+### Fluxo de dados e trust boundaries
+
+```mermaid
+flowchart LR
+    R["Morador autenticado (Authentik)"] --> O["PATCH /households/{id}/memberships/{id}: opt-in próprio"]
+    O --> DB["SQLite membership.presence_opt_in (default false)"]
+    R -. "Futuro PRES-03: declaração manual" .-> G["Verificação por casa / role / opt-in atual / identidade do token"]
+    W["Wi-Fi local (DESATIVADO)"] -. "só pista positiva, sem MAC/IP no evento" .-> G
+    G -->|na mesma transação da escrita futura| E["Evento de presença pessoal tipado / estado limitado"]
+    C["Câmara local (DESATIVADA por omissão)"] -. "Futuro PRES-02: ROI mascarada em RAM" .-> X["Contagem anónima DoorCrossed"]
+    X -. "Sem frames e só depois de aprovação" .-> EV["Evento de passagem, sem resident_id"]
+    E --> P["Consumidores autorizados: morador próprio / motores internos mínimos"]
+    EV --> P
+    U["Vídeo legado /api/video"] --> D["404 incondicional; sem dependência de fonte"]
+```
+
+**Controlos técnicos implementados nesta revisão:** `GET /api/video` responde sempre `404`, mesmo com `ENABLE_DEV_VIDEO_PREVIEW=true`; o endpoint já não declara a dependência `Fonte`, pelo que uma tentativa recusada não pode abrir a fonte antes do gate. O lifespan de vídeo não inicia captura. RTSP/URL e ficheiros fora de `app/data/privacy-test-clips` são recusados por `get_fonte`; o processamento de clips exige simultaneamente `PROFILE=demo`, a flag de clip e `HOME_BACKEND=fake`. Isto é uma barreira de desenvolvimento, não autorização para recolher dados reais. A máscara da soleira e a contagem não estão implementadas. As ferramentas CLI antigas de medição continuam fora da API e não são um caminho suportado para recolha de presença.
+
+**A fronteira das pistas pessoais hoje:** `individual_cue_allowed` verifica casa, membership de tenant ativa, datas no fuso da casa, opt-in atual e identidade autenticada para origem manual; recusa proveniência simulada numa casa real. `record_individual_cue` exige transação SQLite ativa, repete a validação e grava o evento na mesma transação. `BEGIN IMMEDIATE` ordena essa escrita com a revogação concorrente: se a revogação confirmar primeiro, a pista é recusada. Wi-Fi é recusado mesmo que a flag global esteja ativa: `PresenceDevice.wifi_opt_in` não tem ainda persistência consultável, e `membership.presence_opt_in` não o substitui. Não existe produtor ou recolha real. Esta interface é **IMPLEMENTADA**, mas não prova legitimidade de base legal nem constitui uma integração de produto.
+
+**Exposição ObjectOS legada:** `/api/state` e mensagens `home_state` em `/api/ws` já não publicam o booleano de presença (`null` até substituição por DTO com escopo de casa e papel); as transições explícitas “Entrou alguém/Divisão vazia” deixaram de ser escritas no `events.jsonl`. A API antiga não conhece uma casa nem papel do utilizador, portanto não pode servir presença individual. Os outros campos do motor continuam sendo legado autenticado e não são uma API Conta Certa; um futuro endpoint deve usar `require_access(Resource.presence, read)` e devolver apenas o estado do próprio morador. A UI ObjectOS deixa de tentar obter MJPEG e mostra que a captura está desativada.
+
+### Modelo de ameaças — estado após hardening PRIV-02
+
+Escalas: gravidade (G) e probabilidade (P) são **antes das correções**; residual descreve os controlos atuais e as lacunas que permanecem. Estimativas qualitativas para a configuração atual, não certificação nem avaliação jurídica.
+
+| Ameaça | G | P | Evidência / controlo técnico | Risco residual |
+|---|---|---|---|---|
+| Senhorio ou funcionário curioso consulta estado de morador | Alta | Média | `Resource.presence.read=own`; senhorio/operador sem grant; nenhum endpoint novo de presença | Médio: API legada não é escopada por casa/papel; não usar para presença individual |
+| Morador consulta presença de terceiro | Alta | Média | grant `own`; membership e `resident_id` vinculados à casa; evento manual compara actor | Baixo no gate; endpoint de leitura continua planeado |
+| Captura/extração de frames por MJPEG | Crítica | Média | `/api/video` sempre 404; nenhuma dependência `Fonte`; factory RTSP rejeitada; ferramentas de medição exigem clip sintético allowlisted | Baixo no serviço; classe RTSP permanece no módulo para testes unitários com capturas falsas |
+| Correlacionar timestamp de passagem com identidade | Alta | Média | nenhum evento de câmara por pessoa; `DoorCrossed` anónimo; sem feed público | Médio se B for criado: timestamps continuam potencialmente pessoais |
+| Reidentificação indireta por contagem, quarto, energia ou rotina | Alta | Média | sem endpoint de ocupação/série temporal; landlord não recebe presença | Médio; minimização e agregação devem ser validadas no desenho PRES-02/05 |
+| Segredo RTSP em exceção ou logs | Alta | Baixa | fonte regista apenas tipo da exceção; endpoint responde mensagem genérica; teste injeta URL falsa com credenciais | Baixo para logs FastAPI revistos; observar logs de OpenCV/FFmpeg no deployment antes de piloto |
+| Presença em REST/WS sem autorização por papel | Alta | Média | booleano legado removido do DTO/WS; evento textual explícito removido de `events.jsonl` | Médio: estados e timestamps do motor legado ainda não são DTOs escopados; não ligá-los a fonte real |
+| Persistência por tempo excessivo | Alta | Alta após futura escrita | eventos F0 append-only; PRIV-02 não apaga nem migra eventos | Alto até P-08/P-20 e política separada, incluindo backups |
+| Falha de sensor interpretada como ausência | Alta | Média | função automática devolve `uncertain`; Wi-Fi nunca infere `out` | Baixo no helper; produtor/fusão ainda não implementados |
+| Casa errada ou membership revogada | Alta | Média | query usa `household_id`, papel tenant, status active e datas; validação e escrita transacionais | Baixo no helper; futuras rotas devem reusar `core.access`/OIDC |
+| Configuração de desenvolvimento ativa em produção | Alta | Média | preview MJPEG inexiste; clip exige `PROFILE=demo`, flag, path allowlist e `HOME_BACKEND=fake`; RTSP recusado | Baixo para API; deployment ainda deve validar env e remover credenciais RTSP não usadas |
+| Consentimento revogado, mas histórico continua | Alta | Média | novas gravações consultam opt-in no mesmo commit SQLite | Alto para histórico: sem expurgo implementado; requer política aprovada e issue própria |
+
+### Modelo de privacidade e acessos
+
+**Finalidades separadas:** (1) declaração voluntária para ajudar o morador a corrigir atribuição de consumo (MVP); (2) eventual contagem **não identificada** de entradas/saídas na soleira para contexto de uma casa (F2, sob revisão); (3) eventual pista positiva do telemóvel para presença própria (F2, sob revisão). Não reutilizar qualquer dado para vigilância laboral, cobrança punitiva, verificação disciplinar ou rastreio de rotinas.
+
+**Dados mínimos:** para A: `household_id`, `resident_id`, `state`, `ts`, `source=manual`, proveniência e preferência; B (se aprovado): sentido e timestamp com resolução mínima necessária e proveniência, sem identidade; C (se aprovado): *cue* positivo por morador aderente, sem identificador de rede no evento. **Proibido:** vídeo/fotogramas em disco, armazenamento de imagem/áudio, reconhecimento facial, embeddings biométricos, persistência de `track_id`, serialização de `numpy.ndarray`, IP/MAC/SSID em eventos ou logs e perfis de visitas.
+
+| Perfil | Preferência própria | Estado individual | Passagens anónimas | Imagens / logs brutos |
+|---|---|---|---|---|
+| Morador aderente | Ler/alterar só a sua | **Só o seu**, se ativo | Nenhum feed público; apenas agregado necessário sob decisão | Não |
+| Morador não aderente | Ler/alterar só a sua | Não criar pistas pessoais | Não identificar; não reduzir direitos | Não |
+| Outros moradores | Não | Não (regra `Resource.presence.read=own`) | Não expor horários de passagens | Não |
+| Senhorio | Não pode editar preferências alheias | **Não**, mesmo da sua casa | Não | Não |
+| Operador | Não | Não; só diagnóstico técnico não pessoal | Não | Não |
+| Serviço interno P2/P4 | Apenas autorização mínima por finalidade, auditada | Só dados necessários e dentro da casa | Só quando habilitado | Nunca |
+
+**IMPLEMENTADO no F0:** `membership.presence_opt_in` com default `false` e PATCH pelo próprio tenant; `Resource.presence` nega senhorio e operador; isolamento por casa. **Endurecido nesta issue:** leitura `presence` do tenant passa de `household` para **`own`**; nenhuma rota nova de leitura permite contornar isto. Sem qualquer opt-in, não publicar pista individual. A revogação é eficaz para **novas** pistas no predicado, mas não apaga automaticamente histórico antigo. Alterar preferência não é ainda um registo de consentimento juridicamente suficiente.
+
+**Visitantes e não aderentes:** nunca são associados a moradores nem sequer quando a câmara indica entrada simultânea com um telemóvel. Podem originar só contagem anónima após autorização do módulo B. Um visitante pode permitir reidentificação por contexto; por isso não expor série temporal de passagens à casa e definir granularidade/retention. Sem opt-in, nenhuma pista pessoal e nenhuma penalização financeira por não adesão; aplicar confirmação ou divisão igual. Nunca inferir `out` apenas por ausência de rede.
+
+**Falhas:** câmara desligada/sem frames ou Wi-Fi indisponível = `unknown/uncertain` na inferência automática. Não reutilizar cegamente o último estado como medição atual. UI deve informar «presença indisponível/incerta» sem atribuir uma saída. A app e o cálculo base funcionam com `VIDEO_SOURCE` vazio e sem Wi-Fi. A demonstração deve identificar `origin=simulated` e não apresentar contagens reais.
+
+### Transparência, retenção e auditoria — PROPOSTA, não implementada
+
+| Categoria | Prazo inicial **a validar** | Nota |
+|---|---|---|
+| Frames de B | **0 segundos de persistência** | Apenas RAM; libertação após inferência; sem dump/capture/debug em disco |
+| Contagens por passagem B | 24 horas no máximo | Preferir agregado sem horários; evitar individualização |
+| Pistas de presença pessoal A/C | Até 7 dias após deixar de ser necessárias para confirmação | Se influenciar fatura/contestação, justificar e separar o histórico imprescindível |
+| Estado atual | Até substituição ou expiração do sinal | Incerto se não houver evidência recente |
+| Auditoria de opt-in/revogação | 30 dias propostos | Apenas membership, ação booleana, UTC, propósito e ator autenticado, sem IP/MAC/frame |
+| Totais financeiros/decisões | Prazo próprio da faturação sujeito a revisão | Não reter presença crua para explicar dinheiro se bastar registar razão e proveniência |
+
+**Bloqueio real:** `domain_event` é imutável e **não tem expurgo**; a tabela atual não implementa estes prazos. Não apagar eventos financeiros nem alterar triggers/migrações nesta issue. Proposta separada: abrir issue **F0 — retenção por categoria de dados pessoais**, ligada a P-08/P-20, para definir armazenamento segregado/expiração seletiva de dados de presença e respetiva política de backups sem eliminar evidência financeira. Não encontrei issue GitHub existente dedicada; a issue deverá ser criada antes do piloto. Enquanto isso: só fixtures sintéticas. Uma revogação bloqueia novas recolhas, mas não apaga histórico nem dados de correspondência Wi-Fi.
+
+**Informação na aplicação:** antes de ativar, explicar por finalidade e por fonte o que é/ não é recolhido, quem vê, se influencia divisão, como optar/revogar, retenção efetiva, contacto do responsável (por confirmar), direitos e política de visitas; consentimento, quando escolhido como fundamento, deve ser granular e livre. Mostrar estado da câmara e opção de desativação; nunca substituir transparência por uma flag técnica.
+
+**Aviso à entrada (RASCUNHO, não afixar sem revisão):**
+
+> Projeto experimental Conta Certa. A deteção de passagens por câmara está atualmente **desativada**. Se algum dia for ativada, será anunciado previamente: processamento local da soleira para contagem de entradas/saídas, sem gravação e sem identificação por imagem, sujeito a informação completa e aprovação. Para questões sobre privacidade, contacte o responsável identificado no aviso final a disponibilizar antes do piloto.
+
+### Questões jurídicas e bloqueios antes de piloto real
+
+| Categoria | Estado | O que significa |
+|---|---|---|
+| **Controlo técnico implementado** | API MJPEG 404, RTSP recusado, clips sintéticos allowlisted, gate transacional para escrita manual, Wi-Fi recusado, `presence` legado oculto em REST/WS | Reduz caminhos técnicos; não prova licitude nem garante eliminação histórica |
+| **Decisão de produto proposta** | A manual como base; B experimental sob condições; C desligada; sem penalização por não aderir; sem uso punitivo | Exige aprovação de produto e dos responsáveis antes de ligar produtores ou sensores |
+| **Obrigação sujeita a revisão jurídica** | finalidade e base legal, informação a moradores/visitas, responsável, direitos, retenção, avaliação AIPD e limites legais para câmaras | Não existe parecer jurídico nem certificação de conformidade RGPD nesta issue |
+
+- **Responsável pelo tratamento e subcontratantes:** distinguir equipa demonstradora, prestador, senhorio, administração do imóvel e eventual router/operador; decidir quem define finalidades e meios. Não afirmar que o senhorio é automaticamente o responsável nem pressupor a exceção doméstica.
+- **Bases legais:** separar declaração manual, tratamento do contrato/atribuição, contagem por câmara e pista Wi-Fi. Consentimento não é a única base legal possível; quando usado, avaliar liberdade real em relação de arrendamento, informação, prova e retirada sem consequências. O documento v5.1 menciona «interesse legítimo» para câmara, mas **não existe teste de ponderação ou validação jurídica**. Não o tratar como conclusão.
+- **AIPD e transparência:** realizar triagem documentada pela aplicação do artigo 35.º, avaliar a lista nacional da CNPD (Regulamento 798/2018), necessidade/proporcionalidade, alternativas menos invasivas, visitantes, captação de áreas comuns e riscos de correlação. Se exigida, finalizar a AIPD **antes** de recolher dados reais; se risco residual elevado, avaliar consulta prévia (art. 36.º). Rever sinalização/aviso com jurista.
+- **Habitação partilhada e visitantes:** a orientação pública da CNPD sobre câmaras entre vizinhos restringe a captação à propriedade exclusiva e refere consentimento expresso dos moradores para videovigilância em condomínios. O enquadramento exato de uma casa arrendada/soleira tem de ser confirmado por jurista; não assumir que processamento local ou uma zona privada remove essas condições.
+- **Câmara:** confirmar ângulo só para **interior da habitação**, sem rua, patamar, servidões nem entradas de terceiros; máscara ANTES da inferência, sem áudio; segurança local, updates, isolamento de rede e ausência de encaminhamento para cloud. O simples descarte de frames não garante anonimato jurídico.
+- **Wi-Fi:** confirmar acesso real ao router/API, retenção de logs do fabricante, aleatorização de endereços MAC, falhas de rede, granularidade de opt-in, capacidade de revogar e eliminar correspondência. A flag `PRESENCE_WIFI_COLLECTION_ENABLED` fica **false** até contrato PRES-03 e validação externa.
+- **Produto:** consentimento por fonte/finalidade (o booleano F0 não prova qual foi aceite), necessidade de visão dos demais moradores (este PR restringe a `own`), quorum/voto sobre câmara e as consequências de recusa, precisão e thresholds testados em ambiente autorizado.
+
+**Referências oficiais consultadas (17/11/2026):**
+- [RGPD, Regulamento (UE) 2016/679](https://eur-lex.europa.eu/eli/reg/2016/679/oj) — artigos 5, 6, 7, 12–14, 25, 28, 32, 35–36.
+- [EDPB, Diretrizes 3/2019 sobre dispositivos de vídeo](https://www.edpb.europa.eu/documents/guideline/guidelines-32019-on-processing-of-personal-data-through-video-devices_pt) — legalidade, transparência e minimização.
+- [EDPB, Diretrizes 05/2020 sobre consentimento](https://www.edpb.europa.eu/documents/guideline/guidelines-052020-on-consent-under-regulation-2016679_pt).
+- [CNPD, videovigilância](https://www.cnpd.pt/organizacoes/areas-tematicas/videovigilancia/) — condições da captação.
+- [CNPD, videovigilância por vizinhos](https://www.cnpd.pt/cidadaos/areas-tematicas/videovigilancia-por-vizinhos/) — limites para propriedade de terceiros, áreas comuns e habitação em condomínio.
+- [CNPD, avaliação de impacto](https://www.cnpd.pt/organizacoes/outras-obrigacoes/avaliacao-de-impacto/) — triagem e consulta prévia.
+- [CNPD, Regulamento 798/2018](https://www.cnpd.pt/decisoes/regulamentos/) — lista nacional AIPD.
+
+### Testes e estado de entrega
+
+**IMPLEMENTADO nesta revisão:** `Resource.presence.read=own`; `record_individual_cue` verifica e persiste atomicamente; Wi-Fi recusa mesmo com flag global ativa enquanto faltar consentimento persistido por dispositivo; RTSP e caminhos locais fora do allowlist de clip sintético são recusados pelo serviço e pelas ferramentas de medição; MJPEG sempre 404; visão demo não inicia com `HOME_BACKEND=mcp`; estado de presença legado é `null` no REST/WS e a transição explícita não é gravada no event log. Testes de casa, membership/data, opt-in/revogação, actor manual, sinal de falha, simulação, logs e payloads sem imagem.
+
+**AINDA NÃO IMPLEMENTADO / não declarar PASS de integração:** processamento real da câmara; contagem na soleira; sensor de Wi-Fi; endpoint de presença manual; chamadas do predicado pelo futuro produtor PRES-03; retenção/expurgo, gestão de correspondência MAC, UI de consentimento granular, avisos finais e AIPD. Dependências: PRES-02 #106, PRES-03 #107, PRES-04 #108, HOUSE-02 #85, APP-01 #94 e revisão jurídica/PILOT. Não abrir captura real nesta tarefa.
+
+**Integração PRES-03:** chamar `record_individual_cue(conn, cue, now=clock(), actor_resident_id=access.resident_id)` dentro de `Database.run`/`run_sync`, usando `require_access` e a identidade OIDC existente para resolver `access.resident_id`. Não criar autenticação paralela nem usar cache de opt-in. Rejeições não podem publicar nem persistir evento. Wi-Fi continua bloqueado até existir consentimento por `PresenceDevice` persistido, revogável e validado na mesma transação. Não eliminar eventos financeiros ao implementar retenção; acompanhar P-08/P-20 e a issue F0 separada proposta.

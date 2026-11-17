@@ -192,12 +192,13 @@ def test_core_lifespan_starts_before_and_stops_after_features(monkeypatch, tmp_p
     monkeypatch.setenv("DB_PATH", str(tmp_path / "l.sqlite3"))
     get_settings.cache_clear()
     seen: list = []
+    # cada módulo pode acrescentar migrações (D-29): contar as que existem, não um número fixo
+    n_migrations = len(list(dbmod.MIGRATIONS_DIR.glob("*.sql")))
     app = _app_with_probe(seen)
-    total = len(list(dbmod.MIGRATIONS_DIR.glob("*.sql")))  # todas as migrações dos módulos
     with TestClient(app):
         db = app.state.db
-        assert seen == [total]
-    assert seen == [total, "feature-stopped"]
+        assert seen == [n_migrations]
+    assert seen == [n_migrations, "feature-stopped"]
     with pytest.raises(DatabaseClosedError):  # fechou no shutdown
         db.run_sync(lambda c: None)
     get_settings.cache_clear()

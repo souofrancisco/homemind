@@ -2,11 +2,13 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    profile: Literal["normal", "demo"] = "normal"
+    home_backend: Literal["fake", "mcp"] = "fake"
     mcp_endpoint: str = ""
     # Nunca logar nem devolver este valor (header X-API-Key do MCP Altice).
     mcp_api_key: str = ""
@@ -38,14 +40,36 @@ class Settings(BaseSettings):
     oidc_client_id: str = "homemind"
     # Origens dos clientes autorizados (CORS), separadas por vírgulas.
     cors_origins: str = "http://localhost:5173,http://localhost,https://localhost"
-    # Vídeo: URL RTSP ou caminho de clip. Nunca logar nem devolver (pode conter credenciais).
+    # Fonte legado: serviço só aceita clip de teste allowlisted em demo; nunca logar/devolver path.
     video_source: str = ""
+    # Que fonte é (PRES-01): kit | rtsp | clip | phone. Vazio = deduzir do URL (rtsp:// -> rtsp;
+    # http(s):// -> phone, SIMULADO; sem esquema -> clip, SIMULADO). Nunca promove a «real».
+    video_source_kind: Literal["", "kit", "rtsp", "clip", "phone"] = ""
+    # PRIV-02: flag adicional para processamento de clips sintéticos permitidos em PROFILE=demo.
+    # Não reabre o endpoint MJPEG, que permanece desativado.
+    enable_dev_video_preview: bool = False
+    # Pista individual por Wi-Fi: sem recolha antes de revisão e ativação explícita.
+    presence_wifi_collection_enabled: bool = False
     video_sem_frame_s: float = 3.0  # sem frame há mais do que isto -> camara_ok False e reabre
     video_reconexao_s: tuple[float, ...] = (1, 2, 4, 8, 10)  # esperas entre reaberturas
     video_timeout_abrir_ms: int = 5000
     video_fps_max: float = 15.0  # cadência máxima do MJPEG de GET /api/video
     video_jpeg_qualidade: int = 80
 
+    # --- P2 — porta (PRES-02). Coordenadas normalizadas 0–1 "x1,y1,x2,y2"; vazio = desligado ---
+    presence_household_id: str = ""  # casa a que pertencem os eventos da porta (UUID)
+    presence_detetor: str = (
+        ""  # modulo:Classe; YOLO real: homemind.features.presence.yolo:DetetorYoloPessoas
+    )
+    presence_door_roi: str = ""  # retângulo da soleira; o YOLO só recebe este recorte
+    presence_door_line: str = ""  # linha orientada (início -> fim) dentro da soleira
+    presence_door_inside_sign: int = 1  # 1 ou -1; sinal do lado de DENTRO (ver door.py)
+    presence_door_cooldown_s: float = Field(
+        default=1.0, ge=0
+    )  # mesmo sentido: 2.ª contagem ignorada
+    presence_door_confirm_s: float = Field(
+        default=1.0, ge=0
+    )  # cruzamento reverso anula dentro disto
     # --- P2 — gestos/presença ---
     gesto_distancia_max_ombros: float = 0.6  # × largura dos ombros (centro do objeto ao pulso)
     gesto_confianca_min: float = 0.5  # pulso, cotovelo e ombros (estritamente maior)
@@ -91,6 +115,13 @@ class Settings(BaseSettings):
     visao_imgsz: int = 640
     visao_tracker: str = "bytetrack.yaml"
     # --- fim P1 — visão ---
+
+    @field_validator("presence_door_inside_sign")
+    @classmethod
+    def _sinal(cls, v: int) -> int:
+        if v not in (1, -1):
+            raise ValueError("PRESENCE_DOOR_INSIDE_SIGN é 1 ou -1")
+        return v
 
 
 @lru_cache
