@@ -18,7 +18,9 @@ test:  ## pytest (lógica pura com fakes; sem hardware, rede nem NVIDIA)
 	cd $(BACKEND) && uv run pytest -q
 
 lint:  ## ruff + eslint
-	cd $(BACKEND) && uv run ruff check . && uv run ruff format --check .
+	-cd $(BACKEND) && uv run ruff check --fix --diff .
+	-cd $(BACKEND) && uv run ruff format --diff .
+	@false  # diagnóstico temporário de formatação (não faz merge)
 	cd $(FRONTEND) && npm ci --no-audit --no-fund && npm run lint
 
 contracts:  ## OpenAPI do FastAPI -> tipos TS (gerados, não versionados)
