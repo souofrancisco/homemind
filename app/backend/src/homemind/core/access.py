@@ -71,7 +71,7 @@ PERMISSIONS: dict[Resource, dict[Operation, dict[MembershipRole, Grant]]] = {
     Resource.appliance: {R: {TT: OWN, OP: DIAG}, W: {TT: OWN, OP: DIAG}},
     Resource.energy: {R: {LL: AGG, TT: OWN, OP: DIAG}},
     Resource.consumption: {R: {TT: HH, OP: DIAG}, W: {TT: OWN}},  # W: contestar
-    Resource.presence: {R: {TT: HH}, W: {TT: OWN}},  # senhorio e operador nunca
+    Resource.presence: {R: {TT: OWN}, W: {TT: OWN}},  # nem co-moradores recebem estados individuais
     Resource.camera_status: {R: {OP: DIAG}},
     Resource.attribution: {R: {TT: OWN}},
     Resource.bill: {R: {LL: AGG, TT: OWN}, W: {LL: HH}},

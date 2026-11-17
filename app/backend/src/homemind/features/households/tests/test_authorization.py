@@ -127,7 +127,7 @@ def test_privacy_invariants_of_the_matrix():
                 assert grant_for(O_, res, op) is Grant.none, (res, op)  # operador não vê pessoas
     assert grant_for(L, Resource.energy, Operation.read) is Grant.aggregate  # só totais
     assert grant_for(L, Resource.receipt, Operation.read) is Grant.aggregate
-    assert grant_for(T, Resource.presence, Operation.read) is Grant.household
+    assert grant_for(T, Resource.presence, Operation.read) is Grant.own
 
 
 def test_landlord_cannot_reach_presence_even_in_own_house(matrix_client):

@@ -212,7 +212,7 @@ Operação detalhada em [mcp-demo.md](../integrations/mcp-demo.md); hipóteses p
 
 ## F. Vídeo e visão
 
-Backend no host com o extra de visão (ver README, «Visão real»).
+**Bloqueado por PRIV-02 #119:** não executar validações com câmara real, RTSP, pessoas ou clips de origem real. `GET /api/video` está desativado, `criar_fonte` recusa RTSP e a visão só aceita clips sintéticos allowlisted com perfil demo e FakeHome. Reabrir estas validações exige os controlos PRES-02/03 e revisão de produto/jurídica.
 
 ### PRES-01 — Câmara da porta (kit via app/link) e plano B
 - **Issue:** #105 · **Tipo:** REAL (kit) / SIMULADO (clip, telemóvel) · **Estado: NÃO EXECUTADO**
@@ -221,7 +221,7 @@ Backend no host com o extra de visão (ver README, «Visão real»).
 - **Esperado:** kit ligado: `source=kit`, `origin=real`, `camera_ok=true`, `fps>0` (2.ª consulta). Link inválido ou câmara desligada: `camera_ok=false`, sem `fps`, e **nenhum** estado de «casa vazia». Telemóvel e clip: `origin=simulated`. O URL nunca aparece na resposta, nos logs nem nos erros. Se a app MEARI não partilhar um stream utilizável, registar «kit sem stream» e usar o plano B.
 - **PASS** só com a evidência do kit (ou «kit sem stream» registado) e os dois planos B a funcionar.
 
-### VID-01 — RTSP estável
+### VID-01 — RTSP estável (BLOQUEADO)
 - **Issue:** #2 · **Tipo:** REAL
 - **Pré-requisitos:** `VIDEO_SOURCE=<rtsp>` em `app/.env`.
 - **Passos:** `cd app/backend && uv run --env-file ../.env python -m homemind.features.video.medir --minutos 10`.
@@ -229,26 +229,26 @@ Backend no host com o extra de visão (ver README, «Visão real»).
 - **Evidência:** linha final do resumo.
 - **PASS** com 0 quedas em 10 min.
 
-### VID-02 — Atraso câmara → ecrã
+### VID-02 — Atraso câmara → ecrã (BLOQUEADO)
 - **Issue:** #2, #25 · **Tipo:** REAL
 - **Passos:** pôr um cronómetro (telemóvel) em frente à câmara; fotografar o cronómetro real e o painel no mesmo plano, aos 0, 5 e 10 min.
 - **Esperado:** diferença < 1,5 s nas três fotografias.
 - **PASS** se as três forem < 1,5 s.
 
-### VID-03 — Queda e reconexão da câmara
+### VID-03 — Queda e reconexão da câmara (BLOQUEADO)
 - **Issue:** #3 · **Tipo:** REAL
 - **Passos:** com o vídeo no painel, desligar a câmara da corrente 15 s e voltar a ligar.
 - **Esperado:** `camera_ok:false` em ≤ 5 s e evento «Câmara indisponível»; a casa **não** entra em espera por causa disso; o vídeo volta sozinho e aparece «Câmara disponível».
 - **PASS** se recuperar sem reiniciar o backend e sem transições de presença falsas.
 
-### YOLO-01 — Objetos reconhecidos
+### YOLO-01 — Objetos reconhecidos (BLOQUEADO para captura de pessoas)
 - **Issue:** #4 · **Tipo:** REAL
 - **Pré-requisitos:** `uv sync --extra visao`, pesos descarregados, `VISAO_DETETOR=homemind.features.visao.detetor:DetetorYolo`.
 - **Passos:** mostrar à câmara caneca, livro e comando, um de cada vez, a 2–3 m, 10 s cada; observar as caixas no vídeo do painel.
 - **Esperado:** cada objeto com caixa e nome certo na maior parte do tempo. Se o livro falhar, repetir com `VISAO_LIVRO_COCO=39` (garrafa) ou `67` (telemóvel) e anotar a escolha.
 - **PASS** com os três objetos reconhecidos (indicar o objeto usado em vez do livro, se for o caso).
 
-### YOLO-02 — FPS de inferência
+### YOLO-02 — FPS de inferência (BLOQUEADO para fontes reais)
 - **Issue:** #4 · **Tipo:** REAL
 - **Pré-requisitos:** clip gravado da MEARI em `app/backend/data/clip.mp4`.
 - **Passos:**
@@ -322,9 +322,9 @@ Backend no host com o extra de visão (ver README, «Visão real»).
 - **Esperado:** 10/10. Uma falha reinicia a contagem.
 - **PASS** com 10 consecutivas.
 
-### PB-01 — Plano B
+### PB-01 — Plano B (apenas clip sintético)
 - **Issue:** #3, #28 · **Tipo:** SIMULADO
-- **Passos:** 1) `VIDEO_SOURCE=<clip MEARI>` e reiniciar: o clip corre em ciclo e gera gestos. 2) `HOME_BACKEND=fake`: executar a demo só com os cenários da página Câmara. 3) Cronometrar a troca do modo real para o plano B.
+- **Passos:** 1) `PROFILE=demo`, `HOME_BACKEND=fake`, `ENABLE_DEV_VIDEO_PREVIEW=true`, `VIDEO_SOURCE=<clip sintético allowlisted>` e detetor de teste; 2) executar a demo só com os cenários da página Câmara; 3) não ligar MCP nem fontes reais.
 - **Esperado:** ambos funcionam; o painel mostra SIMULADO e os eventos dos cenários levam `[SIMULADO]`; a troca demora < 1 min.
 - **PASS** se os dois caminhos funcionarem e estiverem identificados como simulação.
 

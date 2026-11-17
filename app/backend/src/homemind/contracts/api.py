@@ -77,6 +77,7 @@ OPENAPI_MODELS: tuple[type[BaseModel], ...] = (
     # notificações
     notification.NotificationView,
     notification.NotificationPreferences,
+    notification.NotificationRespondIn,
     # assistente e automações
     agent.AgentMessageIn,
     agent.AgentResponse,

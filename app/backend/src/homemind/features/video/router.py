@@ -1,25 +1,26 @@
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.responses import StreamingResponse
 
+from homemind.contracts.video import FonteVideo
 from homemind.core.access import require_operator
 from homemind.core.config import get_settings
 from homemind.features.video import service
-from homemind.features.video.service import LIMITE, Fonte, partes_mjpeg
+from homemind.features.video.service import LIMITE, get_fonte, partes_mjpeg
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Captura independente do YOLO: sem isto `camera_ok` só subia após o primeiro GET /api/video,
-    # que o frontend só pede com `camera_ok=true`.
-    if get_settings().video_source:
-        service.get_fonte()
+    # PRIV-02: configurar VIDEO_SOURCE não inicia qualquer captura no servidor.
     try:
         yield
-    finally:  # a visão (alfabeticamente depois) já parou: ninguém lê a fonte
+    finally:
         service.parar_fonte()
 
+
+Fonte = Annotated[FonteVideo, Depends(get_fonte)]  # 404 salvo clip dev permitido (PRIV-02)
 
 router = APIRouter(prefix="/api", tags=["video"], lifespan=lifespan)
 

@@ -28,7 +28,7 @@ A API que já existia (ObjectOS) está em [api-implementada.md](api-implementada
 - `PresenceEvent` e `DoorCrossed` sobrepunham-se → `DoorCrossed` (anónimo), `PresenceEvent` (pista por pessoa: só Wi-Fi/manual; Wi-Fi nunca diz «fora») e `PersonPresence` (estado fundido, `uncertain` exige `reason`).
 - `Device` ≠ `Appliance`; `ApplianceOwnership` (dono ≠ quem usa). Uma tomada mede vários aparelhos; a assinatura sugere, não decide quem paga.
 - Fatura: `total_wh` é da fatura real, **não** a soma da tomada; correções = nova revisão (`supersedes_id`), a finalizada nunca se edita; resíduo comum explícito em `residual_share_cents`.
-- Notificação: `responder_ids` (snapshot de quem pode responder; o senhorio nunca), `Notification.respond` é a regra pura (primeira resposta vence; `409 already_responded`, `409 notification_expired`) e a persistência tem de fazer *compare-and-set*.
+- Notificação: `responder_ids` (snapshot de quem pode responder; o senhorio nunca), `Notification.respond` é a regra pura e a persistência tem de fazer *compare-and-set*. **REGRA B = VOTAÇÃO (D-32, prevalece):** em `confirmation_request` cada inquilino vota uma vez; um «É minha» fecha; atribuir a outro exige ≥ metade dos elegíveis com o mesmo alvo (fecha antes se o próprio assumir); todos votaram sem decisão ou 24 h → por todos. Fonte única: `confirmation_outcome` em `contracts/notification.py`. **Quem fizer merge (pessoa ou agente) adapta o código de P3/P5/billing a esta regra; não reintroduzir «primeira resposta vence» nas confirmações.** Outros tipos: primeira resposta vence (`409 already_responded`); expirada: `409 notification_expired`.
 - Execução física: `isError=false` **não** confirma; `ActionExecutionResult(confirmed)` exige `readback_confirmed`; `uncertain` nunca se repete (`may_retry=False`).
 - Um não-membro recebe **404** (não revela que a casa existe); um membro sem papel recebe **403 `forbidden_role`**.
 
@@ -50,8 +50,8 @@ Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), 
 | `Attribution` (+`supersede`) | P4 | P3, agente | PLANEADA: índice único parcial `(consumption_event_id) WHERE status='active'` | modelos + cenário | — |
 | `ElectricityBill`, `BillAllocation` (+`validate_allocations`) | P4 | UI, agente, P3 | PLANEADA (P4) | fixtures A/B/C exatas | Entrada da fatura (manual vs LLM) |
 | `Budget`, `BudgetThreshold`, `Contestation` | P4 | P3 | PLANEADA (P4) | modelos | P-10 (individual vs fixa) |
-| `Notification`, `NotificationView`, `NotificationAction/Response/Preferences`, `ConfirmationRequest` | P3 (pedido: P4) | UI, P4 | PLANEADA (P3) | modelos + cenário | P-03 (primeira resposta vence?) |
-| `AgentToolRequest/Result`, `ProposedAction`, `ActionConfirmation`, `ActionExecutionResult`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3) | modelos | P-06 (LLM e dados) |
+| `Notification`, `NotificationView`, `NotificationAction/Response/Preferences`, `ConfirmationRequest` | P3 (pedido: P4) | UI, P4 | **IMPLEMENTADA** (`0300_notifications_core.sql`: `notification`, `notification_read`, `notification_preferences`; *compare-and-set* sobre o estado e a versão/n.º de votos) | modelos + cenário + `notifications/tests` | D-32 (votação nas confirmações) |
+| `AgentToolRequest/Result`, `ProposedAction`, `ActionConfirmation`, `ActionExecutionResult`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3); sem persistência (o assistente não tem estado) | modelos | P-06 (LLM e dados) |
 | `DomainEvent` (23 tipos), `StoredEvent` | cada módulo | cada módulo | **IMPLEMENTADA** (`domain_event`) | `test_events`, cenário | — |
 
 ## 4. Eventos de domínio
@@ -71,12 +71,12 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `presence.occupancy_changed` (PROPOSTA) | P2 | `HouseOccupancy` (anónimo) | P2, P3 | idem |
 | `sensor.reading_recorded` (PROPOSTA) | P1 | `SensorReading` | P2 | idem |
 | `safety.alert_raised` (PROPOSTA) | P2 | `SafetyAlert` (o mesmo `id` volta com `status=resolved`) | P3 | idem |
-| `billing.confirmation_needed` | P4 | `ConfirmationRequest` | P3 | idem |
+| `billing.confirmation_needed` | P4 | `ConfirmationRequest` | P3 (consumidor `notifications.confirmation_needed`, **IMPLEMENTADO**) | idem |
 | `billing.attribution_changed` | P4 | `Attribution` | P3, P4 | idem |
 | `billing.bill_created` / `bill_finalized` | P4 | `BillRef` | P3, UI | idem |
 | `billing.allocation_published` | P4 | `AllocationPublished` | P3 | idem |
 | `notification.created` | P3 | `NotificationCreatedData` | UI (DTO) | idem |
-| `notification.responded` | P3 | `NotificationRespondedData` (resposta + `ref`) | P4 | idem |
+| `notification.responded` | P3 | `NotificationRespondedData` (resposta + `ref` + `outcome` nas confirmações: um evento por voto; P4 só atribui com `outcome.decided`) | P4 | idem |
 | `alerts.threshold_crossed` | P4 | `BudgetThreshold` | P3 | idem |
 | `alerts.alert_raised` | P4 | `AlertRaisedData` | P3 | idem |
 | `agent.action_proposed` | P3 | `ProposedAction` | P3 | idem |
@@ -99,7 +99,7 @@ Garantias e limites: [event-flow.md](event-flow.md) §4. Eventos **não** se exp
 | `appliance` | — | own (r/w) | diagnostic (r/w) |
 | `energy` (leituras, resumos) | **aggregate** | own | diagnostic |
 | `consumption` | — | household (r), own (contestar) | diagnostic (r) |
-| `presence` | **—** | household (r), own (w) | **—** |
+| `presence` | **—** | **own** (r/w) | **—** |
 | `camera_status` | — | — | diagnostic |
 | `attribution` | — | own | — |
 | `bill` | aggregate (r), household (w) | own (r) | — |
@@ -144,7 +144,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 
 | Método | Rota | Papéis | Notas |
 |---|---|---|---|
-| `GET` | `/api/households/{id}/presence` | T | Estado dos moradores com `presence_opt_in`; **L: 403** |
+| `GET` | `/api/households/{id}/presence` | T | **Só o próprio** (opt-in); **L/O: 403**; ainda PLANEADO |
 | `PUT` | `/api/presence/me` | T | `PresenceMeIn` `{ "state": "in" \| "out" }` (substitui «cheguei/saí») |
 | `GET` | `/api/presence/camera/status` | O | `CameraStatus`: só diagnóstico (FPS, `camera_ok`, fonte e origem); sem imagens nem URL |
 | `GET` | `/api/households/{id}/occupancy` | T | `HouseOccupancy` (PROPOSTA): número de pessoas e visitas, sem nomes; **L: 403** |
@@ -167,17 +167,17 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 
 | Método | Rota | Papéis | Notas |
 |---|---|---|---|
-| `GET` | `/api/notifications?status&scope&limit` | T, L (as suas) | Pessoais + da casa |
-| `POST` | `/api/notifications/{id}/read` | dono | |
-| `POST` | `/api/notifications/{id}/respond` | T autorizado | `{ "action_id": "mine" \| "everyone" \| "unknown" }`; `409 already_responded`, `409 notification_expired` |
-| `GET` `PUT` | `/api/me/notification-preferences` | T, L | limiares, silêncio noturno |
-| `WS` | `/api/ws` | todos | Novas mensagens: `notification`, `notification_update` (ver abaixo) |
+| `GET` | `/api/households/{household_id}/notifications?status&scope&limit` | T, L (as suas) | **IMPLEMENTADO.** Pessoais + da casa, como `NotificationView` (com `voting`); o senhorio só recebe os tipos da allow-list (hoje `info`). Caminho por casa; revisão P5 |
+| `POST` | `/api/households/{household_id}/notifications/{id}/read` | dono | **IMPLEMENTADO.** Caminho por casa; revisão P5 |
+| `POST` | `/api/households/{household_id}/notifications/{id}/respond` | T autorizado | **IMPLEMENTADO.** `NotificationRespondIn` `{ "action_id": "mine" \| "everyone" \| "unknown" \| "other", "target_resident_id"? }` (alvo só com `other`, outro inquilino elegível); `409 already_responded` (já votou / já fechada), `409 notification_expired`, `400 invalid_request` (alvo inválido). Caminho por casa; revisão P5 |
+| `GET` `PUT` | `/api/households/{household_id}/notification-preferences` | T, L | **IMPLEMENTADO.** Silêncio noturno e tipos desligados, por casa (`security_alert` não se desliga: `400`). Caminho por casa; revisão P5 |
+| `WS` | `/api/ws` | todos | **PLANEADO.** Novas mensagens: `notification`, `notification_update` (ver abaixo) |
 
 ### Assistente e automações (P3)
 
 | Método | Rota | Papéis | Notas |
 |---|---|---|---|
-| `POST` | `/api/agent/messages` | T | `{ "text": "…" }` → resposta + `proposed_actions[]` |
+| `POST` | `/api/households/{household_id}/agent/messages` | T | **IMPLEMENTADO** (parcial). `{ "text": "…" }` → `AgentResponse` (`proposed_actions` sempre vazio). Dados **SIMULADOS** da casa demo (as outras casas não têm dados); LLM desligado por omissão (`AGENT_LLM_ENABLED`); sem escrita. Caminho por casa; revisão P5 |
 | `POST` | `/api/agent/actions/{id}/confirm` · `/reject` | T | Só aqui uma ação sugerida é executada |
 | `GET` `POST` | `/api/households/{id}/automations` | T, O | |
 | `PATCH` | `/api/automations/{id}` | T, O | `{ "status" }`; ativação é passo explícito |
@@ -185,7 +185,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 
 ### Operação (P1/P5, existentes)
 
-`GET /healthz`, `GET /api/status`, `GET /api/mcp/tools`, `GET /api/video` continuam (os dois últimos restringem-se a **O**; ver [migration.md](migration.md)).
+`GET /healthz`, `GET /api/status` e `GET /api/mcp/tools` continuam. `GET /api/video` responde sempre `404` por PRIV-02; nenhuma role recebe frames. Ver [migration.md](migration.md).
 
 ## 7. WebSocket (PLANEADO)
 
@@ -196,7 +196,7 @@ O protocolo atual (`auth` na primeira mensagem, snapshot, `event`, `home_state`,
 { "type": "notification_update", "data": { "id": "…", "status": "actioned", "response": { "action_id": "mine" } } }
 ```
 
-O servidor só envia notificações do utilizador autenticado (pessoais) e da sua casa. O cliente que reconecta recupera por `GET /api/notifications`.
+O servidor só envia notificações do utilizador autenticado (pessoais) e da sua casa. O cliente que reconecta recupera por `GET /api/households/{household_id}/notifications`.
 
 ## 8. Códigos de erro
 
@@ -211,3 +211,5 @@ O servidor só envia notificações do utilizador autenticado (pessoais) e da su
 ## 9. Pontos para revisão da equipa (DECISÃO PENDENTE)
 
 Prioridade para aprovar antes de implementar os módulos: ver [decisions.md](../decisions.md) D-23…D-30 e P-16…P-21. Resumo: (1) `Provenance` em duas dimensões; (2) Wh inteiros + milicêntimos; (3) semântica do barramento; (4) 404 vs 403 e membership por datas; (5) `None` em energia/custo; (6) regras de resposta das notificações; (7) OpenAPI por `OPENAPI_MODELS`; (8) nenhuma alteração ao código ObjectOS de domínio; (9) **sem dependências novas**; (10) quem aprova cada pendência.
+
+> **PRIV-02 #119 (revisão de acesso):** o âmbito de leitura do recurso `presence` foi restringido de `household` a `own` para o inquilino; a regra de escrita `own` não mudou. A API de presença permanece planeada. Ver [módulo presença](../modules/presence.md#priv-02-119--investigação-e-arquitetura-de-privacidade-17112026).

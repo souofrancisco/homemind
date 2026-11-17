@@ -244,7 +244,9 @@ class Engine:
             mode=self.modo.id if self.modo else None,
             mode_name=self.modo.nome if self.modo else None,
             state=self.estado,
-            presence=self.presenca,
+            # API ObjectOS is authenticated but not household/role scoped. Do not publish its
+            # process-wide sensor state until it is replaced by a household-scoped DTO.
+            presence=None,
             camera_ok=self.camara_ok,
             mcp_ok=self._casa.mcp_ok if self._casa else False,
             backend=self._backend(),
@@ -301,7 +303,6 @@ class Engine:
         if ev.ha_alguem == self.presenca:
             return
         self.presenca = ev.ha_alguem
-        self._log(prefixo + ("Entrou alguém na divisão" if ev.ha_alguem else "Divisão vazia"))
         if not ev.ha_alguem:
             if self.estado == Estado.ATIVO:
                 self._guardado = await self._ler_casa()
