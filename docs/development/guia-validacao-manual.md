@@ -21,7 +21,7 @@ Roteiro dos testes a executar à mão. Os testes automáticos (`make check`, `ma
 | [C. Painel](#c-painel) | UI-01, UI-02 |
 | [D. Motor, regras e NVIDIA](#d-motor-regras-e-nvidia) | MOT-01, MOT-02, REG-01, NV-01, OFF-01 |
 | [E. MCP Altice](#e-mcp-altice) | MCP-01 … MCP-07 |
-| [F. Vídeo e visão](#f-vídeo-e-visão) | PRES-01, VID-01, VID-02, VID-03, YOLO-01, YOLO-02, POSE-01, TRK-01 |
+| [F. Vídeo e visão](#f-vídeo-e-visão) | PRES-01, PRES-02, VID-01, VID-02, VID-03, YOLO-01, YOLO-02, POSE-01, TRK-01 |
 | [G. Gestos e presença](#g-gestos-e-presença) | GES-01, GES-02, PRE-01 |
 | [H. Demo](#h-demo) | LAT-01, LAT-02, DEMO-01, PB-01, PRIV-01 |
 | [Folha de resultados](#folha-de-resultados) | tabela para preencher |
@@ -221,6 +221,14 @@ Backend no host com o extra de visão (ver README, «Visão real»).
 - **Esperado:** kit ligado: `source=kit`, `origin=real`, `camera_ok=true`, `fps>0` (2.ª consulta). Link inválido ou câmara desligada: `camera_ok=false`, sem `fps`, e **nenhum** estado de «casa vazia». Telemóvel e clip: `origin=simulated`. O URL nunca aparece na resposta, nos logs nem nos erros. Se a app MEARI não partilhar um stream utilizável, registar «kit sem stream» e usar o plano B.
 - **PASS** só com a evidência do kit (ou «kit sem stream» registado) e os dois planos B a funcionar.
 
+### PRES-02 — Contagem na soleira (YOLO + linha virtual)
+- **Issue:** #106 · **Tipo:** REAL com câmara / SIMULADO com clip · **Estado: NÃO EXECUTADO**
+- **Pré-requisitos:** PRES-01 a funcionar; `uv sync --extra visao` e pesos; `app/.env` com `PRESENCE_HOUSEHOLD_ID` (casa existente na base), `PRESENCE_DETETOR=homemind.features.presence.yolo:DetetorYoloPessoas`, `PRESENCE_DOOR_ROI` e `PRESENCE_DOOR_LINE`; `GET /api/presence/camera/status` com `door_mask_configured:true`.
+- **Passos:** 10 passagens combinadas (5 a entrar, 5 a sair, ritmos normais), 2 voltas atrás a meio da linha e uma passagem de duas pessoas lado a lado; contar à mão e comparar com os `presence.door_crossed` gravados (`domain_event`).
+- **Esperado:** sentido certo em cada passagem; voltas atrás sem evento; nenhuma imagem em disco (`find app/backend/data -type f` só mostra a base de dados). Se o sentido vier trocado, inverter `PRESENCE_DOOR_INSIDE_SIGN`.
+- **Evidência:** contagem certa/total registada **só se medida**; nenhum valor de precisão sem esta medição.
+- **PASS** só com a contagem registada e zero imagens em disco.
+
 ### VID-01 — RTSP estável
 - **Issue:** #2 · **Tipo:** REAL
 - **Pré-requisitos:** `VIDEO_SOURCE=<rtsp>` em `app/.env`.
@@ -370,6 +378,7 @@ Data: ________ · Testador(es): ________ · Hardware (GPU/CPU): ________ · Comm
 | MCP-06 | Consumo | | | valor bruto: ____ com carga de ____ W | #12 |
 | MCP-07 | ⚠️ Falhas e reconexão | | | | #11, #12 |
 | PRES-01 | Câmara da porta: kit e plano B | | | kit: ____ · FPS: ____ | #105 |
+| PRES-02 | Contagem na soleira | | | certas/total: ____ | #106 |
 | VID-01 | RTSP 10 min | | | quedas: ____ · FPS: ____ | #2 |
 | VID-02 | Atraso câmara → ecrã | | | 0/5/10 min: ____ / ____ / ____ s | #2 |
 | VID-03 | Reconexão da câmara | | | | #3 |

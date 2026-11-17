@@ -127,3 +127,14 @@ def test_clip_source_is_alive_without_hardware(tmp_path):
         assert s.camera_ok and s.origin is Origin.simulated
     finally:
         fonte.parar()
+
+
+def test_door_mask_configured_follows_the_threshold_settings(client, monkeypatch):
+    cfg = Settings(presence_door_roi="0.2,0,0.8,1", presence_door_line="0.2,0.5,0.8,0.5")
+    monkeypatch.setattr("homemind.features.presence.router.get_settings", lambda: cfg)
+    monkeypatch.setattr(video, "_fonte", None)
+    h = {"x-test-sub": "sub-operador"}
+    assert client.get("/api/presence/camera/status", headers=h).json()["door_mask_configured"]
+    cfg2 = Settings(presence_door_roi="0.2,0,0.8,1", presence_door_line="0.1,0.5,0.8,0.5")  # fora
+    monkeypatch.setattr("homemind.features.presence.router.get_settings", lambda: cfg2)
+    assert not client.get("/api/presence/camera/status", headers=h).json()["door_mask_configured"]

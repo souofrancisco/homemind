@@ -49,6 +49,20 @@ class Settings(BaseSettings):
     video_fps_max: float = 15.0  # cadência máxima do MJPEG de GET /api/video
     video_jpeg_qualidade: int = 80
 
+    # --- P2 — porta (PRES-02). Coordenadas normalizadas 0–1 "x1,y1,x2,y2"; vazio = desligado ---
+    presence_household_id: str = ""  # casa a que pertencem os eventos da porta (UUID)
+    presence_detetor: str = (
+        ""  # modulo:Classe; YOLO real: homemind.features.presence.yolo:DetetorYoloPessoas
+    )
+    presence_door_roi: str = ""  # retângulo da soleira; tudo fora é pintado a preto antes do YOLO
+    presence_door_line: str = ""  # linha orientada (início -> fim) dentro da soleira
+    presence_door_inside_sign: Literal[1, -1] = 1  # sinal do lado de DENTRO (ver door.py)
+    presence_door_cooldown_s: float = Field(
+        default=1.0, ge=0
+    )  # mesmo sentido: 2.ª contagem ignorada
+    presence_door_confirm_s: float = Field(
+        default=1.0, ge=0
+    )  # cruzamento reverso anula dentro disto
     # --- P2 — gestos/presença ---
     gesto_distancia_max_ombros: float = 0.6  # × largura dos ombros (centro do objeto ao pulso)
     gesto_confianca_min: float = 0.5  # pulso, cotovelo e ombros (estritamente maior)
