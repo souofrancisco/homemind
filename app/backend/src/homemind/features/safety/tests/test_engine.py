@@ -71,21 +71,34 @@ def test_alert_resolves_when_window_closes_and_reopens_as_new_episode():
     assert len(again) == 1 and again[0].data.id != first[0].data.id
 
 
-def test_heater_turning_off_resolves_and_it_turning_on_again_reopens():
+def test_heater_turning_off_resolves_and_coincidence_clock_restarts_when_it_turns_on():
     e = engine()
     first = feed(e, sim.heater_on(T0), sim.contact(T0, C.open), sim.contact(at(5), C.open))
     res = feed(e, sim.heater_off(at(6)))
     assert [r.data.status for r in res] == [SafetyAlertStatus.resolved]
     assert res[0].data.id == first[0].data.id
     assert feed(e, sim.contact(at(7), C.open)) == []  # janela aberta mas sem aquecedor
-    again = feed(e, sim.heater_on(at(8)))  # janela já aberta há > 5 min: novo episódio
+    assert feed(e, sim.heater_on(at(8)), sim.contact(at(12.9), C.open)) == []  # relógio recomeça
+    again = feed(e, sim.contact(at(13), C.open))
     assert len(again) == 1 and again[0].data.id != first[0].data.id
+    assert again[0].data.started_at == at(13)
 
 
-def test_heater_turning_on_after_window_open_5min_triggers_on_consumption():
+def test_heater_turning_on_with_window_open_for_10min_waits_5min_of_coincidence():
     e = engine()
-    assert feed(e, sim.contact(T0, C.open), sim.contact(at(6), C.open)) == []
-    assert len(feed(e, sim.heater_on(at(7)))) == 1
+    assert feed(e, sim.contact(T0, C.open), sim.contact(at(10), C.open)) == []
+    assert feed(e, sim.heater_on(at(10)), sim.contact(at(14.9), C.open)) == []
+    assert len(feed(e, sim.contact(at(15), C.open))) == 1
+
+
+def test_heater_off_and_on_before_5min_restarts_coincidence_clock():
+    e = engine()
+    out = feed(
+        e, sim.contact(T0, C.open), sim.heater_on(T0), sim.contact(at(4), C.open),
+        sim.heater_off(at(4.5)), sim.heater_on(at(5)), sim.contact(at(9), C.open),
+    )  # fmt: skip
+    assert out == []  # 4 min + 4 min, nunca 5 seguidos
+    assert len(feed(e, sim.contact(at(10), C.open))) == 1
 
 
 @pytest.mark.parametrize("status", [SensorStatus.unknown, SensorStatus.stale])

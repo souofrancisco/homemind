@@ -39,6 +39,8 @@ def no_heating_known(_appliance_id: UUID) -> bool:
 @dataclass
 class _Window:
     open_since: datetime | None = None
+    # desde quando janela aberta E aquecimento a decorrer coincidem (os 5 min contam daqui)
+    coincident_since: datetime | None = None
     room_id: UUID | None = None
     prov: Provenance | None = None
     alert: SafetyAlert | None = None  # alerta ativo deste episódio
@@ -100,10 +102,10 @@ class SafetyEngine:
         w.room_id = r.room_id or w.room_id
         if not r.usable:
             if w.alert is None:  # sem certeza de continuidade: o episódio recomeça
-                w.open_since = None
+                w.open_since = w.coincident_since = None
             return []  # nunca dispara nem resolve com unknown/stale
         if r.contact is ContactState.closed:
-            w.open_since = None
+            w.open_since = w.coincident_since = None
             return self._resolve_window(ev, w)
         if w.open_since is None:
             w.open_since = r.ts
@@ -122,10 +124,9 @@ class SafetyEngine:
         else:
             house.heaters.pop(c.id, None)
         for sensor_id, w in house.windows.items():
-            if on:
-                out += self._evaluate(ev, house, sensor_id, now=ev.ts)
-            elif w.alert is not None and not self._heaters_in(house, w.room_id):
+            if not on and w.alert is not None and not self._heaters_in(house, w.room_id):
                 out += self._resolve_window(ev, w)  # o aquecedor desligou
+            out += self._evaluate(ev, house, sensor_id, now=ev.ts)
         return out
 
     @staticmethod
@@ -138,20 +139,23 @@ class SafetyEngine:
     def _evaluate(self, ev, house: _House, sensor_id: UUID, now: datetime | None = None):
         w = house.windows[sensor_id]
         now = now or ev.ts
-        if w.alert is not None or w.open_since is None or w.prov is None:
-            return []
-        if now - w.open_since < WINDOW_OPEN_MIN:
-            return []
         heaters = self._heaters_in(house, w.room_id)
-        if not heaters:
-            return []  # janela aberta sem aquecimento (ou sensor sem quarto): nada a avisar
+        if w.open_since is None or not heaters:
+            w.coincident_since = None  # a coincidência quebrou: o relógio recomeça
+            return []  # sem aquecimento (ou sensor sem quarto): nada a avisar
+        if w.coincident_since is None:
+            w.coincident_since = now
+        if w.alert is not None or w.prov is None:
+            return []
+        if now - w.coincident_since < WINDOW_OPEN_MIN:
+            return []
         c = heaters[0]
         w.alert = SafetyAlert(
             id=stable_id(
                 "safety",
                 "window",
                 str(sensor_id),
-                w.open_since.isoformat(),
+                w.coincident_since.isoformat(),
                 str(c.id),
                 now.isoformat(),
             ),
