@@ -1,15 +1,20 @@
-"""Faturas (BILL-01): pré-visualizar, gravar (rascunho) e ler.
+"""Faturas (BILL-01): pré-visualizar, gravar (rascunho) e ler. Arranca o atribuidor (BILL-02).
 
 O senhorio copia a fatura real, vê a pré-visualização (preço médio derivado, dias) e só depois
 grava; gravar emite `billing.bill_created`. Inquilinos só veem faturas finalizadas; o
 operador não vê faturas. Repartição e fecho: BILL-02/04.
 """
 
+import asyncio
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 
 from homemind.contracts.billing import (
     BillIn,
@@ -27,12 +32,54 @@ from homemind.core.access import (
     HouseholdAccess,
     Operation,
     Resource,
+    get_clock,
     require_access,
 )
-from homemind.core.events import append_event
-from homemind.features.billing import bills
+from homemind.core.db import Database
+from homemind.core.events import EventBus, append_event
+from homemind.features.billing import attributor, bills
 
-router = APIRouter(prefix="/api", tags=["billing"])
+log = logging.getLogger(__name__)
+EXPIRY_INTERVAL_S = 60.0
+
+
+async def run_expiry(db: Database, bus: EventBus, now: datetime) -> int:
+    """Fecha os pedidos «De quem é esta conta?» sem decisão no prazo (→ por todos)."""
+
+    def work(conn):
+        events = attributor.expire_pending(conn, now)
+        for e in events:
+            append_event(conn, e)  # mesma transação do efeito
+        return events
+
+    events = await db.run(work)
+    for e in events:
+        await bus.publish(e)  # idempotente por id: só acorda os consumidores
+    return len(events)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    clock = app.dependency_overrides.get(get_clock, get_clock)()
+    app.state.bus.subscribe(attributor.CONSUMER, attributor.handle, attributor.EVENT_TYPES)
+
+    async def expiry_loop() -> None:
+        while True:
+            try:
+                await run_expiry(app.state.db, app.state.bus, clock())
+            except Exception:  # nunca derruba o servidor; tenta no próximo ciclo
+                log.exception("falha ao expirar pedidos de confirmação")
+            await asyncio.sleep(EXPIRY_INTERVAL_S)
+
+    task = asyncio.create_task(expiry_loop(), name="billing:expiry")
+    try:
+        yield
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+router = APIRouter(prefix="/api", tags=["billing"], lifespan=lifespan)
 
 ReadAccess = Annotated[HouseholdAccess, Depends(require_access(Resource.bill))]
 WriteAccess = Annotated[HouseholdAccess, Depends(require_access(Resource.bill, Operation.write))]
