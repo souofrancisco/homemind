@@ -184,7 +184,7 @@ Todos os dispositivos de segurança (`categories` contém `security`: contacto, 
 | Aberto (íman afastado) | **`alarm`** | 4 |
 
 **`alarm` = aberto, `normal` = fechado.** Observado com o operador a abrir e fechar o sensor.
-- O sensor reporta **por mudança de estado** e tem atualizações periódicas (`lastCommunicationTime` avançou com o mesmo estado ao fim de ~30–70 s).
+- O sensor reporta **por mudança de estado**. **Não há batimento regular observado**: no início da série tinha 199 s de idade e só reportou 344 s depois (com o sensor parado). Os reportes seguidos de 31–80 s com o mesmo estado vieram durante o manuseamento (o íman a mexer), não de um período fixo.
 - **Latência (não medida com precisão)**: ao abrir, a mudança já estava reportada ~10 s depois do gesto. Ao fechar, o operador disse «fechei» antes das 22:11:56, as leituras seguiram em `alarm` e a mudança só foi reportada às 22:12:23: **≥ ~27 s**. Não se sabe a hora exata dos gestos. A meta «janela aberta → corte < 10 s» exige um teste cronometrado antes de ser prometida.
 - Resposta com valor desconhecido/ausente = `unknown`; nunca se assume «fechado».
 
@@ -192,19 +192,26 @@ Todos os dispositivos de segurança (`categories` contém `security`: contacto, 
 
 - `humidityValue` está em % (intervalo declarado 0–100).
 - `temperatureValue` **sem unidade declarada**: o valor lido (25,3) coincide com a temperatura do local indicada pelo operador (~25 °C), logo **°C** (verificação aproximada, sem termómetro calibrado; a escala −50…60 também é a de °C).
-- Reporta devagar: sem nova atualização durante **7 min** de observação, depois de já ter ~4 min (≥ ~11 min entre reportes). Um limiar de `stale` do clima tem de ser de vários minutos (provisório: 30 min), não os 90 s da tomada.
+- Reporta devagar: sem nova atualização durante **7 min** de observação, depois de já ter ~4 min (≥ ~11 min entre reportes). Um limiar de `stale` do clima tem de ser de vários minutos e não os 90 s da tomada (provisório: 2 h, a afinar quando houver um período medido).
 
 ### Cadência de frescura observada (uma série de 7 min)
 
 | Sensor | Observado |
 |---|---|
-| Contacto | por mudança + batimentos de ~30–70 s |
+| Contacto | por mudança de estado; sem batimento regular observado (344 s calado com o sensor parado) |
 | Clima | ≥ ~11 min sem reportar |
 | Fumo, gateway | sem reporte em 7 min; `lastCommunicationTime` já com ~1 h no início (batimento horário provável, não confirmado) |
 
+### Adaptadores e collector (MCP-03) — **IMPLEMENTADO** (sem ligação à app)
+
+- `connectors/mcp_sensors.py`: `sensor_readings_from_device` (função pura) converte `contactSensor` em 1 `SensorReading` e `temperatureSensor` em 2 (temperatura e humidade). Contacto `alarm` → `open`, `normal` → `closed`; qualquer outro valor, ausente ou fora de escala (temperatura fora de −40…85, humidade fora de 0…100, bool, NaN) → `unknown` sem valor: **nunca** se assume «fechado» nem um valor por omissão. Os outros tipos (fumo, gateway, tomada…) devolvem `[]`.
+- `connectors/mcp_sensor_collector.py`: `SensorCollector` publica `SensorReadingRecorded` só quando algo muda. Contacto: (estado) — os reportes repetidos com o mesmo estado não geram eventos; clima: cada amostra nova (`observed_at`). Uma transição `ok → stale` publica uma vez; `unavailable()` esquece o estado; erros de `publish` ficam isolados.
+- `McpHome.sensores` (opcional): com o collector definido, cada leitura faz **uma** chamada extra de **leitura** a `get_home_devices` e passa-lhe os dispositivos. Sem o collector não há nenhuma chamada extra. Os dispositivos de segurança continuam fora do caminho de controlo (`_find_devices`); não há escritas.
+- **Por fazer (PLANEADO):** montar o collector no arranque da app (precisa de casa e dispositivos em BD: HOUSE-01/03) e o simulador/FakeHome de sensores (MCP-05). Limiares de `stale` provisórios (2 h).
+
 ### Por confirmar
 
-Latência real abrir/fechar do contacto (teste cronometrado); intervalo de reporte do clima; se o alarme de fumo aparece no `alarmState` do gateway (fora de âmbito).
+Latência real abrir/fechar do contacto (teste cronometrado); período de reporte (batimento) do contacto e do clima: os limiares de `stale` do adaptador (2 h para os três) são **provisórios** e foram escolhidos para não marcar como `stale` um sensor saudável e parado; se o alarme de fumo aparece no `alarmState` do gateway (fora de âmbito).
 
 ## Verificação física da lâmpada (#10/#11) — 2026-11-17, BLOQUEADA
 

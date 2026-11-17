@@ -47,7 +47,7 @@ def test_contact_missing_or_unrecognized_is_unknown(state):
 
 
 def test_contact_stale_and_missing_timestamp():
-    old = (NOW - timedelta(minutes=3, seconds=1)).timestamp() * 1000
+    old = (NOW - timedelta(hours=2, seconds=1)).timestamp() * 1000
     stale = readings(
         {**device("contactSensor", sensorState="normal"), "lastCommunicationTime": old}
     )[0]
@@ -98,15 +98,15 @@ def test_absent_values_and_independent_valid_humidity():
 def test_climate_stale_and_custom_stale_threshold():
     payload = {
         **device("temperatureSensor", temperatureValue=20, humidityValue=50),
-        "lastCommunicationTime": (NOW - timedelta(minutes=31)).timestamp() * 1000,
+        "lastCommunicationTime": (NOW - timedelta(hours=2, minutes=1)).timestamp() * 1000,
     }
     temp, humidity = readings(payload)
     assert temp.status is humidity.status is SensorStatus.stale
     fresh = readings(
         payload,
         stale_after={
-            SensorKind.temperature: timedelta(hours=1),
-            SensorKind.humidity: timedelta(hours=1),
+            SensorKind.temperature: timedelta(hours=3),
+            SensorKind.humidity: timedelta(hours=3),
         },
     )
     assert all(item.status is SensorStatus.ok for item in fresh)
@@ -135,3 +135,13 @@ def test_every_returned_reading_satisfies_contract():
 def test_non_string_device_type_never_raises():
     for weird in (["contactSensor"], {"a": 1}, 7, None):
         assert sensor_readings_from_device({"type": weird}, device_id=uuid4(), now=NOW) == []
+
+
+def test_static_contact_sensor_silent_for_minutes_is_still_usable():
+    """O contacto reporta por evento: 6 min sem reportar (visto no kit real) NÃO é stale."""
+    quiet = (NOW - timedelta(minutes=6)).timestamp() * 1000
+    reading = readings(
+        {**device("contactSensor", sensorState="normal"), "lastCommunicationTime": quiet}
+    )[0]
+    assert reading.status is SensorStatus.ok
+    assert reading.contact is ContactState.closed

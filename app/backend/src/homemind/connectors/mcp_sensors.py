@@ -18,10 +18,13 @@ from homemind.contracts.sensors import (
     SensorStatus,
 )
 
+# PROVISÓRIO. Nenhum destes sensores tem um batimento regular observado: o contacto reporta por
+# mudança de estado e ficou 344 s calado com o sensor parado; o clima ≥ ~11 min. Um limiar curto
+# marcaria um sensor saudável como `stale`. Afinar quando houver um período medido.
 DEFAULT_STALE_AFTER: dict[SensorKind, timedelta] = {
-    SensorKind.contact: timedelta(minutes=3),
-    SensorKind.temperature: timedelta(minutes=30),
-    SensorKind.humidity: timedelta(minutes=30),
+    SensorKind.contact: timedelta(hours=2),
+    SensorKind.temperature: timedelta(hours=2),
+    SensorKind.humidity: timedelta(hours=2),
 }
 
 
