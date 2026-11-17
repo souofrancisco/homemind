@@ -58,7 +58,7 @@ Em dúvida a fonte é SIMULADA: `kit`/`rtsp` sem URL `rtsp://` caem para `clip`;
 `http(s)://` é `phone`. Sem `VIDEO_SOURCE` o estado é `clip`/simulada com `camera_ok=false`.
 
 `GET /api/presence/camera/status` devolve `CameraStatus` (fonte, origem, `camera_ok`, `fps`,
-`last_frame_at`, `door_mask_configured`), nunca imagem nem URL. Só o papel `operator` em **qualquer** casa (sem `household_id` na rota). **Decisão para a demo (uma casa); definitivo: `household_id` na rota (PLANEADO)**, ver P-26 em `decisions.md`. Senhorio, inquilino e sem membership recebem `403 forbidden_role`. Fonte ausente ou sem frame
+`last_frame_at`, `door_mask_configured`), nunca imagem nem URL. Só o papel `operator` em **qualquer** casa (sem `household_id` na rota). **Decisão para a demo (uma casa); definitivo: `household_id` na rota (PLANEADO)**, ver P-28 em `decisions.md`. Senhorio, inquilino e sem membership recebem `403 forbidden_role`. Fonte ausente ou sem frame
 há mais de `VIDEO_SEM_FRAME_S` ⇒ `camera_ok=false` e sem `fps`; **nunca** se conclui «casa vazia». O
 `fps` é a cadência de frames novos entre duas consultas (`null` na primeira).
 `door_mask_configured` é sempre `false` até à PRES-02. `GET /api/video` (MJPEG) mantém-se como estava.
