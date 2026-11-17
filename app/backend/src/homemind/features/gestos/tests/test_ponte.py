@@ -184,3 +184,23 @@ def test_ponta_a_ponta_presenca_antes_do_gesto():
     assert [type(e) for e in eventos] == [Presenca, ObjetoLevantado, Presenca]
     assert [getattr(e, "ha_alguem", None) for e in eventos] == [True, None, False]
     assert eventos[1].classe == "caneca"
+
+
+def test_fila_e_loop_criados_como_o_motor_os_cria():
+    """O motor cria `asyncio.Queue()` (sem limite) e guarda `get_running_loop()` em `iniciar()`."""
+    recebidos: list[Evento] = []
+
+    async def cenario() -> None:
+        loop = asyncio.get_running_loop()
+        fila: asyncio.Queue[Evento] = asyncio.Queue()
+        publicador = PublicadorFila(loop, fila)
+        esperados = [evento_n(n) for n in range(50)]
+        th = threading.Thread(target=lambda: [publicador.publicar(e) for e in esperados])
+        th.start()
+        for _ in esperados:
+            recebidos.append(await asyncio.wait_for(fila.get(), timeout=2))
+        th.join()
+        assert recebidos == esperados
+        assert fila.empty()
+
+    asyncio.run(cenario())

@@ -27,7 +27,7 @@ Frame válido por classe: existe um objeto da classe e um pulso (esq. ou dir., d
 - **Beber:** só afinação por config; se o clip real der falsos positivos, propor critério extra (ex. pulso acima do ombro) à equipa.
 - **Integração:** P1 chama `processar` por frame novo (via `ProcessadorObjectOS` em #8); P4 consome os eventos pela fila (#7).
 - **Pendente:** validar 10/10 e 0 «beber» no clip MEARI real (P1 + afinador #8). Os testes usam dados SIMULADOS.
-- Ambiente: sem `uv`, `make check` não foi corrido; usado venv local + `ruff` + `pytest`.
+- Ambiente: `make check` corrido com sucesso (uv no venv local). O CI só corre `make check`, não `pytest`: correr `pytest` à parte.
 
 ## Presença binária (#6)
 
@@ -44,7 +44,7 @@ Inicial `False`. Frame com pessoas: regresso confirmado após `presenca_frames_r
 
 ### Assunções (presença)
 - **Qualquer pessoa conta**, sem confiança mínima própria: P1 filtra pessoas por confiança antes de entregar. Nada de contagem, IDs ou caixas.
-- **Arranque com pessoa** gera `Presenca(True)` ao 2.º frame (estado inicial `False`); P4 deve tratar o evento inicial.
+- **Arranque com pessoa** gera `Presenca(True)` ao 2.º frame (estado inicial `False`); P4 aceita-o (confirmado: a presença do motor começa desconhecida e o primeiro `Presenca`, `True` ou `False`, conta como transição).
 - **Ausência medida em tempo de frames reais**: um buraco entre frames > `visao_intervalo_max_s` (1 s) reinicia `t_primeiro_vazio=t` e os positivos. Câmara sem frames nunca desliga a casa; depois do buraco, a ausência conta 3 s a partir do primeiro frame vazio real.
 - **Frames positivos separados por buraco** não são «consecutivos» (contador reiniciado).
 - **Um frame positivo isolado** apaga a contagem de ausência (vazios intermitentes < 3 s nunca desligam); um falso negativo do detetor de pessoa só desliga a casa se durar 3 s seguidos.
@@ -57,21 +57,22 @@ Inicial `False`. Frame com pessoas: regresso confirmado após `presenca_frames_r
 `ponte.py`: `PublicadorFila(loop, fila)` implementa `PublicadorEventos`; `PublicadorLista` guarda eventos (afinador, testes).
 
 ```python
-# P4, no lifespan (dentro do loop do FastAPI):
-fila: asyncio.Queue[Evento] = asyncio.Queue()           # sem limite
-publicador = PublicadorFila(asyncio.get_running_loop(), fila)
-# ... entrega `publicador` a P1; a thread de visão chama publicador.publicar(evento) por evento.
+# P4 cria a fila e guarda o loop em `Engine.iniciar()` (lifespan da feature `engine`,
+# `app.state.engine`). P1 liga assim, depois de o motor arrancar:
+engine = app.state.engine
+publicador = PublicadorFila(engine.loop, engine.fila)   # fila sem limite, criada pelo motor
+# equivalente: engine.publicar_de_thread(evento) (call_soon_threadsafe(fila.put_nowait, ...))
 ```
 
 `publicar` faz `loop.call_soon_threadsafe(...)`: nunca bloqueia, preserva a ordem (FIFO) e não duplica. A fila e o loop são de P4; a thread de visão é de P1 (os testes usam mocks em `tests/_fakes.py`: `DetetorFalso`, `FonteVideoFalsa`, `ThreadVisaoFalsa`).
 
 ### Assunções (ponte)
-- **Fila sem limite** (P4). Com `maxsize` e fila cheia, o evento é descartado com `logger.warning` (só o tipo).
+- **Fila sem limite** (confirmado por P4: `asyncio.Queue()` do motor). Com `maxsize` e fila cheia, o evento é descartado com `logger.warning` (só o tipo).
 - **Loop fechado** (`RuntimeError` no encerramento): descarta com `logger.debug` (só o tipo); a thread nunca recebe a exceção. Eventos pendentes no loop ao fechar perdem-se (contrato).
-- **Encerramento:** P4 pára o consumo, P1 pára a thread (`threading.Event`); a ordem entre os dois é indiferente para a ponte. P4 deve criar o publicador *dentro* do loop (`get_running_loop()`).
+- **Encerramento:** P4 pára o consumo, P1 pára a thread (`threading.Event`); a ordem entre os dois é indiferente para a ponte. `engine.loop` é `None` antes de `iniciar()`: construir o publicador só depois do arranque do motor.
+- **Ordem de lifespans:** a feature `gestos` não tem router nem lifespan, logo a ordem alfabética (`engine` < `gestos`) não a afeta. Quem arranca a thread de visão (P1, `features/video`) deve garantir que corre depois de `engine`.
 - **Só se regista o tipo do evento**; nunca hora, classe, frames ou pessoas.
-- **Pendente (integração):** thread de visão real (P1) com `ProcessadorObjectOS` (#8) e consumidor/lifespan (P4). Medição «atraso do WS com inferência real» só com o Detetor real; os testes usam inferência SIMULADA (300 ms).
-- Sem `uv`, `make check` não foi corrido; usados venv local, `ruff` e `pytest`.
+- **Pendente (integração):** `Detetor` real de P1 (ainda inexistente; `features/video` só tem `FonteVideo`) ligado a `ProcessadorObjectOS` (#8) na thread de visão. O consumidor e o lifespan de P4 já existem na `main`. Medição «atraso do WS com inferência real» só com o Detetor real; os testes usam inferência SIMULADA (300 ms).
 
 ## Processador e afinador offline (#8)
 
@@ -98,7 +99,7 @@ JSONL de clips reais pode conter keypoints de pessoas: manter fora do Git em `da
 - `ProcessadorObjectOS` é partilhado por thread de visão e afinador; sem lock (uma só thread chama).
 - Frames ignorados por `indice` não contam para o resumo de eventos, mas contam para frames/fps do afinador.
 - `--esperar` só compara as chaves indicadas.
-- `--video`: o afinador chamará o `Detetor` real de P1 sobre o clip e passará as `FrameDeteccoes` ao mesmo processador; assume `Detetor.detetar(FrameVideo) -> FrameDeteccoes` do contrato.
+- `--video`: liga-se em `_frames_de_video` (`afinador.py`); o afinador chamará o `Detetor` real de P1 sobre o clip e passará as `FrameDeteccoes` ao mesmo processador; assume `Detetor.detetar(FrameVideo) -> FrameDeteccoes` do contrato.
 
 ### Pendente de integração
 | Pendente | Quem |
@@ -106,6 +107,6 @@ JSONL de clips reais pode conter keypoints de pessoas: manter fora do Git em `da
 | `Detetor` real + `FonteVideo` de clip -> implementar `_frames_de_video` / `--video` | P1 |
 | Validar 10/10 gestos e 0 «beber» no clip MEARI real (gravar JSONL com `--gravar-jsonl`, afinar limiares) | P1 + P2 |
 | Instanciar `ProcessadorObjectOS.de_settings(get_settings())` na thread de visão e chamar `publicar` por evento | P1 |
-| Criar `PublicadorFila(asyncio.get_running_loop(), fila)` no lifespan e entregá-lo a P1 | P4 |
+| Ligar `PublicadorFila(engine.loop, engine.fila)` (ou `engine.publicar_de_thread`) ao arranque da thread de visão, depois de `engine` | P1 |
 
 Os testes (10 levantamentos + 3 «beber» + saída/regresso) usam dados SIMULADOS; **não** validam o clip real.
