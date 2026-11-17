@@ -56,15 +56,15 @@ def cliente_nvidia(s: EngineSettings) -> Completar:
         raise LLMIndisponivel("NVIDIA_API_KEY não configurada")
     from openai import AsyncOpenAI, OpenAIError
 
-    client = AsyncOpenAI(
-        base_url=s.nvidia_base_url, api_key=s.nvidia_api_key, timeout=20, max_retries=0
-    )
-
     async def completar(mensagens: list[dict]) -> str:
         try:
-            r = await client.chat.completions.create(
-                model=s.nvidia_model, messages=mensagens, temperature=0.2, max_tokens=600
-            )
+            # Um cliente por chamada, fechado no fim: sem ligações penduradas entre pedidos.
+            async with AsyncOpenAI(
+                base_url=s.nvidia_base_url, api_key=s.nvidia_api_key, timeout=20, max_retries=0
+            ) as client:
+                r = await client.chat.completions.create(
+                    model=s.nvidia_model, messages=mensagens, temperature=0.2, max_tokens=600
+                )
         except OpenAIError as e:  # sem detalhes: podem incluir cabeçalhos/URL
             raise LLMIndisponivel(f"NVIDIA indisponível ({type(e).__name__})") from None
         return r.choices[0].message.content or ""

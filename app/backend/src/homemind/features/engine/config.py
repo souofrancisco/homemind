@@ -21,7 +21,7 @@ class EngineSettings(BaseSettings):
     # Nunca logar nem devolver este valor.
     nvidia_api_key: str = ""
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
-    nvidia_model: str = "meta/llama-3.3-70b-instruct"
+    nvidia_model: str = "nvidia/nemotron-3-ultra-550b-a55b"
 
     @property
     def espera(self) -> float:
