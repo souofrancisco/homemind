@@ -115,10 +115,14 @@ def load_decision(
         " WHERE household_id = ? AND consumption_event_id = ?",
         (str(household_id), str(consumption_id)),
     ).fetchone()
-    return StoredPolicy(PolicyDecision.model_validate_json(row["decision_json"]), row["revision"]) if row else None
+    if row is None:
+        return None
+    return StoredPolicy(PolicyDecision.model_validate_json(row["decision_json"]), row["revision"])
 
 
-def _history(conn: sqlite3.Connection, decision: PolicyDecision, revision: int, cause: UUID) -> None:
+def _history(
+    conn: sqlite3.Connection, decision: PolicyDecision, revision: int, cause: UUID
+) -> None:
     conn.execute(
         "INSERT INTO household_policy_audit (household_id, consumption_event_id, revision,"
         " source_event_id, decided_at, status, reason, decision_json)"
@@ -193,8 +197,12 @@ def transition_decision(
     return StoredPolicy(decision, expected_revision + 1)
 
 
-def _context(conn: sqlite3.Connection, household_id: UUID) -> tuple[str, list[Room], list[Membership]]:
-    house = conn.execute("SELECT timezone FROM household WHERE id=?", (str(household_id),)).fetchone()
+def _context(
+    conn: sqlite3.Connection, household_id: UUID
+) -> tuple[str, list[Room], list[Membership]]:
+    house = conn.execute(
+        "SELECT timezone FROM household WHERE id=?", (str(household_id),)
+    ).fetchone()
     if house is None:
         raise LookupError("casa desconhecida")
     rooms = [
