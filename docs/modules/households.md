@@ -1,6 +1,6 @@
 # Módulo `households` — casas, quartos, moradores e persistência
 
-**Dono: P5 (souofrancisco).** **IMPLEMENTADO (F0): leituras por REST, persistência, guardas e barramento. PLANEADO: escrita por REST, convites.** Entidades: [data-model.md](../architecture/data-model.md). Contratos: [contracts.md](../architecture/contracts.md).
+**Dono: P5 (souofrancisco).** **IMPLEMENTADO (F0 + HOUSE-02 nesta branch): leituras REST, persistência, guardas, criação de quartos, convites tenant e revogação.** Entidades: [data-model.md](../architecture/data-model.md). Contratos: [contracts.md](../architecture/contracts.md).
 
 ## Responsabilidade
 
@@ -17,7 +17,7 @@ Fonte de verdade de **quem vive onde e com que papel**: `Household`, `Room`, `Re
 ## Regras
 
 - O vínculo pessoa–quarto vem do contrato de arrendamento e é **introduzido pelo senhorio**; o sistema nunca o adivinha (PDF §10.3).
-- Convite: senhorio cria `Membership(status=invited)`; o inquilino aceita ao iniciar sessão. O QR da porta do PDF §2.1 passa a ser um **link de convite** (**PROPOSTA**).
+- Convite: senhorio cria uma membership `invited` para um quarto e email de destino; o token secreto é entregue uma única vez, expira em 72 h e só é aceite com OIDC e email realmente verificado. Ver [HOUSE-02](../architecture/house-02-memberships.md). A UI do link pertence a HOUSE-05.
 - Papéis em `Membership.role`. Autorização: `require_access(Resource, Operation)` em `core/access.py` (matriz `PERMISSIONS`): `403 forbidden_role` para membros sem papel, `404 household_not_found` para não-membros. Decisão pendente P-02 (papéis na base de dados vs grupos do Authentik); recomendação: base de dados, para não depender da configuração do Authentik.
 - DTOs por papel: o senhorio **nunca** recebe presença nem aparelhos individuais (RP-01).
 - `presence_opt_in` é editado só pelo próprio inquilino.
@@ -29,7 +29,7 @@ Esquema versionado em ficheiros SQL numerados; chaves estrangeiras ligadas; modo
 
 ## Ficheiros previstos
 
-`features/households/{router,service,models,tests}`; `core/db.py`, `core/events.py`, `core/migrations/*.sql`; extensão de `features/auth/service.py` (papéis).
+`features/households/{router,repo,membership_flow,tests}`; `core/db.py`, `core/events.py`, `core/migrations/*.sql`; Authentik/JWT mantém-se em `features/auth/service.py`. O provisionamento do primeiro senhorio é administrativo, não é um endpoint público.
 
 ## Dependências
 
@@ -45,3 +45,9 @@ P1, P2, P3, P4 dependem das dependências de autorização e do barramento — *
 ## Testes
 
 Autorização por papel (tabela de rotas × papéis); migrações aplicam-se do zero; barramento com handler que falha não afeta os outros; *seed* repetível.
+
+## Interface HOUSE-02
+
+O backend disponibiliza `POST /api/households/{household_id}/rooms`, `POST /api/households/{household_id}/invitations`, `POST /api/invitations/accept` e `POST /api/households/{household_id}/memberships/{membership_id}/revoke`. O contrato das respostas mantém `RoomView`, `MemberView` e `MembershipSelfView`. Email, `auth_subject` e hash do token não são publicados nos DTOs. [Estados, erros, matriz ponderada e integrações](../architecture/house-02-memberships.md).
+
+**Pré-condição real:** Authentik tem de disponibilizar `email_verified=true` apenas após verificar efetivamente o endereço; o mapping padrão não basta. HOUSE-05 implementa a experiência visual. Os eventos de alteração de membership são trabalho de integração futura, não reivindicados por este PR.
