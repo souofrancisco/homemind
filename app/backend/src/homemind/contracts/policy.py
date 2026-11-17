@@ -95,6 +95,9 @@ class PolicyDecision(ContractModel):
                 raise ValueError("pedido de outro consumo")
             if self.confirmation_request.expires_at != self.expires_at:
                 raise ValueError("prazo divergente")
-        if self.status is PolicyStatus.fallback and self.method is not AttributionMethod.equal_fallback:
+        if (
+            self.status is PolicyStatus.fallback
+            and self.method is not AttributionMethod.equal_fallback
+        ):
             raise ValueError("fallback MVP tem de ser equal_fallback")
         return self
