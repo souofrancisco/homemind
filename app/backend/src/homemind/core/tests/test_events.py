@@ -448,7 +448,8 @@ def test_replay_into_isolated_database_is_idempotent():
         for e in fx.event_samples():
             await sbus.publish(e)
         events = src.run_sync(lambda c: load_events(c))
-        assert len(events) == 18
+        n = len(fx.event_samples())
+        assert len(events) == n
 
         dst = make_db()  # base isolada
         dbus = EventBus(dst)
@@ -456,11 +457,11 @@ def test_replay_into_isolated_database_is_idempotent():
         dbus.subscribe("c", eff.handler)
         await dbus.start()
         await replay(events, dbus)
-        await until(lambda: len(eff.rows) == 18)
+        await until(lambda: len(eff.rows) == n)
         await replay(events, dbus)  # repetir o replay não duplica nada
         await asyncio.sleep(0.05)
         await dbus.stop()
-        assert len(eff.rows) == 18 and count(dst, "SELECT count(*) FROM domain_event") == 18
+        assert len(eff.rows) == n and count(dst, "SELECT count(*) FROM domain_event") == n
         # tipos e conteúdo reconstruídos fielmente a partir da base
         assert [s.event for s in dst.run_sync(lambda c: load_events(c))] == [
             e.event for e in events

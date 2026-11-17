@@ -36,7 +36,7 @@ A API que já existia (ObjectOS) está em [api-implementada.md](api-implementada
 
 ## 3. Matriz de contratos
 
-Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), `household.py`, `devices.py`, `energy.py`, `presence.py`, `billing.py`, `notification.py`, `agent.py`, `domain_events.py`, `api.py` (erros e `OPENAPI_MODELS`), `fixtures.py` (determinísticas). Os contratos ObjectOS (`base.py`, `eventos.py`, `home.py`, `regras.py`, `simulacao.py`, `video.py`, `visao.py`) **não foram tocados**.
+Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), `household.py`, `devices.py`, `energy.py`, `presence.py`, `sensors.py`, `safety.py`, `billing.py`, `notification.py`, `agent.py`, `domain_events.py`, `api.py` (erros e `OPENAPI_MODELS`), `fixtures.py` (determinísticas). Os contratos ObjectOS (`base.py`, `eventos.py`, `home.py`, `regras.py`, `simulacao.py`, `video.py`, `visao.py`) **não foram tocados**.
 
 | Contrato | Produtor (dono) | Consumidores | Persistência | Testes | Pendente |
 |---|---|---|---|---|---|
@@ -46,12 +46,15 @@ Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), 
 | `EnergyReading`, `PowerStep` | P1 | P1 (P4 só o resumo) | PLANEADA (retenção P-08) | modelos + evento | Limiar de `stale` |
 | `ApplianceMatch`, `ConsumptionEvent` | P1 | P4, P3 | PLANEADA (P1) | modelos + cenário | Limiar de «bate certo» (0,9?) |
 | `DoorCrossed`, `PresenceEvent`, `PersonPresence` | P2 | P4 (regra C), P3 | PLANEADA (P2) | modelos | Tolerância 20–30 min na fusão |
+| `PresenceEvent(source=appliance)`, `PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`, `PresenceDevice`/`PresenceDeviceView`, `CameraStatus` (**PROPOSTA**, D-31) | P2 | P3 (pedido), app (DTOs), P2 | PLANEADA (P2) | modelos + fixtures | Tolerância; retenção (P-20) |
+| `SensorReading` (contacto, fumo, temperatura, humidade; `unknown` sem valor) (**PROPOSTA**, D-31) | P1 (MCP-03) | P2 (SAFE) | PLANEADA (P1) | modelos | Capacidades reais do kit (MCP-03) |
+| `SafetyAlert` (janela aberta + aquecimento, fumo) (**PROPOSTA**, D-31) | P2 | P3 (→ `Notification`, `ProposedAction`) | PLANEADA (P2) | modelos | Autorização do senhorio para fumo |
 | `Attribution` (+`supersede`) | P4 | P3, agente | PLANEADA: índice único parcial `(consumption_event_id) WHERE status='active'` | modelos + cenário | — |
 | `ElectricityBill`, `BillAllocation` (+`validate_allocations`) | P4 | UI, agente, P3 | PLANEADA (P4) | fixtures A/B/C exatas | Entrada da fatura (manual vs LLM) |
 | `Budget`, `BudgetThreshold`, `Contestation` | P4 | P3 | PLANEADA (P4) | modelos | P-10 (individual vs fixa) |
 | `Notification`, `NotificationView`, `NotificationAction/Response/Preferences`, `ConfirmationRequest` | P3 (pedido: P4) | UI, P4 | PLANEADA (P3) | modelos + cenário | P-03 (primeira resposta vence?) |
 | `AgentToolRequest/Result`, `ProposedAction`, `ActionConfirmation`, `ActionExecutionResult`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3) | modelos | P-06 (LLM e dados) |
-| `DomainEvent` (18 tipos), `StoredEvent` | cada módulo | cada módulo | **IMPLEMENTADA** (`domain_event`) | `test_events`, cenário | — |
+| `DomainEvent` (23 tipos), `StoredEvent` | cada módulo | cada módulo | **IMPLEMENTADA** (`domain_event`) | `test_events`, cenário | — |
 
 ## 4. Eventos de domínio
 
@@ -61,10 +64,15 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 |---|---|---|---|---|
 | `energy.reading_recorded` | P1 | `EnergyReading` | P1, P4 | `processed_event` |
 | `energy.step_detected` | P1 | `PowerStep` | P1 | idem |
-| `energy.consumption_detected` | P1 | `ConsumptionEvent` (`ongoing`) | P4, P3 | idem |
+| `energy.consumption_detected` | P1 | `ConsumptionEvent` (`ongoing`; `appliance_owner_resident_id` PROPOSTA) | P4, P3, P2 (pista `appliance`) | idem |
 | `energy.consumption_closed` | P1 | `ConsumptionEvent` (`closed`/`discarded`) | P4 | idem |
 | `presence.door_crossed` | P2 | `DoorCrossed` (anónimo) | P2 | idem |
 | `presence.changed` | P2 | `PersonPresence` | P4, P3 | idem |
+| `presence.cue_recorded` (PROPOSTA) | P2 | `PresenceEvent` (Wi-Fi, manual, aparelho) | P2 | idem |
+| `presence.confirmation_needed` (PROPOSTA) | P2 | `PresenceConfirmationRequest` | P3 | idem |
+| `presence.occupancy_changed` (PROPOSTA) | P2 | `HouseOccupancy` (anónimo) | P2, P3 | idem |
+| `sensor.reading_recorded` (PROPOSTA) | P1 | `SensorReading` | P2 | idem |
+| `safety.alert_raised` (PROPOSTA) | P2 | `SafetyAlert` (o mesmo `id` volta com `status=resolved`) | P3 | idem |
 | `billing.confirmation_needed` | P4 | `ConfirmationRequest` | P3 | idem |
 | `billing.attribution_changed` | P4 | `Attribution` | P3, P4 | idem |
 | `billing.bill_created` / `bill_finalized` | P4 | `BillRef` | P3, UI | idem |
@@ -139,8 +147,10 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | Método | Rota | Papéis | Notas |
 |---|---|---|---|
 | `GET` | `/api/households/{id}/presence` | T | Estado dos moradores com `presence_opt_in`; **L: 403** |
-| `PUT` | `/api/presence/me` | T | `{ "state": "in" \| "out" }` (substitui «cheguei/saí») |
-| `GET` | `/api/presence/camera/status` | O | Só diagnóstico (FPS, `camera_ok`); sem imagens ao senhorio |
+| `PUT` | `/api/presence/me` | T | `PresenceMeIn` `{ "state": "in" \| "out" }` (substitui «cheguei/saí») |
+| `GET` | `/api/presence/camera/status` | O | `CameraStatus`: só diagnóstico (FPS, `camera_ok`, fonte e origem); sem imagens nem URL |
+| `GET` | `/api/households/{id}/occupancy` | T | `HouseOccupancy` (PROPOSTA): número de pessoas e visitas, sem nomes; **L: 403** |
+| `GET`·`POST`·`DELETE` | `/api/presence/devices` | T (own) | `PresenceDeviceView` (PROPOSTA): telemóvel para o Wi-Fi, consentimento e revogação; nunca o MAC |
 
 ### Atribuição, fatura e recibos (P4)
 
