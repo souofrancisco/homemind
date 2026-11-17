@@ -258,3 +258,32 @@ def test_vigiar_camara_publica_so_mudancas(tmp_path):
         assert [m.type for m in msgs] == ["event", "home_state"]
 
     correr(cenario())
+
+
+def test_gesto_do_mesmo_modo_em_espera_cancela_suspensao(tmp_path):
+    async def cenario():
+        e, home, _ = montar(tmp_path)
+        await e.iniciar()
+        await e.processar(levantar("livro"))
+        await e.processar(presenca(False))  # presença falhou com a pessoa ainda lá
+        await asyncio.sleep(ESPERA - AVISO + 0.05)  # já em aviso (20%)
+        await e.processar(levantar("livro"))
+        assert e.estado == Estado.ATIVO and e.presenca is True and home.lampada.brilho == 40
+        await asyncio.sleep(ESPERA + 0.1)
+        assert e.estado == Estado.ATIVO and home.lampada.ligada  # não suspendeu
+
+    correr(cenario())
+
+
+def test_gesto_com_casa_suspensa_repoe_e_mantem_modo(tmp_path):
+    async def cenario():
+        e, home, _ = montar(tmp_path)
+        await e.iniciar()
+        await e.processar(levantar("livro"))
+        await e.processar(presenca(False))
+        await asyncio.sleep(ESPERA + 0.05)
+        assert e.estado == Estado.SUSPENSO
+        await e.processar(levantar("livro"))
+        assert e.estado == Estado.ATIVO and e.modo.id == "leitura" and home.tomada.ligada
+
+    correr(cenario())
