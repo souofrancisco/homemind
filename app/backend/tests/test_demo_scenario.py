@@ -312,14 +312,29 @@ def test_existing_unmarked_sqlite_refused_and_preserved(store):
         assert conn.execute("SELECT value FROM important_real_data").fetchone()[0] == "preserve"
 
 
-def test_demo_reset_refuses_sidecars_even_when_database_is_missing(store):
+@pytest.mark.parametrize("action", ("prepare", "reset"))
+def test_demo_operations_refuse_sidecars_even_when_database_is_missing(store, action):
     store.root.mkdir()
     wal = Path(f"{store.path}-wal")
     wal.write_bytes(b"unowned wal data")
     with pytest.raises(DemoSafetyError, match="WAL/SHM"):
-        store.prepare()
+        getattr(store, action)()
     assert wal.read_bytes() == b"unowned wal data"
     assert not store.path.exists()
+
+
+def test_demo_reset_refuses_live_sidecars_without_replacing_database(store):
+    store.prepare()
+    original = store.path.read_bytes()
+    wal = Path(f"{store.path}-wal")
+    shm = Path(f"{store.path}-shm")
+    wal.write_bytes(b"unowned wal data")
+    shm.write_bytes(b"unowned shm data")
+    with pytest.raises(DemoSafetyError, match="WAL/SHM"):
+        store.reset()
+    assert store.path.read_bytes() == original
+    assert wal.read_bytes() == b"unowned wal data"
+    assert shm.read_bytes() == b"unowned shm data"
 
 
 def test_demo_reset_refuses_symlinked_parent_path(store, tmp_path):
@@ -329,7 +344,7 @@ def test_demo_reset_refuses_symlinked_parent_path(store, tmp_path):
     linked.symlink_to(actual, target_is_directory=True)
     store_through_link = DemoStore(linked / "private")
     with pytest.raises(DemoSafetyError, match="symlink"):
-        store_through_link.prepare()
+        store_through_link.reset()
     assert list(actual.iterdir()) == []
 
 
