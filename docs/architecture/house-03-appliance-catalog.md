@@ -188,3 +188,8 @@ reconheça a assinatura noutro medidor. Um histórico com alterações retroativ
 reinterpretem silenciosamente períodos faturados. Alterações a uma divisão ou
 proprietário fora da casa são rejeitadas pela aplicação e por triggers SQL. Os
 segmentos não substituem leituras de energia por segmento nem decidem uma divisão.
+
+## Estado de integração (17/11/2026)
+
+- **Consumidores na `main`:** nenhum. O BILL-02 (`features/billing/attribution.py`) ainda não importa `ApplianceCatalog`; a ligação catálogo → atribuição é um follow-up de P1/P4 e **não** é feita aqui (sem segundo motor de atribuição). Revisão formal de P1/P4 ao PR #142: não existia à data do merge.
+- Teste cruzado HOUSE-02 × HOUSE-03 (`features/appliances/tests/test_house02_integration.py`): convite real → membership → aparelho pessoal → revogação → histórico preservado.
