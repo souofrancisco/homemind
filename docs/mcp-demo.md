@@ -8,9 +8,10 @@ Fluxo: câmara → gesto → evento → regra → motor → `McpHome` → MCP Al
 
 `MCP_ENDPOINT`, `MCP_API_KEY`, `MCP_CLIENT_TYPE`, `MCP_OAUTH_*`. Nunca commitar o `.env`.
 
-Opcional: `MCP_INSTANTPOWER_UNIT` (`W`, `dW` = 0,1 W ou `mW`). O MCP não declara a unidade de
-`instantPower`; sem esta variável `consumo_w` fica `null`. Só a definir depois de confirmar a
-unidade com uma carga conhecida (ver `docs/mcp-capabilities.md`).
+`MCP_INSTANTPOWER_UNIT` (`W`, `dW` = 0,1 W ou `mW`). O MCP não declara a unidade de
+`instantPower`; sem esta variável `consumo_w` fica `null`. No kit real a unidade foi confirmada em
+**W** por medição com carga de referência (#12, ver `docs/mcp-capabilities.md`): usar
+`MCP_INSTANTPOWER_UNIT=W` para ter `consumo_w`. Com outro kit, confirmar de novo antes de definir.
 
 ## 2. Login OAuth (só no host, interativo)
 
