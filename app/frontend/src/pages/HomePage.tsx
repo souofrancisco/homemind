@@ -4,17 +4,16 @@ import { notifications } from "@mantine/notifications";
 import { IconAlertCircle, IconAutomation, IconBolt, IconBulb, IconCamera, IconHome, IconPower, IconTimeline } from "@tabler/icons-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getHomeService } from "./homeApi";
-import { useHomeSocket } from "./useHomeSocket";
-import type { HomeStatus } from "./types";
+import { useHome } from "../hooks/useHome";
+import { homeService } from "../services/home";
+import type { HomeStatus } from "../types/home";
 
-const service = getHomeService();
 const statusLabels: Record<HomeStatus, string> = { inativo: "Inativo", ativo: "Ativo", em_espera: "Em espera", suspenso: "Suspenso" };
 const modeLabels: Record<string, string> = { leitura: "Leitura", cinema: "Cinema", cafe: "Pausa para café" };
 const when = (value: string) => new Intl.DateTimeFormat("pt-PT", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 
-export default function Dashboard() {
-  const { state, events, online, source } = useHomeSocket();
+export default function HomePage() {
+  const { state, events, online, source } = useHome();
   const navigate = useNavigate();
   const [powerOpened, powerModal] = useDisclosure(false);
   const [busy, setBusy] = useState(false);
@@ -24,7 +23,7 @@ export default function Dashboard() {
   const turnOff = async () => {
     setBusy(true);
     try {
-      const result = await service.turnOff();
+      const result = await homeService.turnOff();
       notifications.show({ color: result.success ? "teal" : "orange", title: result.success ? "Pedido concluído" : "Resultado incompleto", message: result.message });
       if (result.success) powerModal.close();
     } catch (error) {

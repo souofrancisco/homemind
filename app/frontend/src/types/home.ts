@@ -1,3 +1,15 @@
+export interface HomeService {
+  mode: "mock" | "api";
+  connect(onState: (state: HomeState) => void, onEvent: (event: EventLogItem) => void, onStatus: (online: boolean) => void): () => void;
+  getEvents(): Promise<EventLogItem[]>;
+  getRules(): Promise<HomeRule[]>;
+  setRuleEnabled(id: string, enabled: boolean): Promise<HomeRule>;
+  deleteRule(id: string): Promise<void>;
+  proposeRule(text: string): Promise<RuleProposal>;
+  saveRule(rule: RuleDraft): Promise<HomeRule>;
+  turnOff(): Promise<OffResult>;
+}
+
 export type HomeMode = string | null;
 export type HomeStatus = "ativo" | "em_espera" | "suspenso" | "inativo";
 export type DataSource = "fake" | "mcp";

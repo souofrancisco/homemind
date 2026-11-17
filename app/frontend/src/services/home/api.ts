@@ -1,19 +1,7 @@
-import { api, request } from "../auth/client";
-import type { EventLogItem, HomeRule, HomeState, OffResult, RuleDraft, RuleProposal } from "./types";
+import type { EventLogItem, HomeRule, HomeService, HomeState, OffResult, RuleProposal } from "../../types/home";
+import { api, request } from "../api/client";
 
-export interface HomeService {
-  mode: "mock" | "api";
-  connect(onState: (state: HomeState) => void, onEvent: (event: EventLogItem) => void, onStatus: (online: boolean) => void): () => void;
-  getEvents(): Promise<EventLogItem[]>;
-  getRules(): Promise<HomeRule[]>;
-  setRuleEnabled(id: string, enabled: boolean): Promise<HomeRule>;
-  deleteRule(id: string): Promise<void>;
-  proposeRule(text: string): Promise<RuleProposal>;
-  saveRule(rule: RuleDraft): Promise<HomeRule>;
-  turnOff(): Promise<OffResult>;
-}
-
-const apiService: HomeService = {
+export const apiService: HomeService = {
   mode: "api",
   connect(onState, onEvent, onStatus) {
     let closed = false;
@@ -51,8 +39,3 @@ const apiService: HomeService = {
   saveRule: (rule) => request<HomeRule>("/rules", { method: "POST", body: JSON.stringify({ ...rule, enabled: false }) }),
   turnOff: () => request<OffResult>("/off", { method: "POST", body: JSON.stringify({}) }),
 };
-
-export const getHomeService = () => import.meta.env.VITE_OBJECTOS_SOURCE === "api" ? apiService : mockService;
-
-// Import kept below to avoid coupling components to the selected implementation.
-import { mockService } from "./mockHome";

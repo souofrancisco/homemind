@@ -1,7 +1,7 @@
 import { Badge, Card, Code, Group, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 import { useMemo, useState } from "react";
-import { useHomeSocket } from "./useHomeSocket";
-import type { EventCategory, EventLogItem } from "./types";
+import { useHome } from "../hooks/useHome";
+import type { EventCategory, EventLogItem } from "../types/home";
 
 const categories: { value: string; label: string }[] = [
   { value: "presence", label: "Presença" }, { value: "object", label: "Objeto detetado" }, { value: "gesture", label: "Gesto confirmado" },
@@ -26,7 +26,7 @@ function OperationCard({ events }: { events: EventLogItem[] }) {
 }
 
 export default function EventsPage() {
-  const { events, source } = useHomeSocket();
+  const { events, source } = useHome();
   const [category, setCategory] = useState<string | null>(null);
   const [level, setLevel] = useState<string | null>(null);
   const [period, setPeriod] = useState<string | null>("7d");

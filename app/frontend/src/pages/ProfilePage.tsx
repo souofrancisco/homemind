@@ -3,11 +3,11 @@ import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconDownload, IconLogout, IconShieldLock, IconTrash } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "../auth/AuthProvider";
-import { getMe, type Me } from "../auth/api";
-import { demoSuggestionDecisions, demoSuggestions } from "../dashboard/demoSuggestions";
-import { useHomeSocket } from "../dashboard/useHomeSocket";
-import type { MemorySnapshot } from "../dashboard/types";
+import { useAuth } from "../app/providers/AuthProvider";
+import { useHome } from "../hooks/useHome";
+import { demoSuggestionDecisions, demoSuggestions } from "../mocks/suggestions";
+import { getMe, type Me } from "../services/auth/me";
+import type { MemorySnapshot } from "../types/home";
 
 function memoryMarkdown(memory: MemorySnapshot) {
   return [
@@ -19,9 +19,9 @@ function memoryMarkdown(memory: MemorySnapshot) {
   ].join("\n");
 }
 
-export default function Account() {
+export default function ProfilePage() {
   const { logout } = useAuth();
-  const { source } = useHomeSocket();
+  const { source } = useHome();
   const [me, setMe] = useState<Me | null>(null);
   const [failed, setFailed] = useState(false);
   const [learningEnabled, setLearningEnabled] = useState(true);

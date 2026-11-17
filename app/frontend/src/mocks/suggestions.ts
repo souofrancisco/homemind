@@ -1,4 +1,4 @@
-import type { RoutineSuggestion } from "./types";
+import type { RoutineSuggestion } from "../types/home";
 
 export const demoSuggestions: RoutineSuggestion[] = [
   {

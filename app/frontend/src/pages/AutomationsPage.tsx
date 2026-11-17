@@ -3,15 +3,13 @@ import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconAlertCircle, IconSparkles, IconTrash } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { getHomeService } from "./homeApi";
-import { demoSuggestionDecisions, demoSuggestions } from "./demoSuggestions";
-import { useHomeSocket } from "./useHomeSocket";
-import type { HomeRule, RuleDraft, RoutineSuggestion } from "./types";
-
-const service = getHomeService();
+import { useHome } from "../hooks/useHome";
+import { demoSuggestionDecisions, demoSuggestions } from "../mocks/suggestions";
+import { homeService as service } from "../services/home";
+import type { HomeRule, RoutineSuggestion, RuleDraft } from "../types/home";
 
 export default function AutomationsPage() {
-  const { source } = useHomeSocket();
+  const { source } = useHome();
   const [rules, setRules] = useState<HomeRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);

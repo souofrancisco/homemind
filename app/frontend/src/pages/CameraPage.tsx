@@ -1,8 +1,8 @@
 import { Accordion, Alert, Badge, Button, Code, Group, Loader, Paper, SegmentedControl, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 import { IconAlertCircle, IconCamera, IconCheck, IconCoffee, IconDeviceTv, IconMoon, IconPlugConnectedX, IconBook2, IconUserCheck } from "@tabler/icons-react";
 import { useState } from "react";
-import { simulateScenario, type DemoScenario } from "./mockHome";
-import { useHomeSocket } from "./useHomeSocket";
+import { useHome } from "../hooks/useHome";
+import { simulateScenario, type DemoScenario } from "../mocks/home";
 
 const scenarios: { id: DemoScenario; label: string; description: string; consequence: string; icon: typeof IconCamera }[] = [
   { id: "book", label: "Livro", description: "Gesto de leitura", consequence: "Ativa o modo Leitura.", icon: IconBook2 },
@@ -25,7 +25,7 @@ function findMetric(details: Record<string, unknown> | undefined, keys: string[]
 }
 
 export default function CameraPage() {
-  const { state, events, source, online } = useHomeSocket();
+  const { state, events, source, online } = useHome();
   const [view, setView] = useState("simples");
   const simulated = source === "mock" || state?.backend === "fake";
   const detected = events.find((event) => event.category === "object" || /objeto detetado/i.test(event.message));

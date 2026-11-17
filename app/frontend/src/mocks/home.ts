@@ -1,5 +1,4 @@
-import type { HomeRule, HomeState, EventLogItem, OffResult, RuleDraft, RuleProposal } from "./types";
-import type { HomeService } from "./homeApi";
+import type { EventLogItem, HomeRule, HomeService, HomeState, OffResult, RuleDraft, RuleProposal } from "../types/home";
 
 export type DemoScenario = "book" | "remote" | "mug" | "absence" | "return" | "connection";
 
