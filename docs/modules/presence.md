@@ -65,8 +65,8 @@ há mais de `VIDEO_SEM_FRAME_S` ⇒ `camera_ok=false` e sem `fps`; **nunca** se 
 
 ## Contagem na porta (PRES-02) — IMPLEMENTADO (lógica testada com detetor falso)
 
-`features/presence/{door,runner,yolo}.py`. Cadeia: `FonteVideo` → **máscara a preto fora da soleira**
-(`mascarar`, sobre uma cópia, antes da inferência) → `DetetorYoloPessoas` (YOLO11 só classe «pessoa» +
+`features/presence/{door,runner,yolo}.py`. Cadeia: `FonteVideo` → **recorte à soleira (o resto é descartado)**
+(`recortar`: o detetor só recebe o recorte da soleira, uma cópia, e as caixas voltam ao frame inteiro) → `DetetorYoloPessoas` (YOLO11 só classe «pessoa» +
 ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` → `presence.door_crossed`
 (`DoorCrossed`, `provenance.kind=inferred`, `origin` da fonte: SIMULADA com clip/telemóvel).
 

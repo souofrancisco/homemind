@@ -1,7 +1,7 @@
 """Contagem de entradas/saídas na soleira (PRES-02). Lógica pura: sem YOLO, sem rede, sem I/O.
 
-Privacidade: a imagem só é vista aqui para pintar a preto tudo o que está fora da soleira
-(`mascarar`), ANTES de qualquer inferência. Nada é guardado: o contador só recebe caixas e
+Privacidade: a imagem só é vista aqui para recortar a soleira (o resto é descartado)
+(`recortar`), ANTES de qualquer inferência. Nada é guardado: o contador só recebe caixas e
 confianças; `track_id` é efémero (vive em memória enquanto a pessoa é vista) e nunca é
 persistido nem sai deste módulo. Ninguém é identificado: só sai «entrou»/«saiu».
 
@@ -88,15 +88,15 @@ class Soleira:
         return ((x2 - x1) * (y - y1) - (y2 - y1) * (x - x1)) / comprimento
 
 
-def mascarar(imagem: np.ndarray, roi: Retangulo) -> np.ndarray:
-    """Cópia da imagem toda a preto exceto a roi. Não altera o frame partilhado com o MJPEG."""
+def recortar(imagem: np.ndarray, roi: Retangulo) -> tuple[np.ndarray, tuple[int, int]]:
+    """Recorta a soleira (cópia): tudo o que está fora da roi deixa de existir ANTES da inferência
+    (mais privado que pintar a preto e dá mais resolução à soleira). A roi é um retângulo, por
+    isso o recorte já não tem nada a mascarar dentro. Devolve (recorte, (x0, y0) em píxeis)."""
     altura, largura = imagem.shape[:2]
     x1, y1, x2, y2 = roi
     c0, c1 = int(x1 * largura), math.ceil(x2 * largura)
     l0, l1 = int(y1 * altura), math.ceil(y2 * altura)
-    saida = np.zeros_like(imagem)
-    saida[l0:l1, c0:c1] = imagem[l0:l1, c0:c1]
-    return saida
+    return imagem[l0:l1, c0:c1].copy(), (c0, l0)
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,5 +1,6 @@
 import os
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -13,7 +14,7 @@ from homemind.contracts.video import FrameVideo
 from homemind.core.db import Database, migrate
 from homemind.core.events import EventBus
 from homemind.features.households.repo import seed_demo
-from homemind.features.presence.door import ContadorPorta
+from homemind.features.presence.door import ContadorPorta, Soleira
 from homemind.features.presence.runner import (
     ProcessadorPorta,
     ThreadPorta,
@@ -28,7 +29,11 @@ from homemind.features.presence.tests._fakes import (
     juntar,
     trajeto,
 )
-from homemind.features.presence.yolo import DetetorYoloPessoas, pessoas_de_resultado
+from homemind.features.presence.yolo import (
+    DetetorYoloPessoas,
+    pasta_modelos,
+    pessoas_de_resultado,
+)
 
 CASA = HOUSEHOLD
 AGORA = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
@@ -86,13 +91,29 @@ def test_cenario_gera_n_eventos_com_o_sentido_certo_e_so_metadados():
         assert e.ts <= AGORA
 
 
-def test_o_detetor_so_ve_a_soleira_o_resto_chega_a_preto():
-    p, det, t = processador(lambda e: None, roteiro=[[]] * 3)
-    correr(p, t, 3)
-    assert len(det.imagens_vistas) == 3
-    for img in det.imagens_vistas:
-        assert (img[:, :20] == 0).all() and (img[:, 80:] == 0).all()
-        assert (img[:, 20:80] == 200).all()
+def test_o_detetor_so_ve_o_recorte_da_soleira_e_as_caixas_voltam_ao_frame_inteiro():
+    """Soleira com origem fora de (0, 0): o detetor recebe só o recorte e devolve coordenadas
+    do recorte; o resultado tem de ser o mesmo que se tivesse visto o frame inteiro."""
+    soleira = Soleira(roi=(0.2, 0.2, 0.8, 0.9), linha=(0.2, 0.5, 0.8, 0.5), sinal_interior=1)
+    x0, y0 = 20, 20  # píxeis da origem do recorte (frame 100x100)
+
+    class DetetorDoRecorte(DetetorRoteirizado):
+        def detetar(self, imagem):
+            return [
+                replace(p, x1=p.x1 - x0, x2=p.x2 - x0, y1=p.y1 - y0, y2=p.y2 - y0)
+                for p in super().detetar(imagem)
+            ]
+
+    roteiro = juntar(trajeto(1, 0.3, 0.8, 8), trajeto(2, 0.8, 0.3, 8), pausa=15)
+    det = DetetorDoRecorte(roteiro)
+    t = {"v": 0.0}
+    p = ProcessadorPorta(
+        soleira, det, ContadorPorta(soleira), lambda e: None, CASA, Origin.simulated,
+        relogio=lambda: t["v"], agora=lambda: AGORA,
+    )  # fmt: skip
+    eventos = correr(p, t, len(roteiro) + 40)
+    assert [e.data.direction for e in eventos] == [D.entered, D.left]
+    assert all(i.shape == (70, 60, 3) and (i == 200).all() for i in det.imagens_vistas)
 
 
 def test_zero_imagens_persistidas(tmp_path, monkeypatch):
@@ -216,3 +237,32 @@ def test_detetor_yolo_pede_so_pessoas_com_bytetrack():
     assert d.detetar(np.zeros((8, 8, 3), np.uint8)) == ()
     assert chamadas[0]["classes"] == [0]
     assert chamadas[0]["persist"] is True and chamadas[0]["tracker"] == "bytetrack.yaml"
+
+
+def test_pasta_de_modelos_relativa_resolve_a_partir_de_app_backend(tmp_path, monkeypatch):
+    from homemind.core.config import Settings
+
+    monkeypatch.chdir(tmp_path)  # arrancar noutro diretório não muda onde estão os pesos
+    pasta = pasta_modelos(Settings(visao_pasta_modelos="data/modelos"))
+    assert pasta.is_absolute() and pasta.parts[-2:] == ("data", "modelos")
+    assert pasta.parent.parent.joinpath("pyproject.toml").is_file()
+    assert pasta_modelos(Settings(visao_pasta_modelos=str(tmp_path))) == tmp_path
+
+
+def test_preparar_procura_os_pesos_na_pasta_resolvida(tmp_path, monkeypatch):
+    import pytest
+
+    from homemind.core.config import Settings
+
+    monkeypatch.chdir(tmp_path)
+    d = DetetorYoloPessoas(Settings(visao_pasta_modelos=str(tmp_path / "vazia")))
+    with pytest.raises(FileNotFoundError, match="pesos YOLO em falta"):
+        d.preparar()
+    (tmp_path / "vazia").mkdir()
+    (tmp_path / "vazia" / "yolo11s.pt").write_bytes(b"x")  # existe: segue para o import (extra)
+    try:
+        d.preparar()
+    except FileNotFoundError:
+        raise AssertionError("os pesos existem na pasta resolvida") from None
+    except Exception:
+        pass  # sem o extra `visao` ou pesos falsos: só interessa que passou a verificação

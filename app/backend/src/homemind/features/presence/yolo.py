@@ -16,6 +16,13 @@ from homemind.features.presence.door import PessoaCaixa
 from homemind.features.visao.dispositivo import escolher_device
 
 COCO_PESSOA = 0
+RAIZ_BACKEND = Path(__file__).resolve().parents[4]  # app/backend
+
+
+def pasta_modelos(cfg: Settings) -> Path:
+    """`VISAO_PASTA_MODELOS` relativa conta a partir de app/backend, não do diretório atual."""
+    pasta = Path(cfg.visao_pasta_modelos).expanduser()
+    return pasta if pasta.is_absolute() else RAIZ_BACKEND / pasta
 
 
 def pessoas_de_resultado(res: Any) -> tuple[PessoaCaixa, ...]:
@@ -68,9 +75,7 @@ class DetetorYoloPessoas:
         if self._modelo is not None:
             return
         cfg = self._cfg
-        peso = Path(cfg.visao_pasta_modelos) / (
-            cfg.visao_modelo_objetos or f"yolo11{cfg.visao_variante}.pt"
-        )
+        peso = pasta_modelos(cfg) / (cfg.visao_modelo_objetos or f"yolo11{cfg.visao_variante}.pt")
         if not peso.is_file():
             raise FileNotFoundError(
                 f"pesos YOLO em falta ({peso.name});"

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from homemind.contracts.presence import DoorDirection as D
-from homemind.features.presence.door import ContadorPorta, Soleira, mascarar, parse_retangulo
+from homemind.features.presence.door import ContadorPorta, Soleira, parse_retangulo, recortar
 from homemind.features.presence.tests._fakes import (
     ALTURA,
     FPS,
@@ -113,12 +113,14 @@ def test_estado_de_pistas_e_esquecido():
     assert c._pistas == {}  # o track_id não fica guardado
 
 
-def test_mascarar_pinta_a_preto_tudo_fora_da_soleira_sem_alterar_o_original():
-    img = np.full((ALTURA, LARGURA, 3), 255, np.uint8)
-    out = mascarar(img, SOLEIRA.roi)
-    assert out is not img and (img == 255).all()
-    assert (out[:, :20] == 0).all() and (out[:, 80:] == 0).all()
-    assert (out[:, 20:80] == 255).all()
+def test_recortar_devolve_so_a_soleira_e_a_origem_sem_alterar_o_original():
+    img = np.arange(ALTURA * LARGURA * 3, dtype=np.uint8).reshape(ALTURA, LARGURA, 3)
+    original = img.copy()
+    out, (x0, y0) = recortar(img, (0.2, 0.1, 0.8, 0.9))
+    assert (x0, y0) == (20, 10) and out.shape == (80, 60, 3)
+    assert (out == original[10:90, 20:80]).all()
+    out[:] = 0
+    assert (img == original).all()  # é uma cópia
 
 
 @pytest.mark.parametrize(

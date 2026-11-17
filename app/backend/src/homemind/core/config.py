@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     presence_detetor: str = (
         ""  # modulo:Classe; YOLO real: homemind.features.presence.yolo:DetetorYoloPessoas
     )
-    presence_door_roi: str = ""  # retângulo da soleira; tudo fora é pintado a preto antes do YOLO
+    presence_door_roi: str = ""  # retângulo da soleira; o YOLO só recebe este recorte
     presence_door_line: str = ""  # linha orientada (início -> fim) dentro da soleira
     presence_door_inside_sign: Literal[1, -1] = 1  # sinal do lado de DENTRO (ver door.py)
     presence_door_cooldown_s: float = Field(

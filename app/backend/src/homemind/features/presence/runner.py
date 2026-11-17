@@ -1,6 +1,6 @@
 """Thread da porta (PRES-02): FonteVideo -> máscara -> detetor de pessoas -> contador -> evento.
 
-Só frames novos. O frame é mascarado a preto fora da soleira antes do detetor e nunca é guardado,
+Só frames novos. O frame é recortado à soleira antes do detetor e nunca é guardado,
 registado nem enviado: sai apenas `presence.door_crossed` (sentido e confiança). Sem câmara não há
 frames novos, logo não há eventos; e nunca se infere «casa vazia» daqui.
 """
@@ -10,6 +10,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -22,7 +23,7 @@ from homemind.features.presence.door import (
     DetetorPessoas,
     Passagem,
     Soleira,
-    mascarar,
+    recortar,
 )
 
 log = logging.getLogger(__name__)
@@ -77,7 +78,12 @@ class ProcessadorPorta:
 
     def processar(self, frame: FrameVideo) -> list[PresenceDoorCrossed]:
         altura, largura = frame.imagem.shape[:2]
-        pessoas = self.detetor.detetar(mascarar(frame.imagem, self.soleira.roi))
+        recorte, (x0, y0) = recortar(frame.imagem, self.soleira.roi)
+        # O detetor só vê a soleira; as caixas voltam às coordenadas do frame inteiro.
+        pessoas = [
+            replace(p, x1=p.x1 + x0, x2=p.x2 + x0, y1=p.y1 + y0, y2=p.y2 + y0)
+            for p in self.detetor.detetar(recorte)
+        ]
         passagens = self.contador.atualizar(frame.t, pessoas, largura, altura)
         agora, t_agora = self._agora(), self._relogio()
         eventos = [
