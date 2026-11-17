@@ -35,9 +35,7 @@ _PHASE_BY_EVENT = {
     "billing.allocation_published": "allocation_published",
 }
 
-OperatorAccess = Annotated[
-    HouseholdAccess, Depends(require_access(Resource.device))
-]
+OperatorAccess = Annotated[HouseholdAccess, Depends(require_access(Resource.device))]
 
 
 class TraceStep(ContractModel):
