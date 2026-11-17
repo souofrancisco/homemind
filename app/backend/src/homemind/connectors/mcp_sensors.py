@@ -35,6 +35,7 @@ def sensor_readings_from_device(
     now: datetime,
     room_id: UUID | None = None,
     stale_after: Mapping[SensorKind, timedelta] | None = None,
+    origin: Origin = Origin.real,
 ) -> list[SensorReading]:
     """Converte contacto ou clima; tipos e valores não suportados ficam desconhecidos."""
     device_type = device.get("type")
@@ -106,7 +107,7 @@ def sensor_readings_from_device(
                 status=status,
                 **values,
                 provenance=Provenance(
-                    origin=Origin.real,
+                    origin=origin,
                     kind=ValueKind.measured if status is SensorStatus.ok else ValueKind.estimated,
                 ),
             )

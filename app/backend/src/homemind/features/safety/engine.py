@@ -1,4 +1,4 @@
-"""Regras de conforto e segurança (SAFE-01 janela+aquecedor). Lógica pura.
+"""Regras de conforto e segurança (SAFE-01 janela+aquecedor, SAFE-03 fumo). Lógica pura.
 
 Dobra eventos de domínio e devolve `safety.alert_raised`. Não escreve no MCP, não executa nada
 e não lê o relógio: o «agora» é o `ts` do evento que está a ser processado (determinístico e
@@ -9,6 +9,7 @@ Princípios:
 - `unknown`/`stale` nunca disparam, nem fecham um alerta: só uma leitura `ok` decide.
 - Um alerta por episódio (`id` estável); a resolução reutiliza o `id` com `status=resolved`.
 - A sugestão (`power=false`) é só proposta; a confirmação humana e a execução são de P3/P1.
+- Fumo é sempre crítico e nunca sugere cortes.
 """
 
 from __future__ import annotations
@@ -47,15 +48,25 @@ class _Window:
 
 
 @dataclass
+class _Smoke:
+    alert: SafetyAlert | None = None
+
+
+@dataclass
 class _House:
     windows: dict[UUID, _Window] = field(default_factory=dict)  # por sensor
+    smoke: dict[UUID, _Smoke] = field(default_factory=dict)
     heaters: dict[UUID, ConsumptionEvent] = field(default_factory=dict)  # consumos a decorrer
     sensors: dict[tuple[SensorKind, UUID], SensorStatus] = field(default_factory=dict)
 
 
 class SafetyEngine:
-    def __init__(self, is_heating: HeatingResolver = no_heating_known) -> None:
+    def __init__(
+        self, is_heating: HeatingResolver = no_heating_known, notify_landlord: bool = False
+    ) -> None:
         self._is_heating = is_heating
+        # Só fumo, e só se a casa autorizar (sem política no contrato: desligado por omissão).
+        self._notify_landlord = notify_landlord
         self._houses: dict[UUID, _House] = {}
 
     def _house(self, household_id: UUID) -> _House:
@@ -77,7 +88,7 @@ class SafetyEngine:
         (nunca visto). Ausência identificada, nunca assumida como «sem fumo»/«janela fechada»."""
         house = self._houses.get(household_id, _House())
         out: dict[SensorKind, str] = {}
-        for kind in (SensorKind.contact,):
+        for kind in (SensorKind.contact, SensorKind.smoke):
             states = [s for (k, _), s in house.sensors.items() if k is kind]
             if not states:
                 out[kind] = "absent"
@@ -93,6 +104,8 @@ class SafetyEngine:
         r = ev.data
         house = self._house(ev.household_id)
         house.sensors[(r.kind, r.device_id)] = r.status
+        if r.kind is SensorKind.smoke:
+            return self._smoke(ev, house, r)
         if r.kind is SensorKind.contact:
             return self._window(ev, house, r)
         return []
@@ -111,6 +124,31 @@ class SafetyEngine:
             w.open_since = r.ts
         w.prov = r.provenance
         return self._evaluate(ev, house, r.device_id)
+
+    def _smoke(self, ev, house: _House, r: SensorReading) -> list[de.SafetyAlertRaised]:
+        s = house.smoke.setdefault(r.device_id, _Smoke())
+        if not r.usable:
+            return []  # sensor sem valor: nem alerta falso nem «tudo bem»
+        if r.smoke_detected and s.alert is None:
+            s.alert = SafetyAlert(
+                id=stable_id("safety", "smoke", str(r.device_id), r.ts.isoformat()),
+                household_id=ev.household_id,
+                kind=SafetyAlertKind.smoke,
+                severity=NotificationSeverity.critical,
+                room_id=r.room_id,
+                sensor_device_id=r.device_id,
+                notify_landlord=self._notify_landlord,
+                started_at=r.ts,
+                provenance=r.provenance,
+            )
+            return [self._wrap(ev, s.alert, r.ts)]
+        if r.smoke_detected is False and s.alert is not None:
+            done = s.alert.model_copy(
+                update={"status": SafetyAlertStatus.resolved, "resolved_at": r.ts}
+            )
+            s.alert = None
+            return [self._wrap(ev, done, r.ts)]
+        return []
 
     # aquecimento --------------------------------------------------------------------------
 

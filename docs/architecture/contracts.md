@@ -1,6 +1,8 @@
 # Contratos
 
-**IMPLEMENTADO (fundação F0)**: modelos Pydantic, eventos de domínio, SQLite, barramento persistente, guardas por casa/papel e OpenAPI→TS. **PLANEADO**: os motores e a maior parte das rotas de P1–P5; **HOUSE-02** acrescenta rotas limitadas de gestão de memberships nesta branch. **DECISÃO PENDENTE**: marcadas por «(proposta)» e listadas em §9 e em [decisions.md](../decisions.md).
+> **HOUSE-03 #86 (IMPLEMENTADO, PR #142):** catálogo temporal de aparelhos e medidores, API filtrada por papel e port tipado de leitura histórica para P1/P4 em `contracts/appliance_catalog.py`. Ver [house-03-appliance-catalog.md](house-03-appliance-catalog.md).
+
+**IMPLEMENTADO (fundação F0)**: modelos Pydantic, eventos de domínio, SQLite, barramento persistente, guardas por casa/papel e OpenAPI→TS. **PLANEADO**: os motores e a maior parte das rotas de P1–P5; **HOUSE-02** (IMPLEMENTADO) acrescenta as rotas de convites e memberships. **DECISÃO PENDENTE**: marcadas por «(proposta)» e listadas em §9 e em [decisions.md](../decisions.md).
 
 A API que já existia (ObjectOS) está em [api-implementada.md](api-implementada.md) e **não mudou**. Entidades e estados: [data-model.md](data-model.md); eventos: [event-flow.md](event-flow.md).
 
@@ -38,9 +40,10 @@ Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), 
 
 | Contrato | Produtor (dono) | Consumidores | Persistência | Testes | Pendente |
 |---|---|---|---|---|---|
-| `Household`, `Room`, `Resident`, `Membership` | P5 | todos (via guardas) | **IMPLEMENTADA** (`0001_core_households.sql`); HOUSE-02 acrescenta `0003_core_membership_invitations.sql` | `tests/test_contracts_foundation`, `households/tests` | HOUSE-02: convites e revogação REST nesta branch; onboarding visual HOUSE-05 |
+| `Household`, `Room`, `Resident`, `Membership` | P5 | todos (via guardas) | **IMPLEMENTADA** (`0001_core_households.sql`); HOUSE-02 acrescenta `0003_core_membership_invitations.sql` | `tests/test_contracts_foundation`, `households/tests` | HOUSE-02: convites e revogação REST IMPLEMENTADOS (activação real bloqueada: Authentik sem `email_verified`); onboarding visual HOUSE-05 |
 | `HouseholdView`, `MemberView`, `MeContext` | P5 | frontend | — (DTO) | `test_authorization`, `test_openapi_contract` | P-04 (o que um inquilino vê dos outros) |
 | `Device`, `DeviceView`, `Appliance`, `ApplianceSignature` | P1 | P1, P4, P3 | PLANEADA (P1: `0030_energy_*.sql`) | modelos | Capacidades por dispositivo |
+| `ApplianceCatalog` port, `MeterContextSegment`, `ApplianceContextSegment` | HOUSE-03 (implementação SQLite) | P1, P4 via injeção tipada | **IMPLEMENTADO** (`contracts/appliance_catalog.py`) | adapter estrutural + catálogo | Composição/injeção no runtime P1/P4 |
 | `EnergyReading`, `PowerStep` | P1 | P1 (P4 só o resumo) | PLANEADA (retenção P-08) | modelos + evento | Limiar de `stale` |
 | `ApplianceMatch`, `ConsumptionEvent` | P1 | P4, P3 | PLANEADA (P1) | modelos + cenário | Limiar de «bate certo» (0,9?) |
 | `DoorCrossed`, `PresenceEvent`, `PersonPresence` | P2 | P4 (regra C), P3 | PLANEADA (P2) | modelos | Tolerância 20–30 min na fusão |

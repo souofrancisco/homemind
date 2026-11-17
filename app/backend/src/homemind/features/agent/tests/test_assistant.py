@@ -246,3 +246,21 @@ def test_nenhuma_resposta_menciona_telegram():
 )
 def test_route_intent(text, tool):
     assert route_intent(text) is tool
+
+
+def test_recurso_lento_nao_e_cancelado_pelo_prazo_total(monkeypatch):
+    """Regressão: o recurso corre fora do prazo total e mantém o motivo original."""
+    import time as _time
+
+    from homemind.features.agent import assistant as mod
+
+    original = mod.fallback_reply
+
+    def lento(*args, **kwargs):
+        _time.sleep(0.1)  # mais do que o prazo total (4 × 0,01 s)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(mod, "fallback_reply", lento)
+    r = run(Assistant(registry(), FakeLLM([GOOD], delay_s=0.2), timeout_s=0.01))
+    assert r.degraded_reason == "llm_unavailable"
+    assert "64,00 €" in r.text

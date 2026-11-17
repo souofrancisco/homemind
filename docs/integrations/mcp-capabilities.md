@@ -168,8 +168,8 @@ Inventário por `get_home_devices` (só leitura; sem IDs, nomes nem MACs). O kit
 
 | Dispositivo (`type`) | Capabilities observadas (valor/forma) | Observado | Adaptador | Simulado |
 |---|---|---|---|---|
-| **Contacto** (`contactSensor`) | `sensorState` (`normal`/`alarm`), `tamperState`, `batteryStatus` (`low`/`medium`/`high`) | **REAL**, confirmado fisicamente | `SensorReading` `contact` (PLANEADO nesta issue) | PLANEADO (MCP-05) |
-| **Clima** (`temperatureSensor`) | `temperatureValue` (min −50, max 60), `humidityValue` (0–100), `batteryLevel` (0–100) | **REAL** | `SensorReading` `temperature` + `humidity` (PLANEADO nesta issue) | PLANEADO (MCP-05) |
+| **Contacto** (`contactSensor`) | `sensorState` (`normal`/`alarm`), `tamperState`, `batteryStatus` (`low`/`medium`/`high`) | **REAL**, confirmado fisicamente | `SensorReading` `contact` (IMPLEMENTADO) | **IMPLEMENTADO** (`FakeKit`, MCP-05) |
+| **Clima** (`temperatureSensor`) | `temperatureValue` (min −50, max 60), `humidityValue` (0–100), `batteryLevel` (0–100) | **REAL** | `SensorReading` `temperature` + `humidity` (IMPLEMENTADO) | **IMPLEMENTADO** (`FakeKit`, MCP-05) |
 | **Fumo** (`smokeSensor`) | só `batteryStatus` (sem estado de alarme) | REAL (só bateria) | **Fora de âmbito** (decisão do utilizador: o detetor de fumo não é usado) | — |
 | **Gateway** (`gateway`) | `alarmState`, `tamperState`, `networkMode` (`ethernet`/`wifi`/`cellular`), `chargeState`, `batteryLevel`, `factoryReset` | REAL | Só estado, sem adaptador de decisão. **`factoryReset` nunca se escreve** | — |
 | Câmara, tomada, lâmpada | ver secções anteriores | REAL | `McpHome` (já implementado) | FakeHome |
@@ -207,11 +207,22 @@ Todos os dispositivos de segurança (`categories` contém `security`: contacto, 
 - `connectors/mcp_sensors.py`: `sensor_readings_from_device` (função pura) converte `contactSensor` em 1 `SensorReading` e `temperatureSensor` em 2 (temperatura e humidade). Contacto `alarm` → `open`, `normal` → `closed`; qualquer outro valor, ausente ou fora de escala (temperatura fora de −40…85, humidade fora de 0…100, bool, NaN) → `unknown` sem valor: **nunca** se assume «fechado» nem um valor por omissão. Os outros tipos (fumo, gateway, tomada…) devolvem `[]`.
 - `connectors/mcp_sensor_collector.py`: `SensorCollector` publica `SensorReadingRecorded` só quando algo muda. Contacto: (estado) — os reportes repetidos com o mesmo estado não geram eventos; clima: cada amostra nova (`observed_at`). Uma transição `ok → stale` publica uma vez; `unavailable()` esquece o estado; erros de `publish` ficam isolados.
 - `McpHome.sensores` (opcional): com o collector definido, cada leitura faz **uma** chamada extra de **leitura** a `get_home_devices` e passa-lhe os dispositivos. Sem o collector não há nenhuma chamada extra. Os dispositivos de segurança continuam fora do caminho de controlo (`_find_devices`); não há escritas.
-- **Por fazer (PLANEADO):** montar o collector no arranque da app (precisa de casa e dispositivos em BD: HOUSE-01/03) e o simulador/FakeHome de sensores (MCP-05). Limiares de `stale` provisórios (2 h).
+- **Por fazer (PLANEADO):** montar o collector no arranque da app (precisa de casa e dispositivos em BD: HOUSE-01/03) (o simulador de sensores já existe: ver «Simulador do kit»). Limiares de `stale` provisórios (2 h).
 
 ### Por confirmar
 
 Latência real abrir/fechar do contacto (teste cronometrado); período de reporte (batimento) do contacto e do clima: os limiares de `stale` do adaptador (2 h para os três) são **provisórios** e foram escolhidos para não marcar como `stale` um sensor saudável e parado; se o alarme de fumo aparece no `alarmState` do gateway (fora de âmbito).
+
+## Simulador do kit (MCP-05) — **IMPLEMENTADO**, tudo **SIMULADO**
+
+`connectors/fake_mcp.py`: `FakeKit` responde como o kit real ao nível da **sessão MCP** (`get_home_devices`, `get_device_details`, `update_device_capabilities`, com os mesmos schemas que passam `_validate_tools`), logo o `McpHome`, os adaptadores e os collectors correm **sem alterações** e sem rede nem hardware.
+
+- **Dispositivos** com o formato JSON observado no kit: tomada (`instantPower` em W sem campo de unidade, `instantVoltage`, `instantCurrent` em mA, `power`, `multiPower` com um interruptor `switch_1`), lâmpada, contacto (`alarm` = aberto) e clima. IDs fixos e claramente simulados (`sim-…`).
+- **Cadência** como no kit: a tomada avança `lastCommunicationTime` em batimentos de 30 s e quando a carga muda; o contacto só quando muda. Relógio injetável (determinístico).
+- **Cenário:** `set_load(watts)`, `open_contact()`/`close_contact()`, `set_climate(...)`, `reset()` (idempotente).
+- **Erros controlados** (os observados no kit real): sessão em baixo, OAuth expirado, escrita recusada (`isError`), escrita aceite e ignorada (lâmpada H1), queda depois de enviar, dispositivo sem contactar a cloud e unidade declarada/ausente.
+- **SIMULADO vs REAL:** os adaptadores e os collectors aceitam `origin` (por omissão `real`); com o simulador usa-se `Origin.simulated` e as leituras saem `simulated/measured`.
+- **Limites:** tensão fixa em 230 V e fator de potência configurável (1,0 por omissão); `todayConsumption` não é simulado (fica 0). Com o simulador cria-se `McpHome(..., simulated=True)`: o estado sai com `backend="fake"` (a UI já o mostra como SIMULADO) e `mcp_ok` sempre `False`, como manda o contrato; sem contrato novo.
 
 ## Verificação física da lâmpada (#10/#11) — 2026-11-17, BLOQUEADA
 

@@ -7,14 +7,12 @@ Sem lifespan, sem tabelas, sem eventos.
 """
 
 import logging
-from functools import lru_cache
 from typing import Annotated
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
 
-from homemind.contracts import fixtures as fx
 from homemind.contracts.agent import AgentMessageIn, AgentResponse
 from homemind.core.access import (
     ClockDep,
@@ -27,8 +25,13 @@ from homemind.core.access import (
 from homemind.features.agent.assistant import Assistant
 from homemind.features.agent.config import get_agent_settings
 from homemind.features.agent.llm import Complete, LLMUnavailable, nvidia_complete
-from homemind.features.agent.providers import BudgetProvider, ConsumptionProvider, ReceiptProvider
-from homemind.features.agent.simulated import EmptyProviders, SimulatedProviders
+from homemind.features.agent.providers import (
+    BudgetProvider,
+    ConsumptionProvider,
+    ProviderSet,
+    ReceiptProvider,
+)
+from homemind.features.agent.sources import RegisteredDep, resolve
 from homemind.features.agent.tools import ToolContext, ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -53,21 +56,12 @@ def get_complete() -> Complete | None:
 
 CompleteDep = Annotated[Complete | None, Depends(get_complete)]
 
-_EMPTY = EmptyProviders()
-
-
-@lru_cache
-def _simulated() -> SimulatedProviders:
-    return SimulatedProviders()
-
 
 def _providers(
-    household_id: UUID, source_kind: str
+    registered: ProviderSet, household_id: UUID, source_kind: str
 ) -> tuple[ConsumptionProvider, BudgetProvider, ReceiptProvider]:
-    """Dados simulados só para a casa de demonstração; as outras não têm dados (D8)."""
-    demo = household_id == fx.HOUSEHOLD and source_kind == "demo"
-    p = _simulated() if demo else _EMPTY
-    return p, p, p
+    """Real registado primeiro; SIMULADO só na casa de demonstração; senão sem dados (D8)."""
+    return resolve(registered, household_id, source_kind)
 
 
 @router.post("/households/{household_id}/agent/messages")
@@ -77,6 +71,7 @@ async def send_message(
     db: DbDep,
     clock: ClockDep,
     complete: CompleteDep,
+    registered: RegisteredDep,
 ) -> AgentResponse:
     """Pergunta do morador ao assistente. O residente e o papel vêm do token, nunca do corpo."""
     now = clock()
@@ -85,7 +80,7 @@ async def send_message(
             "SELECT source_kind, timezone FROM household WHERE id = ?", (str(access.household_id),)
         ).fetchone()
     )
-    consumption, budget, receipt = _providers(access.household_id, row["source_kind"])
+    consumption, budget, receipt = _providers(registered, access.household_id, row["source_kind"])
     ctx = ToolContext(
         household_id=access.household_id,
         resident_id=access.resident_id,

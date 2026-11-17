@@ -35,10 +35,11 @@ Contratos novos (`PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`
 - Relógio = `ts` do evento em processamento (determinístico). Um alerta por episódio (`id` estável); resolve-se (mesmo `id`, `resolved`) quando a janela fecha ou o aquecimento acaba; reabre só com novo episódio (janela fechada e reaberta, ou aquecimento religado). `unknown`/`stale` nunca disparam nem resolvem; sensor sem quarto, quarto diferente ou aparelho não-aquecimento não disparam. `coverage()` identifica sensores ausentes (`absent`).
 - `service.py`: consumidor `safety` (`sensor.reading_recorded`, `energy.consumption_detected/closed`) → `safety.alert_raised`. O estado refaz-se do registo de eventos ao arrancar.
 - `texts.py`: texto pt-PT com origem (SIMULADO/REAL) e o aviso de que a tomada pode alimentar mais do que o aquecedor (na demo, a tomada agregada corta todas as cargas). `simulation.py`: leituras/consumos **SIMULADOS** para demo e testes.
+- **Fumo (SAFE-03):** leitura `smoke` `ok` com `smoke_detected=true` → `SafetyAlert(smoke, critical)` deduplicado por episódio, com origem (`provenance`), sem `suggested_command` (nunca sugere cortes) e `notify_landlord=false` por omissão (o contrato não tem política de autorização do senhorio; só se liga por parâmetro do serviço). Resolve-se com leitura `ok` sem fumo. `unknown`/`stale` não geram alerta nem limpam; sensor ausente aparece em `coverage()` (`absent`). O texto diz que o sistema não substitui detetores certificados.
 
 **Decisões para a demo (dono P2; não definitivas):** os 5 min contam desde que **ambas** as condições coincidem (janela aberta há 10 min e aquecedor que liga → só avisa 5 min depois; se o aquecedor desligar e religar, ou a janela fechar, o relógio recomeça); não há resolvedor de aquecedor de demo — **a regra da janela fica inativa até ENERGY-03 #81**; `notify_landlord=false` por omissão (onde vive a política: provavelmente `HouseholdPolicy`, com P5 — em aberto, P-26); o aviso da tomada agregada fica em `texts.py` para P3, sem mudar o contrato (P-27). O consumidor é idempotente por evento: se a transação do barramento falhar depois do handler, o retry reemite o mesmo alerta.
 
-**PLANEADO:** o router arranca o serviço **sem** resolvedor de aquecedores (por omissão nada é «aquecimento»), porque depende de ENERGY-03 #81 (identificar aparelhos/`ApplianceCategory.heating`); sem leituras reais de contacto até MCP-03 #76; entrega ao utilizador e confirmação da proposta em APP-02 #95 / MCP-04 #77. Até lá só os cenários simulados exercitam a regra.
+**PLANEADO:** o router arranca o serviço **sem** resolvedor de aquecedores (por omissão nada é «aquecimento»), porque depende de ENERGY-03 #81 (identificar aparelhos/`ApplianceCategory.heating`); sem leituras reais de contacto/fumo até MCP-03 #76 (o fumo funciona já com eventos reais ou simulados, quando existirem); entrega ao utilizador e confirmação da proposta em APP-02 #95 / MCP-04 #77. Até lá só os cenários simulados exercitam a regra.
 
 ## Passos
 
@@ -318,4 +319,48 @@ Escalas: gravidade (G) e probabilidade (P) são **antes das correções**; resid
 
 **AINDA NÃO IMPLEMENTADO / não declarar PASS de integração:** processamento real da câmara; contagem na soleira; sensor de Wi-Fi; endpoint de presença manual; chamadas do predicado pelo futuro produtor PRES-03; retenção/expurgo, gestão de correspondência MAC, UI de consentimento granular, avisos finais e AIPD. Dependências: PRES-02 #106, PRES-03 #107, PRES-04 #108, HOUSE-02 #85, APP-01 #94 e revisão jurídica/PILOT. Não abrir captura real nesta tarefa.
 
-**Integração PRES-03:** chamar `record_individual_cue(conn, cue, now=clock(), actor_resident_id=access.resident_id)` dentro de `Database.run`/`run_sync`, usando `require_access` e a identidade OIDC existente para resolver `access.resident_id`. Não criar autenticação paralela nem usar cache de opt-in. Rejeições não podem publicar nem persistir evento. Wi-Fi continua bloqueado até existir consentimento por `PresenceDevice` persistido, revogável e validado na mesma transação. Não eliminar eventos financeiros ao implementar retenção; acompanhar P-08/P-20 e a issue F0 separada proposta.
+**Integração exigida à PRES-03:** chamar `individual_cue_allowed(conn, cue, now=clock(), actor_resident_id=access.resident_id, wifi_collection_enabled=settings.presence_wifi_collection_enabled)` na **mesma transação** que persistir a pista, verificar novamente `presence_opt_in` em todas as leituras relacionadas e nunca gravar pistas reprovadas. Não usar cache de opt-in; cortar o coletor à revogação; ocultar rotas de diagnóstico do senhorio.
+
+## PRIV-02 #119 — Complemento da P2: câmara, fontes alternativas e Wi-Fi (PROPOSTA / PLANEADO)
+
+> **Âmbito:** só presença e câmara; completa a secção anterior (P5) sem a repetir. Aplica-se a ela quanto a finalidades, acessos, retenção (P-25 desse bloco, P-20), base legal e AIPD. **Não é parecer jurídico.** Código de PRES-01…04 ainda em PRs próprios; nada abaixo está na `main`.
+
+### Decisões do dono (P2) refletidas aqui
+
+1. **Presença individual visível só ao próprio morador.** Nenhum colega vê estados individuais; a fusão é usada **internamente** (ex.: regra C da conta da sala). Em linha com `Resource.presence.read=own`.
+2. **Wi-Fi como pista exige os dois consentimentos:** `wifi_opt_in` no telemóvel (`PresenceDevice`) **e** `Membership.presence_opt_in`. Faltando um, a pista não entra.
+3. **`GET /api/video` (MJPEG):** desligado por omissão (`ENABLE_DEV_VIDEO_PREVIEW=false`, #146); quando ligado em dev, só operador (PR #158, na `main`). O MJPEG serve o **frame completo, sem máscara**: a máscara de soleira só protege a entrada do detetor, não o que o MJPEG mostra. Por isso nunca se liga com a câmara real.
+
+### Câmara: fonte de vídeo e pipeline (PLANEADO)
+
+- **Fonte, por ordem:** (a) câmara do kit, **só leitura**, por app/link (acesso não provado, ver «Limites reais»); (b) plano B: telemóvel como câmara IP ou clip, **sempre rotulado SIMULADO** (`CameraStatus.origin`) na UI e no pitch; (c) sem câmara: só Wi-Fi, que nunca dá `out`; o caso «câmara em baixo» não é tratado por agora (decisão do dono).
+- **Pipeline:** frame → máscara preta fora da soleira → `DetetorYolo` (só «pessoa») + ByteTrack → linha virtual → `DoorCrossed` (sentido, confiança) → frame descartado **a cada ciclo** do detetor. Só a soleira é analisada; sem reconhecimento facial; `track_id` nunca persistido; visitas só como número.
+- **Teste exigido (PRES-02):** varrer o diretório de dados e falhar se existir qualquer imagem; nenhum evento com URL, caminho de frame ou identidade.
+- Clips de desenvolvimento: só com consentimento de quem aparece, em `app/backend/data/` (fora do Git).
+- **Operador** = suporte técnico: vê diagnóstico (`CameraStatus`), **nunca presença**; hoje não está limitado à sua casa (decisão para a demo, P-28).
+
+### Wi-Fi: varrimento ping + ARP (PRES-03, PR #153, já na `main`)
+
+- **Mecanismo:** varrimento ping + ARP numa sub-rede privada configurável (`PRESENCE_WIFI_SUBNET`; na demo, a rede do hub do kit). Recolha desligada por omissão (`PRESENCE_WIFI_COLLECTION_ENABLED=false`, #146).
+- **Modo `ingest`:** o anfitrião calcula o HMAC de **todos** os MACs vistos e envia-os; o **backend descarta os não registados** (não persiste, não regista em logs).
+- **`match_key`:** HMAC-SHA256 com **um segredo único da instalação** (`PRESENCE_MATCH_SALT`). É **pseudonimização**: quem tenha o segredo pode testar MACs conhecidos. Sal por casa: **PLANEADO**, não existe (P-30). O MAC em claro nunca sai em API.
+- **Efeito na fusão:** presença Wi-Fi é pista a favor de `in`. A ausência de Wi-Fi **não renova** o `in` nem o passa a `uncertain`/`out`: só baixa a confiança (Wi-Fi nunca produz `out`, D-30). `out` só pela fusão (PRES-04, PR #159, já na `main`): saída pela porta + tolerância de 20–30 min, e só se a saída for atribuível ao morador (Wi-Fi esperado e vivo, ou nenhum outro morador em casa); caso contrário `uncertain` + pergunta «estás em casa?».
+- **Consentimentos:** todas as pistas individuais (Wi-Fi, aparelho a ligar, resposta a «estás em casa?») exigem `presence_opt_in`; o Wi-Fi exige também `wifi_opt_in`.
+- **`make presence-wifi-scan`** passa a respeitar `PRESENCE_WIFI_COLLECTION_ENABLED` (a corrigir no PR #153).
+- **Revogação** (`DELETE /api/presence/devices/{id}`, PRES-03, PR #153, já na `main`; rotas de presença e o `403` ao senhorio idem): apaga o `match_key` e para novas pistas, mas **não apaga as pistas já gravadas**; `domain_event` é append-only sem expurgo (P-20, P-25 do bloco anterior).
+
+### Plano sem câmara
+
+A presença regista-se **só pela câmara (porta) e pelo Wi-Fi do telemóvel**; não há «cheguei/saí» manual na app (decisão do dono; em remoção no PR #153). Sem câmara, fica só o Wi-Fi, que nunca dá `out`: o estado fica `in` ou `uncertain`, com mais perguntas «estás em casa?» (a resposta mantém-se para resolver contradições). A regra C funciona com menos precisão, dito na UI.
+
+### Informação a prestar e UI (PLANEADO)
+
+Os textos abaixo são **rascunho — não usar até PRES-02 e #146 estarem implementados e validados**; a rever por P5 e jurista (P-24 do bloco anterior; inclui o aviso e o pictograma).
+
+- **Aviso à entrada (visitantes e moradores), rascunho:** «Nesta porta há um sensor ótico que conta entradas e saídas. Não grava nem guarda imagens e não identifica pessoas. Só a pessoa que vive na casa vê o seu próprio estado.»
+- **Moradores, rascunho:** finalidades, o que não acontece, como registar e retirar o telemóvel, que recusar não tem consequências.
+- **UI (APP):** indicador «Câmara na porta: ativa/desligada · REAL/SIMULADO» (`CameraStatus`); lista de telemóveis com «Retirar»; interruptores separados para `wifi_opt_in` e `presence_opt_in`, com o aviso de que o Wi-Fi precisa dos dois.
+
+### Base legal por finalidade — candidatas, por validar
+
+Contagem na porta: interesse legítimo + votação da casa (PDF §10.2). Wi-Fi: consentimento (PDF §10.2). A resposta a «estás em casa?» é pedido do próprio: base candidata nossa, não consta do §10.2. Nenhuma está validada (P-24 do bloco anterior).
