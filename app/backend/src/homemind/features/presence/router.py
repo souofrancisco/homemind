@@ -65,7 +65,10 @@ async def lifespan(app: FastAPI):
     app.state.presence = service
     bus.subscribe("presence.answers", on_notification_responded, types=["notification.responded"])
     poller_task = None
-    if s.presence_wifi_mode != "off" and not s.presence_match_salt:
+    if not s.presence_wifi_collection_enabled:
+        if s.presence_wifi_mode != "off":
+            log.warning("Wi-Fi de presença desligado: PRESENCE_WIFI_COLLECTION_ENABLED=false")
+    elif s.presence_wifi_mode != "off" and not s.presence_match_salt:
         log.error("Wi-Fi de presença desligado: falta PRESENCE_MATCH_SALT")
     elif s.presence_wifi_mode in ("simulated", "arp"):
         try:
@@ -174,7 +177,11 @@ async def wifi_observations(
     """Varrimento no anfitrião (o contentor não vê a ARP do anfitrião). Autenticação de máquina por
     token em `app/.env`; desligada sem `PRESENCE_INGEST_TOKEN` e fora do modo `ingest`."""
     s = get_settings()
-    if s.presence_wifi_mode != "ingest" or not s.presence_ingest_token:
+    if (
+        not s.presence_wifi_collection_enabled
+        or s.presence_wifi_mode != "ingest"
+        or not s.presence_ingest_token
+    ):
         raise HTTPException(404, {"code": "not_found", "message": "Não encontrado"})
     if x_presence_token is None or not hmac.compare_digest(
         x_presence_token.encode(), s.presence_ingest_token.encode()

@@ -336,7 +336,7 @@ Backend no host com o extra de visão (ver README, «Visão real»).
 
 ## I. Presença (Conta Certa)
 
-Pistas por pessoa (PRES-03, **IMPLEMENTADO**). Pré-requisitos: backend no **anfitrião** ligado ao Wi-Fi do hub do kit (o contentor Docker não vê a ARP do anfitrião; ver [presence.md](../modules/presence.md)), `PRESENCE_MATCH_SALT`, `PRESENCE_WIFI_MODE=ingest`, `PRESENCE_INGEST_TOKEN` e `PRESENCE_WIFI_SUBNET` em `app/.env`, e um telemóvel de teste cuja dona deu consentimento. Nunca copiar MACs, IPs nem hashes para chats, issues ou prints. Rotas: `?household_id=<casa>` + `Authorization` de um inquilino.
+Pistas por pessoa (PRES-03, **IMPLEMENTADO**). Pré-requisitos: backend no **anfitrião** ligado ao Wi-Fi do hub do kit (o contentor Docker não vê a ARP do anfitrião; ver [presence.md](../modules/presence.md)), `PRESENCE_WIFI_COLLECTION_ENABLED=true`, `PRESENCE_MATCH_SALT`, `PRESENCE_WIFI_MODE=ingest`, `PRESENCE_INGEST_TOKEN` e `PRESENCE_WIFI_SUBNET` em `app/.env`, e um telemóvel de teste cuja dona deu consentimento (telemóvel registado **e** `presence_opt_in` da membership a `true`). Nunca copiar MACs, IPs nem hashes para chats, issues ou prints. Rotas: `?household_id=<casa>` + `Authorization` de um inquilino.
 
 ### PRW-01 — Telemóvel registado aparece
 - **Tipo:** REAL (varrimento da rede do hub) · **Issue:** #107

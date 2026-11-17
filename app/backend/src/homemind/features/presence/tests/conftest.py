@@ -24,6 +24,23 @@ MAC_VISITA = "02:00:00:bb:00:99"
 A, B = str(fx.HOUSEHOLD), str(HOUSE_B)
 
 
+def set_presence_opt_in(db: Database, resident, value: int) -> None:
+    db.run_sync(
+        lambda c: c.execute(
+            "UPDATE membership SET presence_opt_in = ? WHERE resident_id = ?",
+            (value, str(resident)),
+        )
+    )
+
+
+def seed_with_opt_in(conn) -> None:
+    """Casas de teste; o Bruno (inquilino nas duas) já aceitou a presença (2.º consentimento)."""
+    seed_two_houses(conn)
+    conn.execute(
+        "UPDATE membership SET presence_opt_in = 1 WHERE resident_id = ?", (str(fx.BRUNO),)
+    )
+
+
 def as_(sub: str) -> dict[str, str]:
     return {"x-test-sub": sub}
 
@@ -42,6 +59,7 @@ class Clock:
 @pytest.fixture
 def settings_env(monkeypatch):
     monkeypatch.setenv("PRESENCE_MATCH_SALT", SALT)
+    monkeypatch.setenv("PRESENCE_WIFI_COLLECTION_ENABLED", "true")
     monkeypatch.setenv("PRESENCE_WIFI_MODE", "ingest")
     monkeypatch.setenv("PRESENCE_INGEST_TOKEN", TOKEN)
     get_settings.cache_clear()
@@ -67,7 +85,7 @@ def client(settings_env, clock):
     app.dependency_overrides[current_user] = fake_user
     app.dependency_overrides[get_clock] = lambda: clock
     with TestClient(app) as c:
-        app.state.db.run_sync(seed_two_houses)
+        app.state.db.run_sync(seed_with_opt_in)
         c.app_state = app.state
         app.state.presence.clock = clock  # o serviço lê o relógio no arranque
         yield c
@@ -80,7 +98,7 @@ def world(clock):
     db = Database(":memory:")
     db.open()
     migrate(db)
-    db.run_sync(seed_two_houses)
+    db.run_sync(seed_with_opt_in)
     bus = EventBus(db)
     service = PresenceService(db, bus, salt=SALT, clock=clock)
     yield service

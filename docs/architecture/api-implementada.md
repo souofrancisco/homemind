@@ -107,7 +107,7 @@ Prefixo `/api`. JSON UTF-8, `snake_case`, horas ISO 8601 UTC. Todas as rotas `/a
 | `GET` | `/api/presence/devices?household_id=` | `[PresenceDeviceView]` dos telemóveis do próprio (nunca o hash nem o MAC) |
 | `POST` | `/api/presence/devices?household_id=` | corpo `{label, wifi_address, consent: true}` → `201 PresenceDeviceView` · `400 invalid_request` · `409 device_already_registered \| device_limit` · `503 wifi_unconfigured` |
 | `DELETE` | `/api/presence/devices/{id}?household_id=` | opt-out imediato → `204` · `404 device_not_found` (inexistente ou de outro) |
-| `POST` | `/api/presence/wifi/observations` | **fora do OpenAPI**; só `PRESENCE_WIFI_MODE=ingest`; `X-Presence-Token` (token de máquina, não JWT); `204`/`401`/`404` |
+| `POST` | `/api/presence/wifi/observations` | **fora do OpenAPI**; só `PRESENCE_WIFI_COLLECTION_ENABLED=true` e `PRESENCE_WIFI_MODE=ingest`; `X-Presence-Token` (token de máquina, não JWT); `204`/`401`/`404` |
 
 ### `HomeState`
 

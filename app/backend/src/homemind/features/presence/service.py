@@ -235,7 +235,9 @@ class PresenceService:
                 ident = (d.household_id, d.resident_id)
                 if d.match_key not in keys or ident in seen:
                     continue
-                if not repo.is_active_tenant(conn, d.household_id, d.resident_id, now):
+                # DOIS consentimentos: o do telemóvel (`wifi_opt_in`, já filtrado) e o da pessoa
+                # (`Membership.presence_opt_in`). Sem qualquer um, descarta-se sem rasto.
+                if not repo.has_presence_opt_in(conn, d.household_id, d.resident_id, now):
                     continue
                 seen.add(ident)
                 last = self._last_cue.get(ident)

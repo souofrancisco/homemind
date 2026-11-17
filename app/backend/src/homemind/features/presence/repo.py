@@ -32,6 +32,21 @@ def is_active_tenant(
     )
 
 
+def has_presence_opt_in(
+    conn: sqlite3.Connection, household_id: UUID, resident_id: UUID, now: datetime
+) -> bool:
+    """`Membership.presence_opt_in` em vigor (além de membership ativa de inquilino)."""
+    return (
+        is_active_tenant(conn, household_id, resident_id, now)
+        and conn.execute(
+            "SELECT 1 FROM membership WHERE household_id = ? AND resident_id = ?"
+            " AND status = 'active' AND presence_opt_in = 1",
+            (str(household_id), str(resident_id)),
+        ).fetchone()
+        is not None
+    )
+
+
 # --- telemóveis ------------------------------------------------------------------------------
 
 

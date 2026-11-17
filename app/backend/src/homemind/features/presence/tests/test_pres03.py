@@ -26,6 +26,7 @@ from homemind.features.presence.tests.conftest import (
     as_,
     cues,
     dump_text,
+    set_presence_opt_in,
 )
 from homemind.features.presence.wifi import FakeWifiScanner, match_key
 
@@ -378,3 +379,38 @@ def test_answer_without_a_request_or_for_another_household_is_ignored(world):
 
     _deliver(world, _answer(req, hid=HOUSE_B, n="3"))  # pedido é da casa A
     assert cues(world.db) == []
+
+
+# --- os DOIS consentimentos do Wi-Fi -----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "wifi_opt_in,presence_opt_in,expected",
+    [(True, True, 1), (True, False, 0), (False, True, 0), (False, False, 0)],
+)
+def test_wifi_cue_needs_both_consents(client, wifi_opt_in, presence_opt_in, expected):
+    d = register(client, BRUNO, MAC_BRUNO).json()
+    if not wifi_opt_in:
+        client.delete(f"/api/presence/devices/{d['id']}?household_id={A}", headers=as_(BRUNO))
+    set_presence_opt_in(client.app_state.db, fx.BRUNO, int(presence_opt_in))
+    observe(client, MAC_BRUNO)
+    assert len(cues(client.app_state.db, "wifi")) == expected
+
+
+def test_revoking_presence_opt_in_stops_wifi_cues_at_once(client, clock):
+    register(client, BRUNO, MAC_BRUNO)
+    observe(client, MAC_BRUNO)
+    set_presence_opt_in(client.app_state.db, fx.BRUNO, 0)
+    clock.advance(hours=1)
+    observe(client, MAC_BRUNO)
+    assert len(cues(client.app_state.db, "wifi")) == 1
+
+
+def test_collection_switch_off_disables_ingest(client, monkeypatch):
+    from homemind.core.config import get_settings
+
+    monkeypatch.setenv("PRESENCE_WIFI_COLLECTION_ENABLED", "false")
+    get_settings.cache_clear()
+    register(client, BRUNO, MAC_BRUNO)
+    assert observe(client, MAC_BRUNO).status_code == 404
+    assert cues(client.app_state.db) == []

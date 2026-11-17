@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     # --- P2 — presença (PRES-03/04) ---
     # Sal do `match_key` dos telemóveis (hash do MAC). Segredo: só em app/.env, nunca em logs.
     # Vazio = registo de telemóveis e pistas Wi-Fi desligados (falha fechada).
+    # Pista individual por Wi-Fi: sem recolha antes de ativação explícita (alinhado com o PRIV-02).
+    presence_wifi_collection_enabled: bool = False
     presence_match_salt: str = ""
     # Origem das observações Wi-Fi: off | simulated (SIMULADO, MACs fictícios abaixo) | arp (varre
     # a sub-rede a partir deste processo) | ingest (um varrimento no anfitrião publica hashes).
