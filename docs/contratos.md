@@ -87,6 +87,23 @@ class Home(Protocol):
   - `MensagemEstado` (`tipo="estado"`): fotografia completa, ao ligar e a cada mudança — `estado` (`inativo`/`ativo`/`em_espera`/`suspenso`), `modo` (id da regra), `modo_nome`, `ha_alguem`, `segundos_para_suspender`, `status`, `casa`, `poupanca_wh`, `poupanca_eur`.
   - `MensagemRegisto` (`tipo="registo"`): uma `LinhaRegisto` (`hora`, `texto` em PT-PT). É também o formato de cada linha de `events.jsonl`.
 
+## Gestos, presença e fila (P2) — semântica acordada na proposta
+
+Interfaces: `Detetor` (`visao.py`, P1), `ProcessadorEventos` e `PublicadorEventos` (`eventos.py`, P2).
+
+```text
+Detetor.detetar(FrameVideo) ─▶ FrameDeteccoes ─▶ ProcessadorEventos.processar ─▶ PublicadorEventos.publicar ─▶ asyncio.Queue[Evento] ─▶ motor (P4)
+```
+
+- **Thread de visão (P1)** chama `detetar` e `processar` em série e entrega cada evento a `publicar`. O afinador offline usa as mesmas interfaces sobre o clip, sem fila.
+- **Fila (P4)**: P4 cria a `asyncio.Queue[Evento]` (e o loop) no arranque e entrega-a a P2, que implementa `PublicadorEventos` com `loop.call_soon_threadsafe(fila.put_nowait, evento)`. Ordem preservada, sem bloquear. No encerramento P4 pára o consumo e P1 pára a thread; eventos já na fila podem ser descartados.
+- **Só frames reais**: P1 só emite `FrameDeteccoes` para frames novos (`FrameVideo.indice` mudou). Com `camara_ok=False` não emite nada; P2 não infere ausência de pessoas sem frames, só `pessoas == ()` em frames reais durante 3 s.
+- **Tempo**: janelas, cooldown (3 s por classe) e ausência (3 s) usam `t` monotónico; funcionam com fps variável. `hora` dos eventos = `frame.hora` do frame que confirmou o gesto/transição (UTC, com fuso).
+- **Gesto**: um `ObjetoLevantado` por gesto confirmado, mesmo que o modo já esteja ativo (o motor ignora e regista «já ativo»). Várias pessoas: serve o pulso de qualquer uma, sem as identificar nem contar.
+- **Presença**: estado inicial `ha_alguem=False`; a primeira transição para `True` (2 frames com pessoa) emite `Presenca(True)`, mesmo no arranque. Só transições são publicadas.
+- **Formato de repetição offline**: um `FrameDeteccoes` por linha em JSON (`model_dump_json()`, sem imagens) permite afinar sem GPU nem câmara.
+- **Limiares** em `core/config.py` (P2 acrescenta os campos: 0,6×ombros, confiança 0,5, 80 %/1 s, cooldown 3 s, ausência 3 s, 2 frames).
+
 ## Rotas e modelos (proposta; prefixos por confirmar)
 
 | Rota | Entrada | Saída | Dono |
@@ -104,8 +121,8 @@ Nenhuma destas rotas existe ainda; este PR só define os modelos.
 
 ## Por decidir com a equipa
 
-- P2: `t` monotónico + `hora` chega, ou preferem só um relógio?
-- P2: coordenadas em píxeis servem (a regra usa a largura dos ombros como escala) ou preferem normalizadas 0–1?
+- ~~P2: `t` + `hora`; coordenadas em píxeis~~ — P2: servem ambos.
+- P4: confirmar a ponte da fila e a presença inicial `False` descritas acima.
 - P3: `cor` como texto livre ou lista fechada, depois da descoberta MCP? `ler_consumo()` sem leitura devolve `0.0` ou lança erro?
 - P4: uma regra por objeto, ou várias com `ativa`? Ativar/desativar faz-se com `POST /rules` (substitui pelo `id`)?
 - P4/P5: `MensagemEstado` completa a cada mudança chega para o temporizador, ou a UI precisa de ticks por segundo?

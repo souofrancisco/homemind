@@ -12,11 +12,12 @@ Convenções:
 
 from datetime import datetime
 from enum import IntEnum
-from typing import Literal
+from typing import Literal, Protocol
 
 from pydantic import Field, model_validator
 
 from homemind.contracts.base import Contrato as _Contrato
+from homemind.contracts.video import FrameVideo
 
 ClasseObjeto = Literal["caneca", "livro", "comando"]
 
@@ -102,3 +103,10 @@ class FrameDeteccoes(_Contrato):
     altura: int = Field(gt=0)
     objetos: tuple[ObjetoDetetado, ...] = ()
     pessoas: tuple[PessoaDetetada, ...] = ()
+
+
+class Detetor(Protocol):
+    """YOLO + pose + ByteTrack (P1). Síncrono e com estado (tracker); chamado pela thread de visão
+    ou, offline, pelo afinador (P2) sobre o clip. Não guarda nem devolve a imagem."""
+
+    def detetar(self, frame: FrameVideo) -> FrameDeteccoes: ...

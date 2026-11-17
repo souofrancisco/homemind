@@ -67,3 +67,19 @@ def test_pipeline_mock_troca_frames_por_json_sem_camara():
 def test_sequencia_sem_pessoa_nem_objeto():
     frame = next(sequencia_simulada(1, com_pessoa=False))
     assert frame.pessoas == () and frame.objetos == ()
+
+
+def test_sequencias_encadeiam_com_t0_e_indice0():
+    a = list(sequencia_simulada(5, fps=10, indice0=0, t0=0.0))
+    b = list(sequencia_simulada(5, fps=5, indice0=5, t0=a[-1].t + 0.1, com_pessoa=False))
+    assert [f.indice for f in a + b] == list(range(10))
+    assert all(x.t < y.t for x, y in zip(a + b, (a + b)[1:], strict=False))
+    assert b[0].pessoas == ()
+
+
+def test_objeto_no_pulso_independente_do_pulso_levantado():
+    (frame,) = sequencia_simulada(1, classe="caneca", levantado=False, objeto_no_pulso=True)
+    pessoa = frame.pessoas[0]
+    pulso, cotovelo = pessoa.kp(KP.PULSO_DIR), pessoa.kp(KP.COTOVELO_DIR)
+    assert pulso.y > cotovelo.y
+    assert frame.objetos[0].caixa.centro == (pulso.x, pulso.y)

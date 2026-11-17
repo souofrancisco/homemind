@@ -4,11 +4,11 @@ Assinaturas de `docs/objectos-plano.md` §3. Só texto: nunca imagens nem dados 
 """
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-from homemind.contracts.visao import ClasseObjeto
+from homemind.contracts.visao import ClasseObjeto, FrameDeteccoes
 
 
 class ObjetoLevantado(BaseModel):
@@ -33,3 +33,20 @@ Evento = Annotated[ObjetoLevantado | Presenca, Field(discriminator="tipo")]
 
 # Para ler eventos de JSON (WS, events.jsonl): `evento_adapter.validate_json(linha)`.
 evento_adapter: TypeAdapter[ObjetoLevantado | Presenca] = TypeAdapter(Evento)
+
+
+class ProcessadorEventos(Protocol):
+    """Gestos + presença (P2). Com estado, síncrono, sem I/O: recebe frames por ordem crescente
+    de `indice` e devolve os eventos que esse frame confirma (`()` na maioria). `hora` dos
+    eventos = `frame.hora`. Usado pela thread de visão (P1) e pelo afinador offline."""
+
+    def processar(self, frame: FrameDeteccoes) -> tuple[Evento, ...]: ...
+
+
+class PublicadorEventos(Protocol):
+    """Ponte thread de visão -> event loop (P2 implementa; P4 consome a `asyncio.Queue[Evento]`).
+
+    `publicar` pode ser chamado de qualquer thread, nunca bloqueia, preserva a ordem e não
+    duplica. A implementação real faz `loop.call_soon_threadsafe(fila.put_nowait, evento)`."""
+
+    def publicar(self, evento: Evento) -> None: ...

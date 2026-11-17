@@ -87,25 +87,31 @@ def sequencia_simulada(
     com_pessoa: bool = True,
     classe: ClasseObjeto | None = None,
     levantado: bool = False,
+    objeto_no_pulso: bool | None = None,
+    t0: float = 0.0,
+    indice0: int = 0,
     largura: int = 640,
     altura: int = 480,
 ) -> Iterator[FrameDeteccoes]:
-    """`n` frames a `fps`. Com `classe`, o objeto está no pulso direito se `levantado`,
-    senão pousado longe da pessoa."""
+    """`n` frames a `fps`. Com `classe`, o objeto está no pulso direito se `objeto_no_pulso`
+    (por omissão = `levantado`), senão pousado longe da pessoa. `levantado` põe o pulso acima
+    do cotovelo; `objeto_no_pulso=True` com `levantado=False` é a caneca levada à altura da
+    anca. `t0`/`indice0` permitem encadear segmentos (ausência, fps diferente...)."""
+    no_pulso = levantado if objeto_no_pulso is None else objeto_no_pulso
     for i in range(n):
         pessoas = (pessoa_simulada(pulso_dir_levantado=levantado),) if com_pessoa else ()
         objetos: tuple[ObjetoDetetado, ...] = ()
         if classe is not None:
-            if levantado and pessoas:
+            if no_pulso and pessoas:
                 pulso = pessoas[0].kp(KP.PULSO_DIR)
                 centro = (pulso.x, pulso.y)
             else:
                 centro = (largura - 60.0, altura - 60.0)
             objetos = (objeto_simulado(classe, centro),)
         yield FrameDeteccoes(
-            indice=i,
-            t=i / fps,
-            hora=_INICIO + timedelta(seconds=i / fps),
+            indice=indice0 + i,
+            t=t0 + i / fps,
+            hora=_INICIO + timedelta(seconds=t0 + i / fps),
             largura=largura,
             altura=altura,
             objetos=objetos,
