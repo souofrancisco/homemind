@@ -21,6 +21,14 @@ class AgentSettings(BaseSettings):
     # P-06 (que dados de consumo podem sair para o LLM) está por decidir: desligado por omissão.
     # Sem isto a ligado, o assistente nunca chama o LLM, mesmo com `NVIDIA_API_KEY` definida.
     agent_llm_enabled: bool = False
+    # Ações propostas (AGENT-03). Os limites espelham `connectors/write_policy.RuleWriteLimits`
+    # (MCP-04) sem a importar; aqui valem por dispositivo.
+    agent_action_ttl_s: float = 600.0  # validade de uma proposta por confirmar
+    agent_action_max_open: int = 3  # propostas por confirmar por residente
+    agent_action_cooldown_s: float = 60.0  # entre duas execuções no mesmo dispositivo
+    agent_action_max_per_hour: int = 6
+    agent_action_lockout_s: float = 300.0  # bloqueio após um resultado incerto
+    agent_action_timeout_s: float = 15.0  # prazo do executor; ao esgotar, resultado incerto
 
 
 @lru_cache

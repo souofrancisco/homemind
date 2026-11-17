@@ -22,8 +22,11 @@ from homemind.core.access import (
     Resource,
     require_access,
 )
+from homemind.features.agent.actions_router import StateDep, reply_to_action_request
+from homemind.features.agent.actions_router import router as actions_router
 from homemind.features.agent.assistant import Assistant
 from homemind.features.agent.config import get_agent_settings
+from homemind.features.agent.guardrails import is_action_request
 from homemind.features.agent.llm import Complete, LLMUnavailable, nvidia_complete
 from homemind.features.agent.providers import (
     BudgetProvider,
@@ -70,11 +73,16 @@ async def send_message(
     access: AgentAccess,
     db: DbDep,
     clock: ClockDep,
+    state: StateDep,
     complete: CompleteDep,
     registered: RegisteredDep,
 ) -> AgentResponse:
     """Pergunta do morador ao assistente. O residente e o papel vêm do token, nunca do corpo."""
     now = clock()
+    if is_action_request(body.text):
+        # AGENT-03: um pedido de ação nunca chega ao LLM nem executa nada; só gera uma proposta
+        # a confirmar (ou uma recusa). Ver `actions_router.py`.
+        return await reply_to_action_request(state, db, access, body.text, now)
     row = await db.run(
         lambda c: c.execute(
             "SELECT source_kind, timezone FROM household WHERE id = ?", (str(access.household_id),)
@@ -105,3 +113,7 @@ async def send_message(
         proposed_actions=[],
         created_at=now,
     )
+
+
+# AGENT-03: listar, ver, confirmar e rejeitar ações propostas.
+router.include_router(actions_router)
