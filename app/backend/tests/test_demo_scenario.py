@@ -104,12 +104,12 @@ def test_prepare_and_repeat_replay_do_not_duplicate(store):
     assert store.replay() == original
 
 
-
 def test_readonly_marker_check_leaves_no_sqlite_sidecars(store):
     store.prepare()
     store._guard(existing=True)
     assert not Path(f"{store.path}-wal").exists()
     assert not Path(f"{store.path}-shm").exists()
+
 
 def test_application_database_reopen_preserves_demo(store):
     original = store.prepare()
