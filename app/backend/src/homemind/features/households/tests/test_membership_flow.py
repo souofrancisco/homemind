@@ -97,7 +97,7 @@ def test_invitation_is_one_use_and_restores_context(client, app):
     assert issued.status_code == 201, issued.text
     data = issued.json()
     assert set(data) == {"invitation_id", "code", "expires_at"}
-    assert len(data["token"]) >= 40
+    assert len(data["code"]) >= 40
     assert (
         app.state.db.run_sync(
             lambda c: c.execute(
@@ -105,7 +105,7 @@ def test_invitation_is_one_use_and_restores_context(client, app):
                 (data["invitation_id"],),
             ).fetchone()[0]
         )
-        == hashlib.sha256(data["token"].encode()).hexdigest()
+        == hashlib.sha256(data["code"].encode()).hexdigest()
     )
     # Convite pendente não autoriza nada, e os inquilinos não o veem na lista.
     assert client.get("/api/me/context", headers=verified()).json()["resident"] is None
@@ -115,12 +115,12 @@ def test_invitation_is_one_use_and_restores_context(client, app):
     )
     members = client.get(f"/api/households/{HOUSE_A}/members", headers=as_("sub-ana")).json()
     assert all(m["room_id"] != room for m in members)
-    accepted = accept(client, data["token"])
+    accepted = accept(client, data["code"])
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["role"] == "tenant"
     assert accepted.json()["room_id"] == room
     assert accepted.json()["status"] == "active"
-    assert error(accept(client, data["token"])) == (409, "invitation_used")
+    assert error(accept(client, data["code"])) == (409, "invitation_used")
     assert client.get(f"/api/households/{HOUSE_A}", headers=verified()).status_code == 200
     ctx = client.get("/api/me/context", headers=verified()).json()
     assert ctx["resident"]["display_name"] == "Novo morador"
@@ -141,7 +141,8 @@ def test_invalid_expired_unverified_and_wrong_account(client, now):
     )
     attacker = verified(sub="sub-attacker", email="wrong@example.test")
     assert error(accept(client, token, attacker)) == (404, "invitation_not_found")
-    assert accept(client, token, verified(email="guest@example.test")).status_code == 200  # tentativa errada não consumiu
+    # Tentativas com email incorreto não consomem o código de convite.
+    assert accept(client, token, verified(email="guest@example.test")).status_code == 200
     next_room = create_room(client, name="Outra suite")
     future = invite(client, next_room)
     now["value"] = NOW + timedelta(hours=73)
