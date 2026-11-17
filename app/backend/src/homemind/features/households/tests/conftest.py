@@ -81,7 +81,11 @@ def app(now):
         sub = request.headers.get("x-test-sub")
         if not sub:
             raise HTTPException(401, "Não autenticado")
-        return User(sub=sub)
+        return User(
+            sub=sub,
+            email=request.headers.get("x-test-email"),
+            email_verified=request.headers.get("x-test-verified") == "true",
+        )
 
     real_app.dependency_overrides[current_user] = fake_user
     real_app.dependency_overrides[get_clock] = lambda: lambda: now["value"]

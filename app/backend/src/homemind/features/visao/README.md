@@ -21,9 +21,7 @@ Os pesos vão para `data/modelos/` (ignorado pelo Git; `*.pt` e `*.onnx` também
 servidor e os testes **nunca descarregam**: sem pesos, `preparar()` levanta `FileNotFoundError` com
 esta instrução e a thread de visão fica indisponível sem derrubar o servidor.
 
-Ligar ao motor: `VIDEO_SOURCE=<rtsp ou clip>` e
-`VISAO_DETETOR=homemind.features.visao.detetor:DetetorYolo`. O afinador aceita o mesmo
-(`--detetor homemind.features.visao.detetor:DetetorYolo`).
+PRIV-02 desativa a captura RTSP, a rota MJPEG e o processamento quando o motor usa `HOME_BACKEND=mcp`. Para testar o código legado, só se aceita um clip sintético em `app/data/privacy-test-clips/`, com `PROFILE=demo`, `HOME_BACKEND=fake`, `ENABLE_DEV_VIDEO_PREVIEW=true` e `VISAO_DETETOR=homemind.features.visao.detetor:DetetorYolo`.
 
 ## Configuração (`core/config.py`, bloco «P1 — visão»; variáveis `VISAO_*`)
 
@@ -69,8 +67,8 @@ fixado no extra para o ultralytics não o tentar instalar com `pip` em runtime.
 
 ## Anotações na página Câmara
 
-- `GET /api/video` desenha sobre o frame (caixa, nome PT, confiança, esqueleto) com a última deteção (≤ 1 s; senão vídeo cru). Inferência única na thread de visão; cada espectador só desenha. Se o detetor falhar, o vídeo continua sem anotações.
-- **`make mcp-demo` já liga o YOLO** sem passos extra: a imagem do backend da demo é construída com o extra `visao` (`EXTRAS=visao`; a 1.ª vez é pesada, depois reutiliza-se; `make dev` não o inclui), `VISAO_DETETOR` vem ligado e os pesos são o bind mount `app/backend/data/modelos` → `/srv/modelos` (só leitura, sem downloads). CPU por omissão; GPU NVIDIA só se o Docker tiver o runtime `nvidia` (`app/compose.gpu.yaml`, incluído pelo Makefile).
-- Pesos em falta ou YOLO a falhar: log `YOLO indisponível (…)`; vídeo e MCP continuam sem deteções.
-- Logs por ordem: `câmara ligada` → `YOLO carregado (device=…)` → `inferência ativa` → `deteções disponíveis` (esta só quando há pessoa/objeto). Ver com `make mcp-demo-logs`.
+- `GET /api/video` responde sempre `404` por PRIV-02; a UI não solicita frames.
+- `make mcp-demo` pode incluir o extra YOLO para outras tarefas, mas PRIV-02 mantém a captura/visão desligada com `HOME_BACKEND=mcp`; não liga hardware de vídeo.
+- Em `PROFILE=demo` + `HOME_BACKEND=fake`, o pipeline só inicia com clip sintético allowlisted. Pesos em falta ou YOLO a falhar não expõem frames.
+- Os logs não incluem URL RTSP nem frames; a página Câmara não pede `/api/video`.
 - Sem Docker: `make auth` + `uv sync --extra visao` + `uvicorn` no host (ver `docs/archive/objectos/estado-para-amanha.md`).

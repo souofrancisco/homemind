@@ -1,8 +1,8 @@
-"""Porta de privacidade para pistas individuais de presença (PRIV-02).
+"""Porta transacional de privacidade para pistas individuais de presença (PRIV-02).
 
-Esta função NÃO é um coletor, nem publica eventos. PRES-03 deve chamá-la na
-MESMA transação SQLite em que persistir uma pista, incluindo após revogação.
-Nada é logado aqui: nem MAC/IP/SSID, nem padrões de presença ou identificadores.
+Não recolhe sensores nem escreve logs. `record_individual_cue` só grava pistas que passam o gate,
+na transação SQLite do chamador; Wi-Fi permanece bloqueado até existir persistência de consentimento
+por dispositivo. Nunca registar MAC/IP/SSID, padrões de presença ou identificadores.
 """
 
 import sqlite3
@@ -10,7 +10,9 @@ from datetime import datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from homemind.contracts.domain_events import PresenceCueRecorded
 from homemind.contracts.presence import PresenceEvent, PresenceSource, PresenceState
+from homemind.core.events import append_event
 
 
 def individual_cue_allowed(
@@ -24,14 +26,15 @@ def individual_cue_allowed(
     """Falha fechada: fonte admitida, casa, proveniência e opt-in ATUAL por casa.
 
     Para uma declaração manual, a identidade vem da sessão Authentik (não do
-    corpo do pedido). Para Wi-Fi, além do opt-in é necessária ativação global
-    deliberada e um coletor autenticado, ainda NÃO implementado.
+    corpo do pedido). Wi-Fi é sempre recusado enquanto o consentimento de `PresenceDevice` não
+    existir como dado persistido consultável; a flag global não lhe dá autorização.
     """
     if now.utcoffset() is None:
         raise ValueError("now exige timezone")
     if cue.source is PresenceSource.wifi:
-        if not wifi_collection_enabled:
-            return False
+        # PresenceDevice consent is a separate per-device choice and has no persisted
+        # repository yet. A global flag or Membership.presence_opt_in cannot substitute for it.
+        return False
     elif cue.source is PresenceSource.manual:
         if actor_resident_id != cue.resident_id:
             return False
@@ -57,6 +60,43 @@ def individual_cue_allowed(
         ).fetchone()
         is not None
     )
+
+
+def record_individual_cue(
+    conn: sqlite3.Connection,
+    cue: PresenceEvent,
+    *,
+    now: datetime,
+    actor_resident_id: UUID | None = None,
+    wifi_collection_enabled: bool = False,
+) -> bool:
+    """Aplica o gate e persiste a pista na mesma transação SQLite.
+
+    O produtor deve chamar esta função dentro de `Database.run`/`run_sync`. SQLite `BEGIN
+    IMMEDIATE` serializa esta decisão com uma revogação concorrente da membership: ou a gravação
+    ocorre antes da revogação, ou observa a revogação e não grava.
+    """
+    if not conn.in_transaction:
+        raise RuntimeError("gravação de pista exige transação SQLite ativa")
+    if not individual_cue_allowed(
+        conn,
+        cue,
+        now=now,
+        actor_resident_id=actor_resident_id,
+        wifi_collection_enabled=wifi_collection_enabled,
+    ):
+        return False
+    append_event(
+        conn,
+        PresenceCueRecorded(
+            id=cue.id,
+            ts=cue.ts,
+            household_id=cue.household_id,
+            provenance=cue.provenance,
+            data=cue,
+        ),
+    )
+    return True
 
 
 def automatic_state_when_sensor_unavailable(

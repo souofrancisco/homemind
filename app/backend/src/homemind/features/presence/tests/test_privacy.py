@@ -20,6 +20,7 @@ from homemind.features.households.tests.conftest import HOUSE_B, seed_two_houses
 from homemind.features.presence.privacy import (
     automatic_state_when_sensor_unavailable,
     individual_cue_allowed,
+    record_individual_cue,
 )
 
 NOW = datetime(2026, 11, 17, 21, tzinfo=UTC)
@@ -75,13 +76,52 @@ def test_no_opt_in_no_individual_signal_even_if_wifi_flag_is_on(db):
 def test_revocation_blocks_future_wifi_and_manual_signals(db):
     event = cue()
     set_opt_in(db, fx.ANA, fx.HOUSEHOLD, True)
-    assert allow(db, event, wifi_collection_enabled=True)
+    assert not allow(db, event, wifi_collection_enabled=True)
     assert allow(db, cue(source=PresenceSource.manual), actor_resident_id=fx.ANA)
     set_opt_in(db, fx.ANA, fx.HOUSEHOLD, False)
     assert not allow(db, event, wifi_collection_enabled=True)
     assert not allow(db, cue(source=PresenceSource.manual), actor_resident_id=fx.ANA)
     count = db.run_sync(lambda c: c.execute("SELECT count(*) FROM domain_event").fetchone()[0])
     assert count == 0  # verificar permissões não cria histórico de presença
+
+
+def test_record_manual_cue_is_gated_and_persisted_in_one_transaction(db):
+    set_opt_in(db, fx.ANA, fx.HOUSEHOLD, True)
+    event = cue(source=PresenceSource.manual)
+    recorded = db.run_sync(
+        lambda conn: record_individual_cue(conn, event, now=NOW, actor_resident_id=fx.ANA)
+    )
+    assert recorded is True
+    stored = db.run_sync(
+        lambda conn: conn.execute(
+            "SELECT type, payload_json FROM domain_event WHERE id = ?", (str(event.id),)
+        ).fetchone()
+    )
+    assert stored["type"] == "presence.cue_recorded"
+    assert str(fx.ANA) in stored["payload_json"]
+
+
+def test_record_denied_cue_does_not_persist_and_wifi_flag_cannot_bypass_device_opt_in(db):
+    event = cue(source=PresenceSource.wifi)
+    recorded = db.run_sync(
+        lambda conn: record_individual_cue(
+            conn, event, now=NOW, actor_resident_id=None, wifi_collection_enabled=True
+        )
+    )
+    assert recorded is False
+    count = db.run_sync(
+        lambda conn: conn.execute("SELECT count(*) FROM domain_event").fetchone()[0]
+    )
+    assert count == 0
+
+
+def test_record_cue_requires_database_transaction(db):
+    event = cue(source=PresenceSource.manual)
+    with db._lock:
+        conn = db._conn
+        assert conn is not None
+        with pytest.raises(RuntimeError, match="transação"):
+            record_individual_cue(conn, event, now=NOW, actor_resident_id=fx.ANA)
 
 
 def test_manual_requires_same_authenticated_resident(db):

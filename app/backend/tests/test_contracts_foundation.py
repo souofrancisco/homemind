@@ -461,7 +461,11 @@ def test_pdf_fixtures_sum_exactly(make):
 def test_fixture_amounts_match_the_pdf():
     assert [a.amount_cents for a in fx.bill_a()[1]] == [4512, 2976, 2464, 2048]
     assert [a.amount_cents for a in fx.bill_b()[1]] == [4680, 2760, 2440, 2120]
-    assert [a.amount_cents for a in fx.bill_c()[1]] == [3334, 3333, 3333]
+    assert [a.amount_cents for a in fx.bill_c()[1]] == [
+        3333,
+        3333,
+        3334,
+    ]  # Ana, Bruno, Carla (D-34)
     assert fx.bill_a()[0].energy_cents == 9600
 
 
