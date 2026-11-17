@@ -281,7 +281,7 @@ def patch_appliance(
         "UPDATE appliance SET name = ?, category = ?, typical_watts = ? WHERE id = ?",
         (name, category, watts, str(id)),
     )
-    return get_appliance(conn, access, id)
+    return _view(_current(conn, access.household_id, id), access)
 
 
 def retire_appliance(
