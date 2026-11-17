@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Vídeo: URL RTSP ou caminho de clip. Nunca logar nem devolver (pode conter credenciais).
     video_source: str = ""
     video_sem_frame_s: float = 3.0  # sem frame há mais do que isto -> camara_ok False
-    video_fps_max: float = 15.0  # cadência máxima do MJPEG de GET /video
+    video_fps_max: float = 15.0  # cadência máxima do MJPEG de GET /api/video
     video_jpeg_qualidade: int = 80
 
 

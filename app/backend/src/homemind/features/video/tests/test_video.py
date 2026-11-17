@@ -30,7 +30,7 @@ def test_video_503_sem_fonte_configurada(monkeypatch):
     monkeypatch.delenv("VIDEO_SOURCE", raising=False)
     get_settings.cache_clear()
     try:
-        resposta = TestClient(app).get("/video")
+        resposta = TestClient(app).get("/api/video")
     finally:
         get_settings.cache_clear()
     assert resposta.status_code == 503

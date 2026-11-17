@@ -4,12 +4,12 @@ from fastapi.responses import StreamingResponse
 from homemind.core.config import get_settings
 from homemind.features.video.service import LIMITE, Fonte, partes_mjpeg
 
-router = APIRouter(tags=["video"])
+router = APIRouter(prefix="/api", tags=["video"])
 
 
 @router.get("/video", response_class=StreamingResponse)
 async def video(fonte: Fonte) -> StreamingResponse:
-    """MJPEG do frame mais recente, para `<img src="/video">`. Processamento local, sem gravação."""
+    """MJPEG do frame mais recente, para `<img src="/api/video">`. Local, sem gravação."""
     settings = get_settings()
     return StreamingResponse(
         partes_mjpeg(

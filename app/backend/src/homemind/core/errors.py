@@ -13,7 +13,12 @@ def _body(code: str, message: str) -> dict:
 def register_errors(app: FastAPI) -> None:
     @app.exception_handler(HTTPException)
     async def http_error(_: Request, e: HTTPException) -> JSONResponse:
-        return JSONResponse(_body(f"http_{e.status_code}", str(e.detail)), e.status_code, e.headers)
+        # detail pode ser {"code", "message"} para um código específico; senão `http_<status>`.
+        if isinstance(e.detail, dict) and {"code", "message"} <= e.detail.keys():
+            body = _body(str(e.detail["code"]), str(e.detail["message"]))
+        else:
+            body = _body(f"http_{e.status_code}", str(e.detail))
+        return JSONResponse(body, e.status_code, e.headers)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(_: Request, e: RequestValidationError) -> JSONResponse:

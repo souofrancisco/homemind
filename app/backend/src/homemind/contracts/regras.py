@@ -1,26 +1,31 @@
-"""Regra objeto -> ações (Pessoa 4), persistida em `rules.json` e editada pela UI (Pessoa 5).
+"""Regra (`Rule`): objeto levantado → ações na lâmpada/tomada. Ver frontend-api-contract (v3) §6.
 
-Formato JSON do plano §3. `POST /rules/parse` só devolve uma proposta; nada é guardado nem
-executado antes de `POST /rules` com confirmação humana.
+Persistida em `rules.json` pelo motor (P4). `POST /api/rules/parse` só devolve uma proposta; nada
+é guardado nem executado antes de `POST /api/rules` com confirmação humana.
 """
 
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from homemind.contracts.base import Contrato
-from homemind.contracts.home import BRILHO_MAX, BRILHO_MIN
+from homemind.contracts.home import Cor
 from homemind.contracts.visao import ClasseObjeto
 
 
-class AcaoLampada(Contrato):
+class _Entrada(BaseModel):
+    """Sem campos extra: um nome errado (ex.: `ativa`) dá 400 em vez de ser ignorado."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AcaoLampada(_Entrada):
     dispositivo: Literal["lampada"] = "lampada"
     ligada: bool
-    cor: str | None = None
-    brilho: int | None = Field(default=None, ge=BRILHO_MIN, le=BRILHO_MAX)
+    cor: Cor | None = None  # None = manter a atual
+    brilho: int | None = Field(None, ge=1, le=100)  # para apagar usar ligada=false
 
 
-class AcaoTomada(Contrato):
+class AcaoTomada(_Entrada):
     dispositivo: Literal["tomada"] = "tomada"
     ligada: bool
 
@@ -28,22 +33,16 @@ class AcaoTomada(Contrato):
 Acao = Annotated[AcaoLampada | AcaoTomada, Field(discriminator="dispositivo")]
 
 
-class Regra(Contrato):
-    id: str = Field(pattern=r"^[a-z0-9_-]+$", max_length=40)
+class Rule(_Entrada):
+    id: str = Field(pattern=r"^[a-z0-9_-]{1,40}$")
     objeto: ClasseObjeto
     nome: str = Field(min_length=1, max_length=60)
-    acoes: tuple[Acao, ...] = Field(min_length=1)
-    ativa: bool = True
+    enabled: bool = True
+    acoes: list[Acao] = Field(min_length=1, max_length=2)
 
-
-class PedidoRegra(Contrato):
-    """Corpo de `POST /rules/parse`."""
-
-    texto: str = Field(min_length=1, max_length=500)
-
-
-class PropostaRegra(Contrato):
-    """Resposta de `POST /rules/parse`: pré-visualização, ainda não persistida."""
-
-    regra: Regra
-    descricao: str  # explicação em PT-PT do que a regra fará
+    @model_validator(mode="after")
+    def _um_por_dispositivo(self) -> "Rule":
+        dispositivos = [a.dispositivo for a in self.acoes]
+        if len(dispositivos) != len(set(dispositivos)):
+            raise ValueError("no máximo uma ação por dispositivo")
+        return self

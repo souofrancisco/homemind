@@ -1,7 +1,7 @@
 """Mede a estabilidade da fonte de vídeo: `python -m homemind.features.video.medir --minutos 10`.
 
 Lê `VIDEO_SOURCE` do ambiente. Não grava frames nem imprime o URL. Mede o lado do backend
-(cadência e falhas); o atraso câmara->ecrã mede-se à parte, com um cronómetro em `GET /video`.
+(cadência e falhas); o atraso câmara->ecrã mede-se à parte, com um cronómetro em `GET /api/video`.
 """
 
 import argparse
