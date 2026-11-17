@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -121,7 +121,8 @@ def test_invalid_expired_unverified_and_wrong_account(client, now):
     assert error(accept(client, token, verified(email="wrong@example.test"))) == (
         404, "invitation_not_found"
     )
-    assert error(accept(client, token, verified(sub="sub-attacker", email="wrong@example.test"))) == (
+    attacker = verified(sub="sub-attacker", email="wrong@example.test")
+    assert error(accept(client, token, attacker)) == (
         404, "invitation_not_found"
     )
     assert error(accept(client, token, verified(email="guest@example.test"))) != (
