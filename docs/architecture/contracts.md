@@ -185,7 +185,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 
 ### Operação (P1/P5, existentes)
 
-`GET /healthz`, `GET /api/status`, `GET /api/mcp/tools`, `GET /api/video` continuam (os dois últimos restringem-se a **O**; ver [migration.md](migration.md)).
+`GET /healthz`, `GET /api/status` e `GET /api/mcp/tools` continuam. `GET /api/video` responde sempre `404` por PRIV-02; nenhuma role recebe frames. Ver [migration.md](migration.md).
 
 ## 7. WebSocket (PLANEADO)
 

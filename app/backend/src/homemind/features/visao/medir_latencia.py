@@ -1,11 +1,11 @@
-"""Mede a latência gesto -> luz (critério da demo: < 4 s):
+"""Mede em FakeHome o pipeline legado com clip sintético allowlisted em PROFILE=demo:
 
     python -m homemind.features.visao.medir_latencia --detetor modulo:Classe [--video clip.mp4]
 
 Monta fonte + detetor + `ProcessadorObjectOS` + motor com `FakeHome` (SIMULADO) e conta, para cada
 `objeto_levantado`, o tempo desde `ev.hora` (hora do frame) até `definir_lampada(ligada=True)`
-devolver. Só números no ecrã: não grava frames nem imprime o URL da fonte. Com FakeHome mede o
-pipeline de software; o tempo real da lâmpada (MCP) mede-se à parte.
+devolver. Só números no ecrã: não grava frames nem imprime o caminho da fonte. Não abre RTSP nem
+mede dispositivos reais.
 """
 
 import argparse
@@ -25,6 +25,7 @@ from homemind.features.engine.rules import RulesStore
 from homemind.features.gestos.ponte import PublicadorFila
 from homemind.features.gestos.processador import ProcessadorObjectOS
 from homemind.features.video.fonte import criar_fonte
+from homemind.features.video.service import fonte_dev_permitida
 from homemind.features.visao.thread import ThreadVisao, carregar_detetor
 
 LIMITE_S = 4.0
@@ -124,8 +125,8 @@ def main() -> None:
     settings = get_settings()
     if args.video:
         settings = settings.model_copy(update={"video_source": args.video})
-    if not settings.video_source:
-        raise SystemExit("Falta --video ou VIDEO_SOURCE.")
+    if not fonte_dev_permitida(settings):
+        raise SystemExit("Só são permitidos clips sintéticos locais em PROFILE=demo.")
 
     detetor = carregar_detetor(args.detetor)
     fonte = criar_fonte(settings)

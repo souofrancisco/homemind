@@ -7,6 +7,8 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    profile: Literal["normal", "demo"] = "normal"
+    home_backend: Literal["fake", "mcp"] = "fake"
     mcp_endpoint: str = ""
     # Nunca logar nem devolver este valor (header X-API-Key do MCP Altice).
     mcp_api_key: str = ""
@@ -38,10 +40,10 @@ class Settings(BaseSettings):
     oidc_client_id: str = "homemind"
     # Origens dos clientes autorizados (CORS), separadas por vírgulas.
     cors_origins: str = "http://localhost:5173,http://localhost,https://localhost"
-    # Vídeo: URL RTSP ou caminho de clip. Nunca logar nem devolver (pode conter credenciais).
+    # Fonte legado: serviço só aceita clip de teste allowlisted em demo; nunca logar/devolver path.
     video_source: str = ""
-    # PRIV-02: o endpoint MJPEG herdado só pode servir clips locais em desenvolvimento.
-    # Nunca permitir preview de uma stream RTSP real; fechado por omissão.
+    # PRIV-02: flag adicional para processamento de clips sintéticos permitidos em PROFILE=demo.
+    # Não reabre o endpoint MJPEG, que permanece desativado.
     enable_dev_video_preview: bool = False
     # Pista individual por Wi-Fi: sem recolha antes de revisão e ativação explícita.
     presence_wifi_collection_enabled: bool = False
