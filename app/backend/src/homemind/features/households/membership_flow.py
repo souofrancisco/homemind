@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 import sqlite3
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -191,8 +191,6 @@ def revoke_membership(conn: sqlite3.Connection, user: User, house: UUID,
     end = max(row["starts_on"], today)
     if row["ends_on"] is not None:
         end = min(end, row["ends_on"])
-    from datetime import date
-
     repo.end_membership(conn, membership_id, date.fromisoformat(end))
     conn.execute(
         "UPDATE membership_invitation SET revoked_at=? WHERE membership_id=?"
