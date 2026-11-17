@@ -239,3 +239,22 @@ def test_registo_em_jsonl_sem_imagens(tmp_path):
     assert linhas and all(
         set(json.loads(x)) == {"id", "timestamp", "level", "message", "source"} for x in linhas
     )
+
+
+def test_vigiar_camara_publica_so_mudancas(tmp_path):
+    async def cenario():
+        e, _, _ = montar(tmp_path)
+        await e.iniciar()
+        sinal = {"ok": False}
+        fila = e.subscrever()
+        tarefa = asyncio.create_task(e.vigiar_camara(lambda: sinal["ok"], intervalo_s=0.01))
+        await asyncio.sleep(0.05)
+        assert fila.empty()  # sem mudança, nada publicado
+        sinal["ok"] = True
+        await asyncio.sleep(0.05)
+        tarefa.cancel()
+        assert e.camara_ok and e.home_state().camera_ok
+        msgs = [fila.get_nowait() for _ in range(fila.qsize())]
+        assert [m.type for m in msgs] == ["event", "home_state"]
+
+    correr(cenario())
