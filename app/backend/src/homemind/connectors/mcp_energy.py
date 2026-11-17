@@ -21,15 +21,8 @@ _UNIT_BY_NAME = {
 }
 
 
-def reading_from_device(
-    device: dict[str, Any],
-    *,
-    device_id: UUID,
-    now: datetime,
-    unit_override: PowerUnit = PowerUnit.unknown,
-    stale_after: timedelta = timedelta(seconds=90),
-) -> EnergyReading:
-    """Converte os dados MCP, tratando payloads inválidos como leituras em falta."""
+def observed_at_from_device(device: dict[str, Any], now: datetime) -> datetime | None:
+    """Interpreta `lastCommunicationTime` (epoch em ms), descartando valores inválidos/futuros."""
     observed_at = None
     try:
         timestamp = device.get("lastCommunicationTime")
@@ -44,6 +37,19 @@ def reading_from_device(
                 observed_at = candidate
     except (AttributeError, OverflowError, OSError, TypeError, ValueError):
         pass
+    return observed_at
+
+
+def reading_from_device(
+    device: dict[str, Any],
+    *,
+    device_id: UUID,
+    now: datetime,
+    unit_override: PowerUnit = PowerUnit.unknown,
+    stale_after: timedelta = timedelta(seconds=90),
+) -> EnergyReading:
+    """Converte os dados MCP, tratando payloads inválidos como leituras em falta."""
+    observed_at = observed_at_from_device(device, now)
 
     try:
         cap = _capabilities(device).get("instantPower", {})

@@ -7,6 +7,8 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    profile: Literal["normal", "demo"] = "normal"
+    home_backend: Literal["fake", "mcp"] = "fake"
     mcp_endpoint: str = ""
     # Nunca logar nem devolver este valor (header X-API-Key do MCP Altice).
     mcp_api_key: str = ""
@@ -38,11 +40,16 @@ class Settings(BaseSettings):
     oidc_client_id: str = "homemind"
     # Origens dos clientes autorizados (CORS), separadas por vírgulas.
     cors_origins: str = "http://localhost:5173,http://localhost,https://localhost"
-    # Vídeo: URL RTSP ou caminho de clip. Nunca logar nem devolver (pode conter credenciais).
+    # Fonte legado: serviço só aceita clip de teste allowlisted em demo; nunca logar/devolver path.
     video_source: str = ""
     # Que fonte é (PRES-01): kit | rtsp | clip | phone. Vazio = deduzir do URL (rtsp:// -> rtsp;
     # http(s):// -> phone, SIMULADO; sem esquema -> clip, SIMULADO). Nunca promove a «real».
     video_source_kind: Literal["", "kit", "rtsp", "clip", "phone"] = ""
+    # PRIV-02: flag adicional para processamento de clips sintéticos permitidos em PROFILE=demo.
+    # Não reabre o endpoint MJPEG, que permanece desativado.
+    enable_dev_video_preview: bool = False
+    # Pista individual por Wi-Fi: sem recolha antes de revisão e ativação explícita.
+    presence_wifi_collection_enabled: bool = False
     video_sem_frame_s: float = 3.0  # sem frame há mais do que isto -> camara_ok False e reabre
     video_reconexao_s: tuple[float, ...] = (1, 2, 4, 8, 10)  # esperas entre reaberturas
     video_timeout_abrir_ms: int = 5000
