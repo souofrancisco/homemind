@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -84,9 +86,19 @@ def _find_devices(payload: Any) -> tuple[dict[str, Any] | None, dict[str, Any] |
         if not isinstance(device, dict) or not device.get("id"):
             continue
         caps = _capabilities(device)
-        if {"power", "brightness", "color_rgb"} <= caps.keys():
+        categories = set(device.get("categories", []))
+        if (
+            device.get("type") == "bulb"
+            and "security" not in categories
+            and {"power", "brightness", "color_rgb"} <= caps.keys()
+        ):
             lamps.append(device)
-        if {"power", "instantPower"} <= caps.keys() and "energy" in device.get("categories", []):
+        if (
+            device.get("type") == "plug"
+            and "security" not in categories
+            and {"power", "instantPower"} <= caps.keys()
+            and "energy" in categories
+        ):
             plugs.append(device)
     # Ambiguous inventories remain unknown; never choose an arbitrary device.
     return (lamps[0] if len(lamps) == 1 else None, plugs[0] if len(plugs) == 1 else None)
@@ -120,8 +132,11 @@ def _color_name(rgb: tuple[int, int, int] | None) -> Cor | None:
 class McpHome:
     """Adapta a casa MCP ao contrato Home sem expor IDs nem capacidades de segurança."""
 
-    def __init__(self) -> None:
+    def __init__(self, write_approval: Callable[[], bool] | None = None) -> None:
         self._settings = get_settings()
+        # The current engine supplies no approval callback. Enabling the env flag alone
+        # therefore cannot authorize its automatic rule/timer writes.
+        self._write_approval = write_approval
         self._mcp_ok = False
         self._lampada = EstadoLampada()
         self._tomada = EstadoTomada()
@@ -196,6 +211,11 @@ class McpHome:
                         )
                 self._lampada = self._lamp_state(lamp) if lamp else EstadoLampada()
                 self._tomada = self._plug_state(plug) if plug else EstadoTomada()
+                self._consumo_lido_em = datetime.now(UTC) if plug else None
+                if plug is None:
+                    self._consumo_w = None
+                    self._consumo_raw = None
+                    self._consumo_unit = None
                 self._mcp_ok = True
                 if lamp_device is None or plug_device is None:
                     aviso = "Não foi possível identificar inequivocamente lâmpada RGB e tomada."
@@ -207,6 +227,10 @@ class McpHome:
                 self._mcp_ok = False
                 self._lampada = EstadoLampada()
                 self._tomada = EstadoTomada()
+                self._consumo_w = None
+                self._consumo_raw = None
+                self._consumo_unit = None
+                self._consumo_lido_em = None
                 aviso = f"MCP Altice indisponível ({type(exc).__name__})."
                 log.warning("leitura MCP indisponível (%s)", type(exc).__name__)
             return EstadoCasa(
@@ -265,6 +289,7 @@ class McpHome:
 
     async def _poll_consumption(self) -> None:
         while True:
+            poll_started = time.monotonic()
             try:
                 async with self._lock:
                     async with asyncio.timeout(_IO_TIMEOUT_SECONDS):
@@ -288,7 +313,7 @@ class McpHome:
                 self._consumo_lido_em = None
                 self._mcp_ok = False
                 log.warning("poll de consumo MCP indisponível (%s)", type(exc).__name__)
-            await asyncio.sleep(_POLL_SECONDS)
+            await asyncio.sleep(max(_POLL_SECONDS - (time.monotonic() - poll_started), 0))
 
     async def _write_and_verify(
         self,
@@ -298,6 +323,13 @@ class McpHome:
         cor: Cor | None = None,
         brilho: int | None = None,
     ) -> bool:
+        if not self._settings.enable_physical_writes or self._write_approval is None:
+            return False
+        try:
+            if not self._write_approval():
+                return False
+        except Exception:
+            return False
         if any(change.get("type") not in _ALLOWED_WRITE_TYPES for change in changes):
             return False
         async with self._lock:
@@ -336,6 +368,7 @@ class McpHome:
                         and (brilho is None or self._lampada.brilho == brilho)
                     )
                 self._tomada = self._plug_state(current)
+                self._consumo_lido_em = datetime.now(UTC)
                 return self._tomada.ligada is ligada
             except Exception as exc:
                 self._mcp_ok = False

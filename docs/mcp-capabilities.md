@@ -56,7 +56,9 @@ permitidas pelo conector:
 
 O schema também anuncia `temperature`, mas o conector não permite essa operação. O ObjectOS não
 usa ferramentas de alarme/segurança, cenários ou timers. Atualizações físicas continuam
-desativadas por `ENABLE_PHYSICAL_WRITES=false`.
+desativadas por `ENABLE_PHYSICAL_WRITES=false`. Além do flag, `McpHome` exige um callback de
+aprovação por ação; o motor atual não fornece esse callback, portanto ativar apenas o flag não
+autoriza escritas automáticas de regras ou temporizadores.
 
 ## Inventário obtido por leitura MCP
 
@@ -95,8 +97,9 @@ Na resposta real da lâmpada (`get_device_details`), foram observadas:
 
 - Leituras de `get_home_devices` e `get_device_details` foram efetuadas; nenhuma escrita física foi
   chamada.
-- A confirmação de escritas por releitura está implementada, mas depende de uma autorização
-  explícita para ativar `ENABLE_PHYSICAL_WRITES` e não foi exercitada.
+- A confirmação de escritas por releitura está implementada, mas depende do flag e de um callback
+  explícito de aprovação por ação. Esse callback ainda não está ligado a um ActionExecutor e
+  nenhuma escrita foi exercitada.
 - A unidade de `instantPower` não consta no schema/resposta observados. Consumo em watts não está
   validado.
 - `get_home_devices` e `get_device_details` são as fontes de estado; os tempos `lastCommunicationTime`
