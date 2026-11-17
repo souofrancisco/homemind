@@ -1,6 +1,6 @@
 # Contratos
 
-**IMPLEMENTADO (fundação F0)**: modelos Pydantic, eventos de domínio, SQLite, barramento persistente, guardas por casa/papel e OpenAPI→TS. **PLANEADO**: os motores e as rotas de cada módulo (P1–P5). **DECISÃO PENDENTE**: marcadas por «(proposta)» e listadas em §9 e em [decisions.md](../decisions.md).
+**IMPLEMENTADO (fundação F0)**: modelos Pydantic, eventos de domínio, SQLite, barramento persistente, guardas por casa/papel e OpenAPI→TS. **PLANEADO**: os motores e a maior parte das rotas de P1–P5; **HOUSE-02** acrescenta rotas limitadas de gestão de memberships nesta branch. **DECISÃO PENDENTE**: marcadas por «(proposta)» e listadas em §9 e em [decisions.md](../decisions.md).
 
 A API que já existia (ObjectOS) está em [api-implementada.md](api-implementada.md) e **não mudou**. Entidades e estados: [data-model.md](data-model.md); eventos: [event-flow.md](event-flow.md).
 
@@ -38,7 +38,7 @@ Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), 
 
 | Contrato | Produtor (dono) | Consumidores | Persistência | Testes | Pendente |
 |---|---|---|---|---|---|
-| `Household`, `Room`, `Resident`, `Membership` | P5 | todos (via guardas) | **IMPLEMENTADA** (`0001_core_households.sql`) | `tests/test_contracts_foundation`, `households/tests` | Convites e fim de contrato por REST |
+| `Household`, `Room`, `Resident`, `Membership` | P5 | todos (via guardas) | **IMPLEMENTADA** (`0001_core_households.sql`); HOUSE-02 acrescenta `0003_core_membership_invitations.sql` | `tests/test_contracts_foundation`, `households/tests` | HOUSE-02: convites e revogação REST nesta branch; onboarding visual HOUSE-05 |
 | `HouseholdView`, `MemberView`, `MeContext` | P5 | frontend | — (DTO) | `test_authorization`, `test_openapi_contract` | P-04 (o que um inquilino vê dos outros) |
 | `Device`, `DeviceView`, `Appliance`, `ApplianceSignature` | P1 | P1, P4, P3 | PLANEADA (P1: `0030_energy_*.sql`) | modelos | Capacidades por dispositivo |
 | `EnergyReading`, `PowerStep` | P1 | P1 (P4 só o resumo) | PLANEADA (retenção P-08) | modelos + evento | Limiar de `stale` |
@@ -201,3 +201,7 @@ O servidor só envia notificações do utilizador autenticado (pessoais) e da su
 ## 9. Pontos para revisão da equipa (DECISÃO PENDENTE)
 
 Prioridade para aprovar antes de implementar os módulos: ver [decisions.md](../decisions.md) D-23…D-30 e P-16…P-21. Resumo: (1) `Provenance` em duas dimensões; (2) Wh inteiros + milicêntimos; (3) semântica do barramento; (4) 404 vs 403 e membership por datas; (5) `None` em energia/custo; (6) regras de resposta das notificações; (7) OpenAPI por `OPENAPI_MODELS`; (8) nenhuma alteração ao código ObjectOS de domínio; (9) **sem dependências novas**; (10) quem aprova cada pendência.
+
+## HOUSE-02 — extensão de comandos REST sem alterar DTOs F0
+
+`RoomView`, `MemberView`, `MembershipSelfView`, `MeContext` e a matriz `PERMISSIONS` mantêm a forma e os campos. Os pedidos `CreateRoom`, `CreateInvitation` e `RedeemInvitation` e a resposta pontual `InvitationIssued` são comandos/DTOs HTTP da feature, não entidades de domínio nem eventos. Só um senhorio efetivo pode criar convites para `tenant`; `landlord` e `operator` são provisionados fora das rotas públicas. O contexto é derivado de um access token Authentik e da tabela membership, revalidado na transação de escrita. Documentação de endpoints, estados, ADR e limitações: [house-02-memberships.md](house-02-memberships.md).
