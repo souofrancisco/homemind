@@ -11,7 +11,7 @@ import time
 
 from homemind.contracts.eventos import ProcessadorEventos, PublicadorEventos
 from homemind.contracts.video import FonteVideo
-from homemind.contracts.visao import Detetor
+from homemind.contracts.visao import Detetor, FrameDeteccoes
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +51,16 @@ class ThreadVisao:
         self.frames = 0  # frames processados (diagnóstico)
         self._parar = threading.Event()
         self._thread: threading.Thread | None = None
+        self._ultima: tuple[FrameDeteccoes, float] | None = None
+        self._ultima_lock = threading.Lock()
+
+    def ultima_deteccao(self, idade_max_s: float = 1.0) -> FrameDeteccoes | None:
+        """Últimas deteções (só metadados), ou None se mais antigas que `idade_max_s`."""
+        with self._ultima_lock:
+            if self._ultima is None:
+                return None
+            det, quando = self._ultima
+        return det if time.monotonic() - quando <= idade_max_s else None
 
     def iniciar(self) -> None:
         self._parar.clear()
@@ -72,7 +82,10 @@ class ThreadVisao:
                 continue
             ultimo = frame.indice
             try:
-                eventos = self.processador.processar(self.detetor.detetar(frame))
+                det = self.detetor.detetar(frame)
+                with self._ultima_lock:
+                    self._ultima = (det, time.monotonic())
+                eventos = self.processador.processar(det)
             except Exception:  # um frame mau não pára a visão; sem detalhes do frame no log
                 log.exception("falha a processar frame")
                 continue
