@@ -30,20 +30,6 @@ def contact(ts: datetime, state: ContactState | None, *, status=SensorStatus.ok,
     )  # fmt: skip
 
 
-def smoke(ts: datetime, detected: bool | None, *, status=SensorStatus.ok,
-          device=fx.SMOKE_SENSOR) -> de.SensorReadingRecorded:  # fmt: skip # noqa: E501
-    r = SensorReading(
-        id=stable_id("sim-reading", str(device), ts.isoformat()),
-        device_id=device, room_id=None, ts=ts, kind=SensorKind.smoke, status=status,
-        smoke_detected=detected if status is SensorStatus.ok else None,
-        provenance=fx.SIM_MEASURED,
-    )  # fmt: skip
-    return de.SensorReadingRecorded(
-        id=stable_id("sim-event", r.id.hex), ts=ts, household_id=fx.HOUSEHOLD,
-        provenance=fx.SIM_MEASURED, data=r,
-    )  # fmt: skip
-
-
 def heater_on(ts: datetime) -> de.EnergyConsumptionDetected:
     c = fx.consumption().model_copy(update={"started_at": ts})
     return de.EnergyConsumptionDetected(

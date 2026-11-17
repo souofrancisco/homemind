@@ -1,4 +1,4 @@
-"""SAFE-01/03: regras puras, relógio = ts dos eventos. Tudo SIMULADO."""
+"""SAFE-01: regras puras, relógio = ts dos eventos. Tudo SIMULADO."""
 
 from datetime import timedelta
 
@@ -114,32 +114,4 @@ def test_not_heating_appliance_or_other_room_or_no_room_does_not_fire():
 def test_absent_sensor_is_reported_and_no_alert():
     e = engine()
     assert feed(e, sim.heater_on(T0)) == []
-    assert e.coverage(fx.HOUSEHOLD) == {SensorKind.contact: "absent", SensorKind.smoke: "absent"}
-
-
-def test_smoke_critical_dedup_no_cut_suggestion_and_resolution():
-    e = engine()
-    out = feed(e, sim.smoke(T0, False), sim.smoke(at(1), True), sim.smoke(at(1.1), True))
-    assert len(out) == 1
-    a = out[0].data
-    assert a.kind is SafetyAlertKind.smoke and a.severity.value == "critical"
-    assert a.suggested_command is None and a.provenance.simulated
-    assert a.notify_landlord is False  # sem política que o autorize
-    assert "não substitui detetores de fumo certificados" in alert_text(a)
-    res = feed(e, sim.smoke(at(3), False))
-    assert res[0].data.status is SafetyAlertStatus.resolved and res[0].data.id == a.id
-    assert len(feed(e, sim.smoke(at(4), True))) == 1  # novo episódio
-
-
-def test_smoke_notify_landlord_only_when_enabled():
-    e = engine(notify_landlord=True)
-    assert feed(e, sim.smoke(T0, True))[0].data.notify_landlord is True
-
-
-@pytest.mark.parametrize("status", [SensorStatus.unknown, SensorStatus.stale])
-def test_smoke_unusable_gives_no_false_alert_and_does_not_clear(status):
-    e = engine()
-    assert feed(e, sim.smoke(T0, None, status=status)) == []
-    assert e.coverage(fx.HOUSEHOLD)[SensorKind.smoke] == status.value
-    feed(e, sim.smoke(at(1), True))
-    assert feed(e, sim.smoke(at(2), None, status=status)) == []
+    assert e.coverage(fx.HOUSEHOLD) == {SensorKind.contact: "absent"}

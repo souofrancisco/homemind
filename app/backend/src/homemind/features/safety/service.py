@@ -21,9 +21,8 @@ class SafetyService:
     def __init__(
         self,
         is_heating: HeatingResolver = no_heating_known,
-        notify_landlord: bool = False,
     ) -> None:
-        self.engine = SafetyEngine(is_heating, notify_landlord)
+        self.engine = SafetyEngine(is_heating)
 
     def handle(self, _conn: sqlite3.Connection, stored: StoredEvent):
         return self.engine.on_event(stored.event)
