@@ -1,6 +1,6 @@
 # Módulo `presence` — câmara na porta e presença
 
-**Dono: P2 (1Mii).** **PLANEADO**, exceto o estado da câmara (PRES-01, **IMPLEMENTADO**, ver abaixo), sobre `features/video` e `features/visao` existentes. Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
+**Dono: P2 (1Mii).** **PLANEADO**, exceto o estado da câmara (PRES-01) e a contagem na porta (PRES-02), **IMPLEMENTADOS** (ver abaixo), sobre `features/video` e `features/visao` existentes. Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
 
 ## Responsabilidade
 
@@ -61,7 +61,28 @@ Em dúvida a fonte é SIMULADA: `kit`/`rtsp` sem URL `rtsp://` caem para `clip`;
 `last_frame_at`, `door_mask_configured`), nunca imagem nem URL. Só o papel `operator` em **qualquer** casa (sem `household_id` na rota). **Decisão para a demo (uma casa); definitivo: `household_id` na rota (PLANEADO)**, ver P-28 em `decisions.md`. Senhorio, inquilino e sem membership recebem `403 forbidden_role`. Fonte ausente ou sem frame
 há mais de `VIDEO_SEM_FRAME_S` ⇒ `camera_ok=false` e sem `fps`; **nunca** se conclui «casa vazia». O
 `fps` é a cadência de frames novos entre duas consultas (`null` na primeira).
-`door_mask_configured` é sempre `false` até à PRES-02. `GET /api/video` (MJPEG) passou a exigir também o papel `operator` (o senhorio nunca vê imagens). Política final do MJPEG: desligado por omissão (`ENABLE_DEV_VIDEO_PREVIEW=false`, PR #146) **e**, quando ligado (dev), só `operator` (este PR); a rota mantém-se (remoção/adaptação: BASE-04).
+`door_mask_configured` é `true` quando a soleira (PRES-02) está configurada e válida. `GET /api/video` (MJPEG): política final desligado por omissão (`ENABLE_DEV_VIDEO_PREVIEW=false`, PR #146) **e**, quando ligado (dev), só `operator` (PR #158); a rota mantém-se (remoção/adaptação: BASE-04).
+
+## Contagem na porta (PRES-02) — IMPLEMENTADO (lógica testada com detetor falso)
+
+`features/presence/{door,runner,yolo}.py`. Cadeia: `FonteVideo` → **recorte à soleira (o resto é descartado)**
+(`recortar`: o detetor só recebe o recorte da soleira, uma cópia, e as caixas voltam ao frame inteiro) → `DetetorYoloPessoas` (YOLO11 só classe «pessoa» +
+ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` → `presence.door_crossed`
+(`DoorCrossed`, `provenance.kind=inferred`, `origin` da fonte: SIMULADA com clip/telemóvel).
+
+- Só liga com `VIDEO_SOURCE`, `PRESENCE_HOUSEHOLD_ID`, `PRESENCE_DETETOR`, `PRESENCE_DOOR_ROI` e
+  `PRESENCE_DOOR_LINE` (coordenadas normalizadas 0–1 `x1,y1,x2,y2`) válidos. `PRESENCE_DOOR_INSIDE_SIGN`
+  (`1`/`-1`) diz de que lado da linha orientada fica o interior (ver `door.py`). Ponto usado: os pés.
+- Anti-dupla contagem: histerese à volta da linha (oscilar não conta); um cruzamento só é emitido
+  após `PRESENCE_DOOR_CONFIRM_S` e, se a mesma pessoa voltar para trás nesse tempo, anulam-se; no mesmo
+  sentido uma 2.ª passagem em `PRESENCE_DOOR_COOLDOWN_S` é ignorada (mesma pessoa em duas pistas;
+  duas pessoas coladas contam como uma: **limitação conhecida, aceite para a demo**: preferimos contar a menos a inventar entradas).
+- A soleira configura-se só por variáveis de ambiente, sem UI: **aceite para a demo**.
+- `track_id` vive só em memória e é esquecido; pistas sem ID confirmado não contam. Visitas não são
+  distinguidas aqui: são só mais passagens anónimas (o número de visitas é da PRES-05).
+- `confidence` é a média da confiança do detetor nessa pessoa, **não** uma precisão medida.
+- Sem frames novos não há eventos e nada daqui conclui «casa vazia». O código ObjectOS (`visao`,
+  gestos) fica intacto e deixa de ser necessário neste caminho (remoção: BASE-04 #74).
 
 ## Limites reais
 
