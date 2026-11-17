@@ -1,6 +1,6 @@
 # Módulos `billing`, `budgets` e `alerts` — atribuição, fatura, orçamentos e alertas
 
-**Dono: P4 (Amorim3000).** **PLANEADO.** Algoritmo e diagrama: [event-flow.md](../architecture/event-flow.md) §3. Entidades: [data-model.md](../architecture/data-model.md).
+**Dono: P4 (Amorim3000).** **PARCIALMENTE IMPLEMENTADO** (ver «Estado»); o resto é **PLANEADO**. Algoritmo e diagrama: [event-flow.md](../architecture/event-flow.md) §3. Entidades: [data-model.md](../architecture/data-model.md).
 
 **HOUSE-03:** o acesso ao contexto histórico do catálogo está implementado na branch do PR #142,
 ainda não integrada na `main`. P4 continua responsável por escolher e justificar a atribuição.
@@ -59,10 +59,10 @@ atual à API da casa.
 | Opção | Comportamento | Prioridade |
 |---|---|---|
 | **A — por igual** | O consumo comum divide-se por todos os moradores ativos | P0 |
-| **B — perguntar** (recomendada pelo PDF) | Cria pedido na aplicação; sem resposta no prazo (omissão 24 h) cai em A (ou C) | P0 |
+| **B — perguntar** (recomendada pelo PDF) | Cria pedido na aplicação. «É minha»: basta quem assume. Atribuir a outro: pelo menos metade dos moradores aceita (fecha antes se o próprio assumir). Inconclusivo ao fim de 24 h → por igual (D-32) | P0 |
 | **C — por presença** | Divide pelos que estavam em casa (usa presença de P2) | P1 |
 
-Só se pergunta acima de um custo estimado (omissão 0,50 €, valor do PDF «por exemplo»); abaixo vai direto para a conta comum. A omissão `ask` e os valores são configuráveis em `Household` e **PROPOSTAS** (ver [decisions.md](../decisions.md) P-03).
+Só se pergunta quando o custo estimado **do consumo** (utilização completa do aparelho) é ≥ `ask_threshold_cents` (omissão 0,50 €, configurável por casa em `HouseholdPolicy`); abaixo, sem custo estimável ou com a regra A, vai direto para a conta comum. A pergunta pode sair com o consumo ainda a decorrer, logo que passa o limiar (D-32).
 
 ## Cálculo da fatura
 
@@ -97,12 +97,14 @@ Resíduo 210 kWh = 33,60 €; base = (24 € + 33,60 €) ÷ 4 = 14,40 € por p
 
 O sumário executivo cita 21,20 €; o corpo do documento (§6.2 e §7.1) cita 45,12 / 29,76 / 24,64 / 20,48 €. Os dois conjuntos somam 120,00 € e são **o mesmo algoritmo com dados diferentes**: ambos são testes obrigatórios. Para o MVP vale o A (usa a sala e as máquinas confirmadas na aplicação); o B é a versão mínima. **Os valores são ilustrativos do PDF, não resultados nossos.**
 
-**Fixture C — arredondamento:** 100,00 € repartidos por 3 moradores iguais → 33,34 / 33,33 / 33,33 (o cêntimo vai para o `resident_id` menor).
+**Fixture C — arredondamento:** 100,00 € repartidos por 3 moradores iguais → 33,34 / 33,33 / 33,33 (o cêntimo vai para o `resident_id` menor: com os ids das fixtures é o **Bruno**; `fx.bill_c()` põe-no na Ana, o que só difere na ordem).
+
+**Arredondamento implementado:** cada componente (termo fixo, consumo individual, resíduo) reparte-se em cêntimos inteiros pelo maior resto, com empates para o `resident_id` menor. Cada linha do recibo é inteira, as linhas somam o valor de cada morador e `Σ = total` exatamente. Consumos sem atribuição ativa (pergunta pendente, ambíguos, a decorrer) ficam no resíduo: nunca criam dívida.
 
 ## Orçamentos (P0 → P1)
 
 - Orçamento pessoal: limiares 50 / 80 / 100 % (omissão do PDF), notificação por limiar **uma só vez** por período (`last_threshold_notified`).
-- O gasto comparado é o **consumo individual acumulado × preço** (sem a base fixa): **PROPOSTA** a confirmar (P-10).
+- O gasto comparado inclui **todos os custos** (parte do termo fixo + resíduo + consumo individual), isto é, o valor que o morador vai pagar (D-31).
 - Previsão do fim do mês: projeção linear do gasto acumulado (P1). Algoritmos mais complexos ficam fora do MVP.
 - Plafond por quarto do senhorio (`included_kwh`): aviso antes de passar e quando passa; o excesso paga o próprio quarto (PDF §6.9, §15.3) — P1.
 
@@ -119,6 +121,15 @@ Todos produzem `alerts.alert_raised`; o módulo `notifications` decide destinat�
 ## Ficheiros existentes reutilizáveis
 
 Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `core/errors.py`, o relógio injetado dos testes do motor antigo (`features/engine/tests/`) e `TARIFA_EUR_KWH` de `core/config.py`.
+
+## Estado
+
+| Peça | Estado |
+|---|---|
+| `features/billing/attribution.py`: primeira decisão (quarto → morador; comum → perguntar/igual) | IMPLEMENTADO (puro, sem persistência) |
+| `features/billing/allocation.py`: repartição + arredondamento + recibo por linhas | IMPLEMENTADO (puro, sem persistência) |
+| Votação da regra B (D-32) | IMPLEMENTADO no contrato (`confirmation_outcome`); consumo do `outcome` em billing: PLANEADO |
+| Entrada da fatura (BILL-01), fecho e persistência (BILL-04), orçamentos, alertas | PLANEADO |
 
 ## Ficheiros novos previstos
 
