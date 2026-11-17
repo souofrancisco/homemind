@@ -97,6 +97,7 @@ Prefixo `/api`. JSON UTF-8, `snake_case`, horas ISO 8601 UTC. Todas as rotas `/a
 | `DELETE` | `/api/rules/{id}` | `204` · `404 rule_not_found` |
 | `POST` | `/api/rules/parse` | corpo `{ "text": "…" }` (3–300) → `ParseResponse` |
 | `GET` | `/api/video` | MJPEG (`multipart/x-mixed-replace`); `503` sem `VIDEO_SOURCE`. Query opcional `anotacoes` (omissão `true`) e `esqueleto` (omissão `true`): `anotacoes=false` → imagem limpa; `esqueleto=false` → só caixas |
+| `GET` | `/api/presence/camera/status` | `CameraStatus` (PRES-01): só papel `operator` (`403` aos restantes); sem imagem nem URL; fonte em falha ⇒ `camera_ok=false` |
 | `GET` | `/api/mcp/tools` | `tools/list` do MCP (diagnóstico); `502` se indisponível |
 | `GET` | `/api/me/context` | `MeContext`: o residente ligado ao `sub` e as suas memberships ativas (**Conta Certa, F0**) |
 | `GET` | `/api/households/{id}` | `HouseholdView` · `404 household_not_found` (não-membro ou casa inexistente) · `403 forbidden_role` |
