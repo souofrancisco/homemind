@@ -111,7 +111,8 @@ Os exemplos de fatura continuam distintos: **A (§7.1)** = 45,12 / 29,76 / 24,64
 
 ## 7. Qualidade, tempos e bloqueios
 
-- **Execução local** de `make check`, testes, OpenAPI→TS, frontend build e Docker smoke: **NÃO EXECUTADA** nesta sessão, porque não há checkout do repositório privado nem acesso de rede no ambiente de execução; usar CI do Draft PR como primeira evidência e executar localmente antes de review.
+- **CI GitHub Actions**: `make check` **PASSOU** no commit `423e00645fe7a3bb48f10ec8cdbf3897ec66387a` ([run #44185597864](https://github.com/souofrancisco/homemind/actions/runs/44185597864)): `ruff check`/`ruff format --check` (120 ficheiros formatados), ESLint, `pytest` (**384 passed, 1 warning**), OpenAPI→TypeScript, `tsc -b`, build Vite e `docker compose config -q`. Isto valida o código e contratos, **não** demonstra o fluxo financeiro de ponta a ponta.
+- **Execução local / smoke Docker com containers**: **NÃO EXECUTADOS** nesta sessão; não existe checkout autorizado do repositório privado no ambiente local desta execução. O smoke e os E2E com dataset DEMO-01 continuam por fazer.
 - **Tempos medidos:** nenhum. Não são inventados p50/p95 nem sucesso de demo.
 - **Segurança:** sem alterações a MCP, tokens, imagens, regras de domínio ou base real; nenhuma escrita física efetuada.
 - **Próximo merge:** aguardar as PRs dos módulos; verificar os contratos efetivos; ligar serviços reais, testes E2E do produto, OpenAPI/UI e runner DEMO-01 numa atualização deste Draft PR; não assinalar #28 concluída antes disso.
