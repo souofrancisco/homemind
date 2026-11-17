@@ -21,18 +21,20 @@ router = APIRouter(
 
 # Só nomes e metadados técnicos: payload_json (incluindo dados pessoais) nunca sai.
 _PHASE_BY_EVENT = {
-    "energy.reading_recorded": "reading",
-    "energy.step_detected": "detection",
-    "energy.consumption_detected": "consumption",
-    "energy.consumption_closed": "consumption",
-    "billing.confirmation_needed": "confirmation_requested",
-    "notification.created": "notification",
-    "notification.responded": "confirmation_answered",
-    "billing.attribution_changed": "attribution",
-    "alerts.threshold_crossed": "budget_threshold",
-    "billing.bill_created": "bill_created",
-    "billing.bill_finalized": "bill_finalized",
-    "billing.allocation_published": "allocation_published",
+    "energy.reading_recorded": "reading_persisted",
+    "energy.step_detected": "step_event_persisted",
+    "energy.consumption_detected": "consumption_event_persisted",
+    "energy.consumption_closed": "consumption_event_persisted",
+    "billing.confirmation_needed": "confirmation_request_persisted",
+    "notification.created": "notification_persisted",
+    # D-32 emits one event per vote. The private outcome is deliberately not returned here.
+    "notification.responded": "response_persisted",
+    "billing.attribution_changed": "attribution_event_persisted",
+    "alerts.threshold_crossed": "threshold_event_persisted",
+    # BILL-01 currently creates drafts; only bill_finalized could prove finalization.
+    "billing.bill_created": "bill_recorded",
+    "billing.bill_finalized": "bill_finalized_event_persisted",
+    "billing.allocation_published": "allocation_event_persisted",
 }
 
 OperatorAccess = Annotated[HouseholdAccess, Depends(require_access(Resource.device))]
@@ -52,6 +54,9 @@ class TraceView(ContractModel):
     source_kind: Literal["demo"] = "demo"
     # Nem um percurso com todos os eventos demonstra que as contas estão corretas.
     evidence_level: Literal["persisted_events_only"] = "persisted_events_only"
+    # Missing event types mean only that no matching row was persisted for this correlation.
+    # They do not establish why it is missing or whether a business operation succeeded.
+    missing_event_types: list[str]
     events: list[TraceStep]
 
 
@@ -85,8 +90,11 @@ async def read_trace(
             status_code=403,
             detail={"code": "demo_only", "message": "Diagnóstico reservado à demo"},
         )
+    visible_rows = [row for row in rows if row["type"] in _PHASE_BY_EVENT]
+    present_types = {row["type"] for row in visible_rows}
     return TraceView(
         correlation_id=correlation_id,
+        missing_event_types=sorted(set(_PHASE_BY_EVENT) - present_types),
         events=[
             TraceStep(
                 seq=row["seq"],
@@ -96,7 +104,6 @@ async def read_trace(
                 origin=row["origin"],
                 kind=row["kind"],
             )
-            for row in rows
-            if row["type"] in _PHASE_BY_EVENT
+            for row in visible_rows
         ],
     )

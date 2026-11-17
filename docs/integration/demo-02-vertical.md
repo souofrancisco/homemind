@@ -1,119 +1,111 @@
-# DEMO-02 #28 — Auditoria e integração vertical Conta Certa
+# DEMO-02 #28 — revisão de integração vertical Conta Certa
 
-**Data da auditoria:** 17/11/2026. **Base:** `main` em `83342f605b10821174b0a53d102baf32624a1f47`. **Estado:** PARCIAL / BLOQUEADO. **Branch:** `feat/demo-02-vertical-integration`. Não é evidência de MVP completo.
+**Auditoria:** 17/11/2026. **Base efetivamente lida:** `origin/main` em `76c16ce` (após #168–#170 e #172). **Branch:** `feat/demo-02-vertical-integration`. **Estado:** PARTIAL. Este relatório distingue código em `main`, código em PR e contratos/planos; issue fechada não foi usada como prova de integração.
 
-## 1. Evidência verificada e limites
+## 1. Estado real dos cinco módulos
 
-| Componente | Fonte efetivamente inspecionada | Estado |
-| --- | --- | --- |
-| F0: SQLite, migrações, `EventBus`, `processed_event`, RBAC, OIDC, OpenAPI e fixtures | `core/db.py`, `core/events.py`, `core/access.py`, `features/households/`, `contracts/`; PR #135 merged | **Código implementado**; testes da F0 existentes, não reexecutados nesta auditoria |
-| HOUSE-02 #85 | Há consultas de memberships e papel por Authentik; rota de escrita incompleta | **Parcial** |
-| HOUSE-03 #86 e HOUSE-04 #87 | Há contratos de aparelhos e política `HouseholdPolicy`; não existem serviços de catálogo ou motor de políticas | **Contratos, sem motor** |
-| MCP-02 #75 e MCP-05 #78 | Existem `McpHome`, `FakeHome` herdados, mas não um coletor F1 tipado nem dataset DEMO-01 integrado | **Parcial/pendente** |
-| ENERGY-01 #79, -02 #80, -03 #81, -05 #83 | Modelos `EnergyReading`, `ConsumptionEvent`, assinaturas, match, localização; sem `features/energy` | **Contratos, sem motor** |
-| APP-01 #94, -02 #95, -03 #96 | React/TS/Mantine e Authentik existem, mas a aplicação da `main` ainda expõe ecrãs ObjectOS; sem ações de confirmação Conta Certa | **Parcial/pendente** |
-| BILL-01 #89, -02 #90, -04 #92 | Modelos, `validate_allocations` e fixtures A/B, sem `features/billing` ou fecho persistente | **Contratos, sem motor** |
-| ALERT-01 #100 | Contratos de orçamento/limiares, sem serviço de orçamento | **Contratos, sem motor** |
-| DEMO-01 #121 | `contracts/fixtures.py` (F0), não um runner resetável DEMO-01 | **Base de dados ilustrativa, sem harness** |
-| DEMO-02 #28 | `tests/test_foundation_scenario.py` usa stand-ins explícitos de P3/P4 | **Teste de contratos, NÃO E2E do produto** |
-| Contratos de presença P2 | PR #138 aberto, proposta D-31 não integrada | **Revisão pendente** |
+### P1 — Bruno: MCP e energia
 
-**Ramos em paralelo no momento da auditoria:** `feat/demo-01-dataset`, `feat/app-01-shell`, `feat/house-02-memberships`, `feat/house-03-appliance-catalog`; sem commits novos relativamente à `main` no momento da consulta (o último estava 2 commits atrás). Não incorporar trabalho não publicado nem modificar ownership dos colegas.
+- **Na `main`:** MCP-02 (#139), MCP-03 (#155) e MCP-04 (#160). `EnergyCollector` converte leituras através de `reading_from_device`, conserva `None` quando os watts/unidade faltam ou estão inválidos e pode publicar `EnergyReadingRecorded`. `McpHome._aplicar_leitura` só o chama se alguém lhe atribuir `home.coletor`; a composição atual da app não o instancia nem o liga ao barramento F0. Os testes ligam-no explicitamente. MCP-03 lê sensores suportados. MCP-04 protege escritas; esta revisão não executou escrita física.
+- **Fake:** PR #164 já está na `main` como `connectors/fake_mcp.py` (`FakeKit`), um simulador de sessão MCP. O `FakeHome` antigo continua a simular lâmpada/tomada, mas não alimenta o pipeline de energia Conta Certa. Nenhum dos dois substitui uma integração P1.
+- **Na `main`:** PR #168 (#80) contém `features/energy/steps.py` e `consumer.py`: detetor de degraus e sessões ON/OFF, que podem emitir eventos de consumo. O tracker conserva sessões em memória; não há router/lifespan de produto a subscrevê-lo. A identificação fica `ApplianceMatch()` vazio/unknown.
+- **Ainda sem motor entregue na `main`:** ENERGY-01 (#79), ENERGY-03 (#81), ENERGY-04 e ENERGY-05 (#83): assinaturas, classificação probabilística, aprendizagem e localização/resíduo. O catálogo temporal HOUSE-03 (#142) existe, mas P1 não o consulta. #168 cobre apenas ENERGY-02; a integração runtime continua por fazer.
 
-## 2. Decisão: arquitetura C híbrida
+### P2 — 1Mii: presença
 
-Sem microserviços. Um processo FastAPI, serviços do domínio, SQLite e o barramento F0.
+- **Na `main`:** PRES-01/02/03/04 (#149/#151/#153/#159): estado da câmara e fontes, contagem anónima pela soleira, pistas Wi-Fi opt-in e fusão com tolerância. A presença individual é filtrada por `presence_opt_in`; o senhorio não lê estados individuais. O MAC é convertido em HMAC e não é persistido. A câmara não produz identidade. Câmara/clip de reserva são SIMULADOS; Wi-Fi pode ser `FakeWifiScanner` SIMULADO ou `ArpScanner` REAL no host. A ausência de Wi-Fi não produz `out`.
+- “Presença manual” não significa check-in livre: o check-in foi removido. Uma resposta manual só surge quando o sistema pergunta “estás em casa?”, é guardada como pista e exige opt-in. `HouseOccupancy`/cruzamentos da porta são anónimos; não há reconhecimento facial nem gravação de frames.
+- A fusão P2 pode consumir `energy.consumption_detected` para uma pista positiva do dono, mas a integração depende de um produtor P1 que ainda não existe na `main`.
 
-| Estratégia | Consistência financeira | Reexecução/idempotência | Debug, latência e custo para a hackathon |
-| --- | --- | --- | --- |
-| A: eventos para tudo | Ordem e causalidade mais difíceis de provar | `processed_event` resolve duplicados por consumidor, não garante comando financeiro único | Boa desacoplagem, mas exige correlação/retries até para respostas interativas |
-| B: serviços síncronos | Mais simples para `respond` e `finalize` transacionais | Índices únicos e CAS na BD; evento/outbox por mutação | Depuração fácil, mas recuperação de reações secundárias exigiria trabalho adicional |
-| **C: híbrida (escolhida)** | **Transação local síncrona** é a fonte da verdade | **CAS/unique + eventos persistidos** e consumidores idempotentes | Imediata para UI, recuperável após crash, compatível com F0/SQLite/FakeHome |
+### P3 — Rafael: notificações e assistente
 
-### Fronteiras síncronas
+- **Na `main`:** APP-02/03 (#156): tabelas SQLite, handler persistente `billing.confirmation_needed` → `notification.created`, listagem REST, leitura, resposta e preferências. A primeira resposta válida fica protegida por CAS. Para pedidos de confirmação, a resposta é um voto D-32, não uma decisão por “primeira resposta”. `notification.responded` é persistido na transação da resposta; a regra `confirmation_outcome` aplica limiar de metade, “É minha” imediato e empate/inconclusivo para todos.
+- D-32 (#161) está no contrato e nos testes. O senhorio é removido da lista de elegíveis e não vê pedidos de confirmação. P3 tem varrimento periódico de expiração no lifespan (#170); P4 também expira pedidos de atribuição após 24 h e decide o fallback D-32. Não há canal WS de notificações: o `/api/ws` existente ainda pertence ao motor ObjectOS. GET REST permite recuperar a lista, mas não existe reconexão de notificações na UI.
+- AGENT-01/02 (#154) e provider seam (#167) estão na `main`. O agente só lê. Os providers reais podem ser registados em `app.state.agent_providers`, mas não há provider P1/P4 registado pela composição; o fallback é SIMULADO apenas na casa de demo e casas reais não recebem valores simulados.
 
-1. `GET /api/me/context` verifica utilizador e membership ativa (já existe).
-2. P1 publica episódios e classificação `ApplianceMatch`; nunca atribui quem paga.
-3. P4 aplica a política da casa e **na mesma transação** persiste a necessidade de confirmação ou atribuição (a implementar por P4).
-4. P3 grava notificação e resposta com *compare-and-set*, devolvendo `409` para segunda resposta válida; `unknown` não é uma confirmação conclusiva (a implementar por P3).
-5. P4 aplica efeito por `consumption_event_id` com índice único de atribuição ativa; fatura fechada é imutável com revisão explícita (a implementar por P4).
-6. O fecho valida `sum(allocation.amount_cents) == bill.total_cents` em cêntimos inteiros **antes** de efetivar o estado.
+### P4 — Amorim: atribuição, orçamento e fatura
 
-### Fronteiras assíncronas
+- **Na `main`:** BILL-01 (#163) permite pré-visualizar e gravar uma fatura como `draft`; a criação da linha e `billing.bill_created` são atómicas. BILL-04 (#172) adiciona fecho idempotente: a transação guarda alocações, finaliza a fatura e grava `billing.bill_finalized`/`billing.allocation_published` na outbox. Inquilinos só veem faturas finalizadas.
+- **Na `main`:** BILL-02/04 (#152/#169/#172) fornece decisão e persistência de atribuições, repartição em cêntimos com reconciliação e fecho idempotente. D-34 (#162) usa desempate SHA-256 reproduzível com casa/período/morador. P3 (#170) consome recibos publicados e cria notificação.
+- **Em review:** PR #174 entrega ALERT-01 (orçamento pessoal, fontes SIMULATED/medidas e consumidor de `alerts.threshold_crossed` na P3). Não está na `main`; as rotas e o contrato do orçamento ainda não fazem parte do backend integrado. O método de composição de alertas que já estava na P3 não era, por si, um motor de orçamento.
 
-- Leitura/ciclo de consumo: `energy.reading_recorded`, `energy.consumption_detected`, `energy.consumption_closed`.
-- Pedido e resposta persistidos: `billing.confirmation_needed`, `notification.created`, `notification.responded`.
-- Atualização financeira: `billing.attribution_changed`, `billing.bill_finalized`, `billing.allocation_published`.
-- Orçamento: `alerts.threshold_crossed` é um aviso de limiar, **não** prova que o total de orçamento tenha sido atualizado.
-- REST é a fonte após refresh/reconexão WS. Um WS não é um ledger e não confirma transação.
+### P5: contratos, app e demo
 
-**Garantia correta:** pelo menos uma vez na entrega de eventos; uma só mutação financeira efetiva por chave de negócio, protegida por transação e unicidade. Nunca afirmar `exactly-once` ponta a ponta.
+- **Na `main`:** F0 #135 (contratos, SQLite, event store/bus, `processed_event`, RBAC e fixtures), HOUSE-02 #143 e HOUSE-03 #142. D-19/D-25 são respeitadas pelo bus: entrega pelo menos uma vez, handlers idempotentes, efeito e `processed_event` na mesma transação; `seq` ordena, `correlation_id` agrupa. Não há segundo barramento.
+- HOUSE-04 (#145) permanece em PR draft. O modelo de política e defaults existem; falta integrar a política temporal/auditável ao atribuidor depois da revisão.
+- APP-01 (#141) e DEMO-01 (#144) permanecem drafts. APP-01 entrega shell/contexto e vistas por papel, não páginas ligadas a notificações, energia, orçamento ou recibos. DEMO-01 fornece preparação/reset/replay offline, ainda não integrada na `main`.
 
-## 3. Grafo de dependências para um fluxo real
+## 2. Mapa obrigatório da integração
 
-```text
-Authentik → /api/me/context (F0, pronto)
-         → Household/Room/Membership (F0 parcial; HOUSE-02/03)
-MCP read-only / FakeHome (MCP-02/05) → P1 amostragem/episódios (ENERGY-01/02)
-    → P1 classificação e localização (ENERGY-03/05)
-    → P4 política (HOUSE-04) → P4 confirmação necessária (BILL-02)
-    → P3 inbox/resposta (APP-02/03) → P4 atribuição e fallback (BILL-02)
-    → P4 orçamento (ALERT-01) → P4 fatura/reconciliação (BILL-01/04)
-    → P5 ecrãs REST/WS (APP-01/02/03/06) → recibo filtrado por papel
-                      ↑
-               DEMO-01 dataset + reset independente
-```
+| Etapa | Produtor real | Contrato | Consumidor real | Estado | Bloqueio |
+|---|---|---|---|---|---|
+| 1. Leitura de potência | `McpHome._aplicar_leitura` → `EnergyCollector.ingest` → `reading_from_device`; `McpHome.coletor` é opcional e não ligado pela app | `EnergyReading`, `EnergyReadingRecorded` | `EnergyStepTracker`; consumer ainda sem subscrição de runtime | **PARCIAL** (#139/#168 na main) | Composição não liga MCP ao `EventBus`; leitura não percorre o produto |
+| 2. Deteção de variação | #168 `PowerStepTracker.ingest/tick` | `PowerStep`, `EnergyStepDetected` | `make_step_consumer`; testes de bus em #168 | **PARCIAL (na main)** | Não está registado num lifespan; tracker em memória |
+| 3. Identificação de aparelho | Nenhum motor entregue; #142 gere catálogo temporal | `ApplianceMatch`, `ApplianceSignature` | Nenhum classificador; #168 deixa `match` vazio | **PLANEADA** | ENERGY-01/03; catálogo não é classificador |
+| 4. Encerramento de consumo | Tracker #168 consegue emitir ongoing/closed de sessões | `ConsumptionEvent`, `EnergyConsumptionDetected/Closed` | P4 `attributor.handle`; presença/segurança subscrevem alguns eventos | **PARCIAL (na main)** | P1 não está integrado no arranque; sem localização/dono confiáveis |
+| 5. Consulta de catálogo histórico | HOUSE-03 `features/appliances/router.py` e `repo.py` | `Appliance`, `ApplianceSignature` temporal | Nenhum consumidor P1 consulta o catálogo | **IMPLEMENTADA, sem ligação** (#142) | Ligar consulta ao futuro classificador P1 |
+| 6. Resolução de política | F0 `household.common_area_rule`; política temporal HOUSE-04 em #145 | `HouseholdPolicy` | P4 `attributor.handle` carrega política da casa | **PARCIAL (na main)** | Falta política temporal/auditável #145 |
+| 7. Pedido de confirmação | P4 `attributor.handle` ao consumir energia | `ConfirmationRequest`, `BillingConfirmationNeeded` | P3 consumer `billing.confirmation_needed` | **COMPATÍVEL (na main)** | Sem classificador/runtime P1, não há pedido derivado de aparelho real |
+| 8. Persistência de notificação | P3 `NotificationService.on_confirmation_needed` e `CONFIRMATION_CONSUMER` | `Notification`, `NotificationCreated` | SQLite notification repository; REST GET da lista | **IMPLEMENTADA** (#156) | Só recebe se P4 publicar pedido; sem WebSocket |
+| 9. Votação | P3 POST `/api/households/{id}/notifications/{id}/respond` | D-32, `NotificationRespondedData.outcome` | Bus persistente; P4 attributor consome resposta | **IMPLEMENTADA** (#156/#161/#169) | UI ainda não ligada |
+| 10. Resolução da votação | D-32 `confirmation_outcome`; P4 `attributor._on_responded`/`expire_pending` | `ConfirmationOutcome`, `BillingAttributionChanged` | P4 attributor | **IMPLEMENTADA (na main)** | Falta integração P1 e E2E completo |
+| 11. Atribuição financeira | P4 `attributor.handle` persiste atribuição | `Attribution` | P4 `closing.finalize` usa atribuições persistidas | **IMPLEMENTADA (na main)** | Sem classificação/localização P1, consumos de origem incompletos |
+| 12. Orçamento | PR #174 `billing.budgets` avalia gasto e limiares | `Budget`, `BudgetThreshold`, `alerts.threshold_crossed` | PR #174 registra consumidor P3 `notifications.budget_threshold` | **EM REVIEW** | #174 não está na main; não existe ainda ligação testada com UI Conta Certa |
+| 13. Entrada da fatura | POST `/api/households/{id}/bills/preview` e POST `/bills` | `BillIn`, `BillView`; `billing.bill_created` | SQLite `billing_bill`; trace DEMO-02 pode observar o evento | **IMPLEMENTADA como draft** (#163) | Dados usados em demo/testes devem ter proveniência SIMULATED explícita |
+| 14. Repartição | P4 `closing.finalize` chama `allocation.allocate` e `shares_from_attributions` | `BillAllocation`, D-34 | Transação de fecho e tabelas de alocação | **IMPLEMENTADA (na main)** | Precisa de consumos P1 classificados para valores reais de energia |
+| 15. Publicação de recibos | P4 `closing.finalize` grava `billing.allocation_published` | `BillingAllocationPublished`, `BillAllocation` | P3 allocation consumer persiste notificação; endpoints P4 expõem alocações | **IMPLEMENTADA (na main)** | UI APP-01/02 ainda não apresenta recibos |
+| 16. Exibição na aplicação | PR #141 shell/contexto, em review; P3 só backend REST | DTOs por papel, OpenAPI | Nenhuma página Conta Certa consome notifications/bills/receipts | **EM REVIEW / incompleta** | APP-01 não integra dados; faltam páginas de notificação, fatura e recibo |
+| 17. Reset e replay offline | PR #144 runner; #164 `FakeKit` fornece sessão MCP simulada | Fixtures/dataset DEMO-01 | Nenhum runner DEMO-01 na main | **EM REVIEW** | #144 não merged; reset/replay não exercitados com pipeline real |
 
-**Portas de integração obrigatórias para o review dos PRs:** identificador idempotente `event.id`; `correlation_id` propagado sem ser usado para ordenação; `consumption_event_id` como chave de negócio; `household_id` isolado; `Provenance{origin,kind}` preservada; contratos DTO próprios; `404` para não membro e `403` para papel indevido; `origin=simulated` nunca entra numa casa real; nenhuma operação física MCP; nenhuma identidade pessoal inferida de posse de aparelho.
+`features/integration/router.py` continua propositalmente abaixo deste fluxo: lê eventos persistidos por `household_id` + `correlation_id`, não reconstitui payloads nem valida regras financeiras. `missing_event_types` indica apenas ausência de linhas para a correlação; não explica a causa e não é diagnóstico de saúde do negócio.
 
-## 4. Código entregue nesta branch
+## 3. Compatibilidade e arquitetura híbrida
 
-`features/integration/router.py` acrescenta **apenas** `GET /api/households/{household_id}/integration/traces/{correlation_id}`.
+- **Compatível na `main`:** P4 consome eventos de consumo e publica confirmação; P3 persiste pedido/votos D-32; P4 resolve/atribui e fecha faturas; P3 consome eventos de recibos. As conexões P3↔P4 e fecho de P4 têm testes dos módulos de origem.
+- **Compatibilidade testada:** a composição P3↔P4 foi exercitada com evento `EnergyConsumptionDetected` SIMULADO (sem NILM): P4 criou pedido, P3 persistiu notificação, a resposta REST “É minha” gerou D-32 e P4 persistiu `Attribution`. Resultado local: 1 teste passou. É teste P3↔P4, **não** E2E energético.
+- **Compatibilidade #168/#169/#170/#172:** os módulos usam os contratos partilhados e a entrega at-least-once do bus; #168 não classifica aparelhos nem liga MCP/runtime. Nenhum handler artificial foi adicionado.
+- **Híbrida confirmada:** BILL-01 e P3 gravam estado/eventos nas mesmas transações; fecho BILL-04 grava recibos/eventos atomicamente e é idempotente; EventBus entrega efeitos idempotentes. O bus não é ledger de dinheiro, e WS não confirma transação. D-32 e D-34 são obrigatórias.
+- Não há segundo barramento, serviço de faturação, nem sistema de notificações criado por DEMO-02. O destino dos adaptadores é a composição de P1/P3/P4, por contratos e eventos F0.
 
-- Exige Authentik e membership ativa de **operador**; inquilino/senhorio proibidos e não membro recebe 404.
-- Exige `source_kind=demo`; nunca diagnostica casas reais.
-- Consulta apenas `domain_event` persistido por `household_id` e `correlation_id`, ordenado por `seq`.
-- Devolve unicamente etapa, tipo, seq, hora de registo e proveniência; **nunca `payload_json`**, ids de moradores, potência ou valores individuais.
-- `evidence_level=persisted_events_only` explícito. Eventos de stand-ins contam como eventos observados, **não** como implementação de P1/P3/P4.
-- GET sem efeitos, sem rede e sem MCP. Não há ingestão artificial, nova tabela, dado financeiro inventado ou alteração dos contratos de colegas.
+## 4. Endpoint `integration/traces`
 
-Testes adicionados: vazio honesto, eventos duplicados, resposta sem payload/sem escrita, Authentik falso **apenas no teste**, isolamento por papel/casa e recusa de casa real. Ainda faltam os E2E de produto.
+Mantido: é um diagnóstico técnico sem equivalente no API atual e útil para explicar uma correlação da demo. Não pode servir de prova de que o fluxo, a classificação ou a conta estão corretos.
 
-## 5. Critérios E2E / estado da evidência
+- `GET /api/households/{household_id}/integration/traces/{correlation_id}` exige membership com papel `operator` via `Resource.device`; inquilino/senhorio recebem 403 e não membro 404.
+- A consulta exige `household.source_kind == demo`; uma casa real recebe 403 `demo_only`. Os predicados da query incluem simultaneamente `household_id` e `correlation_id`.
+- DTO devolve só tipo/etapa de evento, seq, instante e proveniência. Exclui `payload_json`, ids de moradores/dispositivos, potência, texto de notificação, valores financeiros, IDs MCP e segredos.
+- GET não publica nem altera dados. Correlação sem eventos responde 200 com `events=[]` e a lista de tipos sem linha nessa correlação. `evidence_level=persisted_events_only` e nomes de etapas terminados em “persisted/event” limitam a afirmação ao que está guardado. `notification.responded` aparece como resposta persistida, não como votação decidida; `billing.bill_created` é “bill_recorded”, porque BILL-01 só cria drafts.
+- Testes cobrem sem autenticação, papéis, casa de outra pessoa, casa real, trace vazio, evento duplicado, não escrita em GET, payload privado ausente, correlação isolada e criação de fatura draft real → evento → trace. Não consulta hardware ou outro serviço.
 
-| Caso solicitado | Situação |
-| --- | --- |
-| Fluxo feliz completo e duas execuções | **BLOQUEADO** até P1, P3, P4, P5 e DEMO-01 |
-| Dois aparelhos semelhantes; desconhecido | **BLOQUEADO** por ENERGY-03 |
-| `mine`, `everyone`, `unknown` | **BLOQUEADO** por APP-03/P3 e BILL-02/P4 |
-| Timeout e duplo clique | **BLOQUEADO** por persistência CAS de P3 |
-| Eventos duplicados, reinício | Infraestrutura F0 coberta por testes existentes; **não** prova produtos |
-| WS desligado/reconectado; refresh | **BLOQUEADO** por APP-02/03 |
-| Dispositivo indisponível, sem internet | **BLOQUEADO** pelo harness e collector; não simular sucesso |
-| Troca de casa e acesso de senhorio | Guardas F0 presentes; DTOs específicos de faturação **pendentes** |
-| Soma exata da fatura | `validate_allocations` + fixtures A/B existentes; fecho real **pendente** |
-| Reset da demo e segunda execução sem resíduos | **BLOQUEADO** por DEMO-01 e módulos de persistência |
-| Offline completo, zero escritas físicas | Código novo é read-only/offline; demo completa **não verificada** |
+## 5. DEMO-01 e APP-01 em worktrees isolados
 
-## 6. Guião pretendido (não confundir com teste executado)
+PR #141 e #144 continuam fora da `main`. Não foi copiado código para DEMO-02.
 
-1. Arrancar stack local e DEMO-01; resetar exclusivamente a BD de **demo**, nunca casas reais.
-2. Autenticar Carla no Authentik local e escolher a casa via `/api/me/context`.
-3. FakeHome reproduz sequência de chaleira/tomada agregada e aquecedor do Bruno, na sala; P1 preserva `location=common` e a confiança.
-4. P4 aplica a política B e solicita confirmação; P3 persiste notificação elegível a Carla; Carla seleciona `mine`.
-5. Duplo clique/reenvio causa `409`, sem duplicar atribuição. Testar `everyone`, `unknown` e timeout em execuções isoladas.
-6. P4 gera orçamento e **fatura ilustrativa** de 12 000 cêntimos. **Nunca** inserir esse valor no código de produção.
-7. P5 mostra dados REST reais dos motores, rótulo SIMULADO, recibo privado, vista agregada de senhorio; conferir `Σ recibos = 120,00 €`.
-8. Consultar o trace como operador técnico para explicar onde falha um evento, nunca como prova de correção dos cálculos.
-9. Resetar, repetir o percurso e comparar contagens/unicidades. Verificar funcionamento sem internet externa e sem chamadas de escrita MCP.
+- #141 foi combinado com a `origin/main` num worktree de auditoria e `make check` passou: 1041 testes, 1 ignorado, lint, geração OpenAPI/TS, build frontend e Compose config. Demonstra compatibilidade de build, não integração de notificações/faturas/recibos.
+- #144 foi testado em worktree próprio sobre `origin/main`. A união dos alvos `.PHONY` do Makefile foi resolvida só nesse worktree de teste; `make check` passou: 1054 testes, 1 ignorado e restantes passos de lint/build/Compose. O conflito de Makefile deve ser resolvido no PR #144 antes do merge. A aprovação do check não prova o fluxo de energia Conta Certa.
 
-Os exemplos de fatura continuam distintos: **A (§7.1)** = 45,12 / 29,76 / 24,64 / 20,48 €; **B (três regras)** = 46,80 / 27,60 / 24,40 / 21,20 €. Ambos fecham 120 €, são dados do documento e não resultados de cálculo de produção.
+## 6. Testes e evidência desta revisão
 
-## 7. Qualidade, tempos e bloqueios
+- Base anterior + branch DEMO-02: `make check` passou com 1090 passed, 1 skipped; esta execução antecedeu a chegada de #168–#170/#172.
+- Alteração DEMO-02: `make check` passou sobre a base `76c16ce`: **1219 passed, 1 skipped**, Ruff, frontend lint, geração OpenAPI/TS, build frontend e Compose config. Os 7 testes de trace incluem BILL-01 draft real → evento → trace; privacidade, autorização, correlação e GET sem escrita.
+- PR #168 isolado: testes de `features/energy/tests` — 45 passed.
+- PR #169 com notificações da main: attributor + handlers + votação — 52 passed; teste isolado de composição P3→P4 acima — 1 passed.
+- #141/#144: checks de compatibilidade descritos na secção anterior. `make smoke` passou sobre esta base em Compose isolado, com backend, frontend e Authentik saudáveis. Smoke de configuração demo, sem MCP/hardware físico. Os warnings de `TestClient` são depreciação de `anyio` no Starlette.
+- Não se executou o ciclo completo energia → aparelho → voto → orçamento → fatura final → recibos, nem se inventou valor/resultado. Nenhum teste chama motor NILM por trás de um nome E2E.
 
-- **CI GitHub Actions**: `make check` **PASSOU** no commit `423e00645fe7a3bb48f10ec8cdbf3897ec66387a` ([run #44185597864](https://github.com/souofrancisco/homemind/actions/runs/44185597864)): `ruff check`/`ruff format --check` (120 ficheiros formatados), ESLint, `pytest` (**384 passed, 1 warning**), OpenAPI→TypeScript, `tsc -b`, build Vite e `docker compose config -q`. Isto valida o código e contratos, **não** demonstra o fluxo financeiro de ponta a ponta.
-- **Execução local / smoke Docker com containers**: **NÃO EXECUTADOS** nesta sessão; não existe checkout autorizado do repositório privado no ambiente local desta execução. O smoke e os E2E com dataset DEMO-01 continuam por fazer.
-- **Tempos medidos:** nenhum. Não são inventados p50/p95 nem sucesso de demo.
-- **Segurança:** sem alterações a MCP, tokens, imagens, regras de domínio ou base real; nenhuma escrita física efetuada.
-- **Próximo merge:** aguardar as PRs dos módulos; verificar os contratos efetivos; ligar serviços reais, testes E2E do produto, OpenAPI/UI e runner DEMO-01 numa atualização deste Draft PR; não assinalar #28 concluída antes disso.
-- **Sem Telegram** e sem microserviços.
+## 7. Ordem de integração e bloqueios para E2E
+
+PRs já integrados relevantes: #135, #139, #142, #143, #149, #151, #152, #153, #155, #156, #159, #160, #161, #162, #163, #164, #167, #168, #169, #170, #172.
+
+PRs que ainda precisam de entrar na `main` ou ser concluídos para a demo:
+
+1. **P1 ENERGY-01/03/04/05 + runtime MCP→bus→tracker** — assinatura/classificador probabilístico, localização, composição do tracker e publicação de consumos reais; não reimplementar em DEMO-02.
+2. **#145 HOUSE-04** — política auditável/versionada; coordenar com P4 e manter defaults da casa.
+3. **#174 ALERT-01** — rever e integrar contrato de orçamento, cálculo de gasto e consumidor P3; confirmar que sem preço o gasto permanece desconhecido.
+4. **#141 APP-01 + páginas APP-02/03/recibos/orçamento** — ligar REST; depois decidir WS/reconexão de notificações.
+5. **#144 DEMO-01** — resolver conflito `.PHONY`, integrar dataset/reset/replay sem introduzir eventos de NILM fictícios.
+6. Executar em conjunto com proveniência SIMULATED visível, duas casas distintas, isolamento por papel, duplicados, votos/timeout, draft/finalized, reinício, offline/replay e soma exata; depois validar hardware real conforme o guia.
+
+## Classificação
+
+**PARTIAL.** O endpoint seguro e F0 são úteis; P3 e P4 já têm confirmação, atribuição, fecho e publicação de recibos compatíveis na `main`. O circuito completo ainda não é executável a partir de leituras reais: falta classificador e runtime P1, integração do #174 ALERT-01 e UI integrada. DEMO-02 permanece aberta e este relatório não declara a demo concluída.
