@@ -1,14 +1,17 @@
 """Centro de notificações (APP-02): lista, leitura, resposta e preferências, por casa.
 
 IMPLEMENTADO: `GET .../notifications`, `POST .../notifications/{id}/read`, `POST .../respond`,
-`GET|PUT .../notification-preferences` e o consumidor de `billing.confirmation_needed`.
-PLANEADO: WebSocket, varrimento de expiração, limiares de orçamento/picos e push (ver
+`GET|PUT .../notification-preferences` e os consumidores de `billing.confirmation_needed`,
+`presence.confirmation_needed`, `safety.alert_raised`, `billing.attribution_changed` e
+`billing.allocation_published` (ver `handlers.CONSUMERS`) e o varrimento de expiração (60 s,
+`sweeper.py`). PLANEADO: WebSocket, limiares de orçamento/picos (`alerts.*`) e push (ver
 `docs/modules/notifications.md`).
 
 Todas as rotas exigem membership na casa do caminho (`require_access`); o `resident_id` vem
 sempre da base de dados, nunca do cliente. As respostas são `NotificationView`, nunca a entidade.
 """
 
+import asyncio
 import logging
 import sqlite3
 from collections.abc import AsyncIterator, Callable
@@ -45,12 +48,9 @@ from homemind.core.access import (
     require_access,
 )
 from homemind.core.events import append_event
+from homemind.features.notifications.config import get_notification_settings
 from homemind.features.notifications.directory import SqliteResidentDirectory
-from homemind.features.notifications.handlers import (
-    CONFIRMATION_CONSUMER,
-    CONFIRMATION_EVENT_TYPES,
-    make_confirmation_handler,
-)
+from homemind.features.notifications.handlers import CONSUMERS
 from homemind.features.notifications.service import (
     NotificationNotFoundError,
     NotificationService,
@@ -61,6 +61,7 @@ from homemind.features.notifications.sqlite import (
     load_preferences,
     save_preferences,
 )
+from homemind.features.notifications.sweeper import expiry_loop
 
 log = logging.getLogger(__name__)
 
@@ -70,10 +71,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Um só relógio: o do consumidor é o mesmo que as rotas usam (o override de `get_clock`
     # nos testes também vale aqui; em produção é o relógio real).
     clock = app.dependency_overrides.get(get_clock, get_clock)()
-    app.state.bus.subscribe(
-        CONFIRMATION_CONSUMER, make_confirmation_handler(clock), CONFIRMATION_EVENT_TYPES
+    for consumer, make_handler, types in CONSUMERS:
+        app.state.bus.subscribe(consumer, make_handler(clock), types)
+    sweep_s = get_notification_settings().notifications_expiry_sweep_s
+    sweeper = (
+        asyncio.create_task(expiry_loop(app.state.db, clock, sweep_s), name="notifications-expiry")
+        if sweep_s > 0
+        else None
     )
-    yield
+    try:
+        yield
+    finally:
+        if sweeper is not None:  # quem cria a tarefa cancela-a e aguarda-a
+            sweeper.cancel()
+            await asyncio.gather(sweeper, return_exceptions=True)
 
 
 router = APIRouter(prefix="/api", tags=["notifications"], lifespan=lifespan)

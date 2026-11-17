@@ -4,7 +4,7 @@ from datetime import timedelta
 import pytest
 
 from homemind.contracts.common import Origin, replace
-from homemind.contracts.notification import NotificationStatus
+from homemind.contracts.notification import NotificationKind, NotificationStatus
 from homemind.features.notifications.compose import compose_confirmation
 from homemind.features.notifications.repository import InMemoryNotificationRepository
 from homemind.features.notifications.sqlite import SqliteNotificationRepository
@@ -174,3 +174,22 @@ def test_recibos_de_leitura_por_residente(repo):
     assert repo.read_at(n.id, ANA) == at
     assert repo.read_at(n.id, BRUNO) is None
     assert repo.mark_read(uid("nao-existe"), ANA, at) is False
+
+
+def test_find_by_ref_filtra_por_casa_tipo_e_estado(repo):
+    a = _n("e1", consumption="c1")
+    b = _n("e2", consumption="c1", house=OTHER_HOUSE)
+    c = _n("e3", consumption="c2")
+    for n in (a, b, c):
+        assert repo.insert(n)
+    assert [x.id for x in repo.find_by_ref(household_id=HOUSE, ref=a.ref)] == [a.id]
+    assert repo.find_by_ref(household_id=HOUSE, ref=a.ref, kind=NotificationKind.info) == []
+    both = repo.find_by_ref(
+        household_id=HOUSE, ref=a.ref, kind=NotificationKind.confirmation_request
+    )
+    assert [x.id for x in both] == [a.id]
+    closed = replace(a, status=NotificationStatus.expired)
+    assert repo.compare_and_set(closed, expected=a)
+    assert [x.id for x in repo.find_by_ref(household_id=HOUSE, ref=a.ref)] == [a.id]
+    assert repo.find_by_ref(household_id=HOUSE, ref=a.ref, open_only=True) == []
+    assert [x.id for x in repo.find_by_ref(household_id=HOUSE, ref=c.ref, open_only=True)] == [c.id]
