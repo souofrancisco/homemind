@@ -1,138 +1,139 @@
 # Conta Certa — guia operacional para agentes
 
-Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home). Guia principal e único para todos os agentes de programação. Detalhes por área: [`app/backend/AGENTS.md`](app/backend/AGENTS.md) e [`app/frontend/AGENTS.md`](app/frontend/AGENTS.md). Índice da documentação: [`docs/README.md`](docs/README.md).
+Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home). Evolução do ObjectOS para **Conta Certa**: a casa partilhada onde cada um paga o que usa. Regras comuns a todos os agentes; detalhes por área em `app/backend/AGENTS.md` e `app/frontend/AGENTS.md`.
+
+Fonte de verdade do produto: documento Conta Certa v5.1 ([`docs/references/Conta_Certa_Documento_Completo_v5.1.md`](docs/references/Conta_Certa_Documento_Completo_v5.1.md); secções citadas abaixo como §n) e as issues `[CC · …]` do GitHub. Roadmap e dependências: issue #129 e [`docs/development/roadmap.md`](docs/development/roadmap.md). Hierarquia: decisões da equipa ([`docs/decisions.md`](docs/decisions.md)) > v5.1 > evidência técnica verificada > documentação na `main` > código ObjectOS. Se o documento e uma issue discordarem, **a issue ganha**; em dúvida, perguntar.
 
 ## Estado do repositório (ler primeiro)
 
-- O produto é a **Conta Certa**. O **código na `main` é ainda o do ObjectOS** (modos da casa por gesto); a reorganização feita foi só documental.
-- Nunca descrever nem assumir como existente o que está «planeado». Ao escrever código, docs, PRs ou respostas, distinguir sempre **IMPLEMENTADO** de **PLANEADO**.
-- Antes de tocar no código antigo, ler [`docs/architecture/migration.md`](docs/architecture/migration.md): diz o que se mantém, adapta, substitui ou remove. **Não remover código do ObjectOS** fora de um PR de migração pedido (fase M4).
+- O **código na `main` é ainda o do ObjectOS**; o que está «planeado» nos documentos **não existe**. Ao escrever código, docs, PRs ou respostas, distinguir sempre **IMPLEMENTADO** de **PLANEADO**.
+- Antes de tocar no código antigo, ler [`docs/architecture/migration.md`](docs/architecture/migration.md) (KEEP/ADAPT/REPLACE/REMOVE/DEFER). **Não remover código ObjectOS** fora de um PR da BASE-04 (#74).
+- Índice da documentação: [`docs/README.md`](docs/README.md). Divisão por pessoa e ficheiros preferenciais: [`docs/development/team.md`](docs/development/team.md). GitHub Project: «Conta Certa — Desenvolvimento» (ver `docs/development/roadmap.md`).
 
-## Produto (fechado)
+## Produto
 
-> **Cada um paga o que usa. A casa trata do resto.**
+O senhorio instala o serviço; o inquilino sabe as regras desde o anúncio. Três regras (§6.2):
 
-Serviço para casas partilhadas, instalado pelo senhorio sobre o kit Connected Home (via MCP). Três pilares: **Casa Justa** (medição, assinaturas, atribuição, fatura e recibos explicáveis), **Casa Atenta** (orçamentos, picos, aparelhos esquecidos, previsões), **Casa Segura** (presença, entradas e saídas, estados da casa). Personas: senhorio, inquilino, operador ([`docs/product/personas.md`](docs/product/personas.md)). Visão: [`docs/product/vision.md`](docs/product/vision.md). Requisitos: [`docs/product/requirements.md`](docs/product/requirements.md).
+1. **O teu quarto é teu**: tudo o que passa pela tomada do quarto é do morador (ligação pessoa–quarto vem do contrato).
+2. **As zonas comuns são de todos**: conta da sala, por igual (A), com pergunta “de quem é esta conta?” (B, recomendada) ou por presença (C). Conta o sítio do aparelho, não o dono.
+3. **O sistema avisa do que não bate certo**: orçamento 50/80/100 %, picos em zonas comuns, aparelho pessoal fora do quarto.
 
-**A aplicação substitui o Telegram** ([`docs/decisions.md`](docs/decisions.md) D-01): toda a interação (alertas, perguntas, confirmações, assistente) é feita na aplicação React/Mantine/Capacitor. Não introduzir bots, grupos de mensagens ou Streamlit.
+O pior caso nunca é pior do que a divisão igual de hoje. Quatro pilares: **Justa** (repartição), **Atenta** (orçamentos e picos), **Segura** (fase 2), **Inteligente** (assistente IA via MCP).
+
+### Dentro do MVP / fora
+
+| Dentro | Fora (não implementar sem pedido explícito na issue) |
+|---|---|
+| Energia por tomada, degraus e assinaturas (NILM), localização quarto vs zona comum | **Telegram**: não há bot nem grupo; notificações e assistente **dentro da app** |
+| Repartição quarto/comum/resíduo, plafond solidário, recibos explicados | HAN/E-REDES e total da casa em tempo real (removido na v5.1) |
+| Câmara só na porta (entrou/saiu), presença em casa/fora/incerto, Wi-Fi opt-in | Casa vazia/AWAY e aparelho esquecido ao sair (fase 2) |
+| Orçamento, previsão, picos, lâmpada RGB como feedback | Reconhecimento facial, gravação de vídeo, câmaras fora da porta |
+| Assistente na app com ferramentas tipadas; “É minha / É de todos” | Integração MEO Energia, multi-imóvel, piloto (F3) |
 
 ## Arquitetura
 
-### Implementada hoje (ObjectOS)
-
-Monorepo em `app/`. Um processo FastAPI; visão numa thread; eventos por `asyncio.Queue`; persistência só em `rules.json` e `events.jsonl`.
+Monorepo em `app/`, stack herdada do ObjectOS e que **prevalece sobre o §16–17 do documento** (que sugere Streamlit e Telegram): Python 3.12 + FastAPI + Pydantic v2 + asyncio; React 19 + Vite + TS + Mantine; Docker Compose; Authentik (OIDC). Um processo FastAPI; visão numa thread; eventos por `asyncio.Queue`.
 
 ```text
-câmara/clip → features/video → features/visao (thread, YOLO) → features/gestos → fila
-  → features/engine (regras + estados) → connectors (FakeHome | McpHome) → REST/WS → app/frontend
+câmara/clip → features/video → features/visao (thread, YOLO) → fila → presença/contagem
+MCP Altice / FakeHome → collector (energia) → eventos persistentes (SQLite, auditoria)
+  → energia (degraus, assinaturas, localização) → repartição/recibos → alertas
+  → REST/WS → app/frontend (notificações + assistente)
 ```
 
 | Onde | O quê |
 |---|---|
 | `app/backend/src/homemind/core/` | `config.py` (Settings), `errors.py`, `features.py` (descoberta de routers) |
-| `…/contracts/` | Modelos partilhados: `video`, `visao`, `eventos`, `home`, `regras` |
+| `…/contracts/` | Modelos partilhados |
 | `…/connectors/` | `fake_home`, `mcp_home`, `altice_auth` (OAuth), `write_grant`, `mcp_verify` |
-| `…/features/<nome>/` | `auth`, `engine`, `gestos`, `health`, `mcp`, `video`, `visao`: `router.py`, lógica, `tests/` |
+| `…/features/<nome>/` | `router.py`, lógica e `tests/` da feature |
 | `app/frontend/src/` | `app`, `pages`, `components`, `hooks`, `services`, `mocks`, `types` |
 
-API que existe: [`docs/architecture/api-implementada.md`](docs/architecture/api-implementada.md).
+Os nomes `homemind` (pacote, cliente OIDC, Compose) são herdados; não renomear.
 
-### Planeada (Conta Certa) — **ainda não existe**
+**Migração em curso:** o código ObjectOS (gestos por objeto, modos caneca/livro/comando, regras JSON, `rules.json`/`events.jsonl`) é classificado KEEP/ADAPT/REMOVE na BASE-04 (#74) e a persistência passa a SQLite com auditoria na BASE-02 (#72). Não assumir que um módulo ObjectOS sobrevive: ler a BASE-04 antes de o estender.
 
-Mesmo monólito FastAPI, com **SQLite** e **barramento de eventos em processo**; sem microserviços. Módulos novos: `households` (P5), `devices` + `energy` (P1), `presence` (P2), `billing` + `budgets` + `alerts` (P4), `notifications` + `agent` + `automations` (P3). Documentos: [overview](docs/architecture/overview.md), [data-model](docs/architecture/data-model.md), [contracts](docs/architecture/contracts.md), [event-flow](docs/architecture/event-flow.md), `docs/modules/*`.
+## Sistemas e issues
 
-Os nomes `homemind` (pacote, cliente OIDC, Compose) são herdados; não renomear. Módulos novos têm nomes em inglês.
+Cada issue tem código único (`APP-03`…), uma issue → um PR. Fases: F0 fundação · F1 vertical energia→notificação→fatura · F2 presença e demo sólida · F3 opcional. Prioridades: P0 essencial · P1 aprofundamento · P2 extensão.
 
-## Responsabilidades por módulo (e pessoa)
+| Código | Sistema | Código | Sistema |
+|---|---|---|---|
+| BASE | Contratos, eventos, migração | PRES | Visão na porta e presença |
+| MCP | Altice MCP, telemetria, FakeHome | AGENT | Assistente IA na app |
+| ENERGY | Degraus, assinaturas, localização | SAFE | Sensores e conforto (F2/F3) |
+| HOUSE | Casas, quartos, atribuição | PRIV | RBAC, consentimentos, retenção |
+| BILL | Faturas, repartição, plafond | DEMO | Dataset, guião, CI, E2E |
+| APP | Navegação, notificações, recibos | PILOT | Pós-MVP (F3) |
+| ALERT | Orçamento, previsão, picos | | |
 
-| Módulo | Pessoa | Documento |
-|---|---|---|
-| Arquitetura, `core/`, `households`, auth/papéis, frontend, integração, demo | P5 `souofrancisco` | [households](docs/modules/households.md) |
-| MCP, `connectors/`, `devices`, `energy`, assinaturas | P1 `brunovieira88` | [energy](docs/modules/energy.md) |
-| `video`, `visao`, `presence` | P2 `1Mii` | [presence](docs/modules/presence.md) |
-| `notifications`, `agent`, `automations` | P3 `RafaelMat0s-Dev` | [notifications](docs/modules/notifications.md), [agent](docs/modules/agent.md) |
-| `billing`, `budgets`, `alerts` | P4 `Amorim3000` | [billing](docs/modules/billing.md) |
-
-Divisão completa, prioridades e critérios de aceitação: [`docs/development/team.md`](docs/development/team.md).
+Respeitar as dependências declaradas na issue (ex.: `MCP-03` bloqueada por `MCP-02`; `SAFE-01/03` por `MCP-03`).
 
 ## Fluxo de trabalho
 
-1. Ler a issue e, se tocar em contratos, [`docs/architecture/contracts.md`](docs/architecture/contracts.md) (proposto) e [`docs/architecture/api-implementada.md`](docs/architecture/api-implementada.md) (real).
+1. Ler a issue, as suas dependências e, se tocar em contratos, [`docs/architecture/contracts.md`](docs/architecture/contracts.md) (proposto) e [`docs/architecture/api-implementada.md`](docs/architecture/api-implementada.md) (real).
 2. Uma issue por branch e worktree: `make worktree b=feat/<n>-<nome>` (cria `../homemind-<n>-<nome>` a partir de `origin/main`). Nunca trabalhar no worktree de outro agente.
 3. Implementar só o pedido, no estilo existente. Sem dependências, abstrações ou funcionalidades extra.
-4. `make check` (lint + pytest + contrato OpenAPI→TS + build + compose) tem de passar. `make smoke` quando tocar em Docker, arranque ou proxy.
-5. PR pequeno para `main`, com o [template](.github/pull_request_template.md). **Nunca fazer push direto para `main`** sem instrução explícita do utilizador nessa tarefa.
+4. `make check` (lint + pytest + contrato OpenAPI→TS + build) tem de passar. `make smoke` quando tocar em Docker, arranque ou proxy.
+5. PR pequeno para `main`. **Nunca fazer push direto para `main`** sem instrução explícita do utilizador nessa tarefa.
 
-Comandos: só os do `Makefile` (ver [`README.md`](README.md)).
+Comandos: só os do `Makefile` (ver `README.md`).
 
-## Desenvolvimento em paralelo — regras para evitar conflitos
+## Contratos partilhados
 
-- Trabalhar só na própria pasta `features/<módulo>/` e nos seus contratos. **Uma feature não importa outra**: comunica por contratos (`contracts/`) e eventos de domínio.
-- **Contratos primeiro**: ninguém implementa um módulo antes de os contratos dele estarem acordados pelas cinco pessoas ([`docs/development/roadmap.md`](docs/development/roadmap.md), «Definição de pronto dos contratos»).
-- Ficheiros partilhados (revisão de P5): `core/`, mudanças em `contracts/`, `Makefile`, `app/compose*.yaml`, `pyproject.toml`, lockfiles, `.github/`, `docs/architecture/contracts.md`.
-- Nunca depender da ordem de arranque entre features; recursos partilhados vivem em `core/` ([decisão D-06](docs/decisions.md)). Uma feature que precise do motor antigo tem de vir depois de `engine` até ele ser removido.
-- Estado de outro módulo altera-se **por evento**, nunca por escrita direta.
-- Portas ocupadas por outra stack: `BACKEND_PORT`, `FRONTEND_PORT`, `AUTHENTIK_PORT`. Nunca `down -v` no projeto de outra pessoa.
-- Escritas físicas no kit: uma pessoa de cada vez, com autorização explícita e `make mcp-writes-off` no fim.
+`contracts/`, os eventos e modelos expostos na API e [`docs/architecture/contracts.md`](docs/architecture/contracts.md) mudam juntos e só com acordo da equipa (BASE-03 define o contrato canónico). Tarefas que lhes tocam não correm em paralelo com outras. O frontend nunca redefine tipos da API: usa os gerados por `make contracts`.
 
-## Contratos e convenções
+## Regras de domínio (não quebrar)
 
-- **Implementado:** `contracts/` (Pydantic) e o OpenAPI do backend; `make contracts` gera `app/frontend/src/shared/api/schema.d.ts`; o frontend nunca redefine tipos da API.
-- **Proposto:** modelos, eventos e endpoints da Conta Certa em [`docs/architecture/contracts.md`](docs/architecture/contracts.md). Mudam por acordo da equipa e **no mesmo PR** que o código e o documento.
-- Entidades e estados: [`docs/architecture/data-model.md`](docs/architecture/data-model.md). Proveniência obrigatória em dados de energia, atribuição e fatura: `measured | estimated | inferred | simulated`.
-- Dinheiro em cêntimos inteiros; `Σ` das partes de uma fatura = total. Instantes em UTC ISO 8601. Campos `snake_case`.
-- Erros: `{ "error": { "code", "message" } }`; nunca detalhes de exceções, URLs ou cabeçalhos.
-- Permissões **no servidor**, com DTOs por papel (senhorio/inquilino/operador). A UI não é a barreira.
+- **Dinheiro e explicabilidade:** repartição determinística em código; arredondamentos explícitos e fecho reconciliado a 100 % da fatura (BILL-04). Cada recibo distingue **medido / estimado / simulado** e é contestável (BILL-05/06). O senhorio só reparte o custo real da fatura.
+- **Lâmpada** não mede: consumo estimado 9 W × tempo × brilho.
+- **Plafond solidário:** aquecimento básico por quarto pago em comum; só o excesso é individual.
+- **Atribuição por aparelho, não por tomada:** a assinatura é reconhecida em qualquer tomada; sem identificação nem evidência, divide-se por igual ou só por quem estava em casa. Consumos abaixo de ~5 kWh/mês são ignorados; o assistente só pergunta quando vale a pena (~0,50 €).
+- **Presença** (em casa / fora / incerto): Wi-Fi conta muito a favor e pouco contra; só se considera “fora” após 20–30 min **e** saída pela porta. Um aparelho a continuar ligado não prova presença; só um aparelho a ligar prova. Contradição → pergunta, não acusação.
+- **Alertas:** orçamento a 50/80/100 % com previsão; pico = zona comum > 1,5 kW durante > 30 min.
+- **Assistente IA:** nunca inventa números; tudo vem de ferramentas tipadas e as contas são feitas em código. Ações sensíveis pedem confirmação humana.
 
 ## Segurança e privacidade (inegociável)
 
-- Vídeo só local: nunca gravar, registar ou enviar frames; sem reconhecimento facial nem identificação de pessoas pela imagem. Só eventos de texto.
-- O **senhorio nunca vê** presença, entradas/saídas, horários, curvas horárias, aparelhos individuais nem imagens: só totais por quarto, recibos e alertas.
-- Presença por Wi-Fi ou telemóvel só com opt-in do próprio morador.
-- Segredos (`MCP_API_KEY`, tokens OAuth, `NVIDIA_API_KEY`, URL RTSP) só em `app/.env` e `app/.mcp-auth/` (ignorados pelo Git). Nunca em logs, erros, testes, issues ou docs. IDs de dispositivos nunca em docs.
-- Dados enviados a um LLM externo: o mínimo, só texto, sem identificadores de dispositivos nem imagens (decisão pendente P-06).
+- **Vídeo só local:** nunca gravar, registar ou enviar frames; só a soleira da porta é analisada (resto mascarado); sem reconhecimento facial nem identificação por imagem. Só saem eventos (“entrou”/“saiu”); visitas só como número. A identidade de presença vem do telemóvel registado (opt-in), nunca da imagem.
+- **RBAC:** o senhorio vê totais mensais por quarto e alertas; **nunca** presença, horários, curvas horárias ou imagens. O morador vê os seus dados. Testes de isolamento obrigatórios (PRIV-01).
+- Segredos (`MCP_API_KEY`, tokens OAuth, chaves de LLM, URL RTSP) só em `app/.env` e `app/.mcp-auth/` (ignorados pelo Git). Nunca em logs, erros, testes, issues ou docs.
+- **MCP — leitura:** `get_home_devices`, `get_device_details`; sensores de contacto, clima e fumo só em leitura e só depois da MCP-03 (valor `unknown` quando não suportado). **Escrita:** `update_device_capabilities`, só lâmpada (`power`, `brightness`, `color_rgb`) e tomada (`power`). Nunca alarme, segurança, cenários ou timers até uma issue (SAFE-02/04, AGENT-04) o autorizar.
+- **Escritas físicas:** `ENABLE_PHYSICAL_WRITES=false` por omissão e grant temporário obrigatório (MCP-04). Um agente **não executa escritas físicas** sem autorização explícita do utilizador nessa tarefa. Uma escrita de resultado incerto nunca é repetida; só se relê.
+- Nunca inventar resultados, medições, IDs, capacidades ou confirmações físicas. Distinguir sempre **SIMULADO** (FakeHome, clip, mocks, dataset de inverno) de **REAL** em UI, docs e pitch.
 - Em dúvida que afete segurança, autenticação, privacidade ou hardware: escolher o comportamento mais restritivo.
 
-## MCP Altice (regras inalteradas)
+## Testes
 
-- Só `get_home_devices`, `get_device_details`, `update_device_capabilities`; só lâmpada (`power`, `brightness`, `color_rgb`) e tomada (`power`). **Nunca** alarme, segurança, cenários ou timers (alargar exige a decisão P-01).
-- Escritas físicas: `ENABLE_PHYSICAL_WRITES=false` por omissão **e** grant temporário obrigatório. Um agente **não executa escritas físicas** sem autorização explícita do utilizador nessa tarefa.
-- Escrita confirmada **só por releitura**. Uma escrita de resultado incerto **nunca é repetida**; só se relê.
-- Não declarar uma ferramenta como funcional sem evidência. Estado conhecido: leituras REAIS; escrita na lâmpada/tomada **não comprovada**; unidade de `instantPower` **não declarada** (sem `measured`). Ver [`docs/integrations/altice-mcp.md`](docs/integrations/altice-mcp.md).
-- O SDK `mcp` só é importado em `connectors/`.
-
-## Simulação vs hardware real
-
-- Nunca inventar resultados, medições, IDs, capacidades ou confirmações físicas. Distinguir sempre **SIMULADO** (FakeHome, replay, clip, mocks, seed da demo) de **REAL** em UI, docs, recibos e pitch.
-- Leituras `simulated` nunca se apresentam como `measured`. A fatura da demo é simulada e rotulada.
-- O **plano B** (tudo com `HOME_BACKEND=fake` + leituras simuladas, sem rede nem hardware) é parte do produto: [`docs/development/mvp.md`](docs/development/mvp.md).
-- Os valores do PDF (preços, poupanças, exemplos de fatura) são ilustrativos; nunca os citar como resultados nossos.
-- Assistente de IA: **nunca inventa números**; tudo vem de funções do backend; ações sugeridas só se executam após confirmação do utilizador.
-
-## Testes e critérios de qualidade
-
-- Lógica pura com fakes e relógio simulado; nunca hardware, rede, NVIDIA/LLM ou MCP real em `pytest`.
-- Correção de bug traz um teste que falha sem ela. Rotas novas têm teste de permissões por papel.
-- Hardware valida-se à mão por [`docs/development/guia-validacao-manual.md`](docs/development/guia-validacao-manual.md); o resultado regista-se lá, sem marcar PASS o que não foi executado.
-- Estratégia completa: [`docs/development/testing.md`](docs/development/testing.md).
+- Lógica pura com fakes e relógio simulado; nunca depender de hardware, rede, LLM ou MCP real em `pytest`. Hardware ausente → FakeHome e fixtures determinísticas (MCP-05).
+- Correção de bug traz um teste que falha sem ela.
+- Hardware valida-se à mão por `docs/guia-validacao-manual.md`; o resultado regista-se lá, sem marcar PASS o que não foi executado.
 
 ## Documentação
 
 | Preciso de… | Ler |
 |---|---|
 | Índice, estado e convenções | `docs/README.md` |
+| Estado, bloqueios, prioridades | issue #129, `docs/development/roadmap.md`, `docs/development/backlog.md` |
 | Visão, personas, requisitos | `docs/product/` |
 | Arquitetura, contratos, modelo de dados, fluxo de eventos | `docs/architecture/` |
 | Código ObjectOS → destino | `docs/architecture/migration.md` |
 | Um módulo | `docs/modules/<nome>.md` |
-| Equipa, roadmap, MVP, riscos, backlog | `docs/development/` |
-| MCP e hardware real | `docs/integrations/` |
+| Equipa, MVP, riscos, testes | `docs/development/` |
+| MCP e hardware real | `docs/integrations/` (`altice-mcp.md`, `mcp-demo.md`, `mcp-capabilities.md`) |
 | Decisões e pontos por resolver | `docs/decisions.md` |
 | Gestos, presença, YOLO (código atual) | `app/backend/src/homemind/features/gestos/README.md`, `…/visao/README.md` |
-| PDFs originais da proposta | `docs/references/` (históricos; não editar) |
+| Testes manuais | `docs/development/guia-validacao-manual.md` |
+| PDFs e v5.1 originais | `docs/references/` (históricos; não editar) |
 
-Atualizar o documento correspondente no mesmo PR que muda o comportamento. Não criar documentos novos para o que cabe num existente. Etiquetar sempre IMPLEMENTADO / PLANEADO / PROPOSTA.
+Atualizar o documento correspondente no mesmo PR que muda o comportamento; não criar documentos novos para o que cabe num existente. Etiquetar sempre IMPLEMENTADO / PLANEADO / PROPOSTA.
 
-## Fora de âmbito
+## graphify
 
-Sem pedido explícito e decisão da equipa: reconhecimento facial, gravação de vídeo, venda de dados, Telegram/bots, armar alarmes e cenários do Connected Home (P-01), sugestões de rotinas e Memory (issues #30, #31, #51), brilho por gesto, treino de objetos.
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
