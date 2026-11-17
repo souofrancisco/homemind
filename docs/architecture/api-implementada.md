@@ -104,6 +104,10 @@ Prefixo `/api`. JSON UTF-8, `snake_case`, horas ISO 8601 UTC. Todas as rotas `/a
 | `GET` | `/api/households/{id}/rooms` | `[RoomView]` |
 | `GET` | `/api/households/{id}/members` | `[MemberView]`: senhorio vê todos os estados, inquilino só ativos; operador `403`; nunca `presence_opt_in` nem `sub` |
 | `PATCH` | `/api/households/{id}/memberships/{mid}` | corpo `{ "presence_opt_in": bool }` (`extra=forbid`) → `MembershipSelfView`; só a própria membership de um inquilino (`403` a de outro, `404` se não é desta casa) |
+| `GET` | `/api/presence/devices?household_id=` | `[PresenceDeviceView]` dos telemóveis do próprio (nunca o hash nem o MAC) |
+| `POST` | `/api/presence/devices?household_id=` | corpo `{label, wifi_address, consent: true}` → `201 PresenceDeviceView` · `400 invalid_request` · `409 device_already_registered \| device_limit` · `503 wifi_unconfigured` |
+| `DELETE` | `/api/presence/devices/{id}?household_id=` | opt-out imediato → `204` · `404 device_not_found` (inexistente ou de outro) |
+| `POST` | `/api/presence/wifi/observations` | **fora do OpenAPI**; só `PRESENCE_WIFI_COLLECTION_ENABLED=true` e `PRESENCE_WIFI_MODE=ingest`; `X-Presence-Token` (token de máquina, não JWT); `204`/`401`/`404` |
 | `POST` | `/api/households/{id}/agent/messages` | corpo `{ "text": "…" }` → `AgentResponse` (`proposed_actions` vazio); só inquilino (`403 forbidden_role` ao senhorio e ao operador) · `404 household_not_found` (não-membro). Dados **SIMULADOS** (casa demo); LLM desligado por omissão (`AGENT_LLM_ENABLED`), sem escritas (**Conta Certa, P3**) |
 | `GET` | `/api/households/{id}/notifications?status&scope&limit` | `[NotificationView]` (`limit` 1..100); só pessoais do próprio e da casa; o senhorio só recebe os tipos da allow-list (hoje `info`); operador `403 forbidden_role` · `404 household_not_found` (não-membro) (**Conta Certa, P3**) |
 | `POST` | `/api/households/{id}/notifications/{nid}/read` | `NotificationView`; recibo por residente · `404 notification_not_found` · `403 forbidden_role` |
