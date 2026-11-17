@@ -80,7 +80,7 @@ def test_personal_common_isolation_and_operator_redaction(client):
 
 def test_house_foreign_key_owner_and_duplicate_validation(client):
     assert make_appliance(client, home_room_id=str(ROOM_B1)).status_code == 422
-    assert make_appliance(client, owner_resident_id=str(fx.CARLA)).status_code == 422
+    assert make_appliance(client, owner_resident_id=str(fx.CARLA)).status_code == 400
     first = make_appliance(client)
     assert first.status_code == 201
     duplicate = make_appliance(client)
