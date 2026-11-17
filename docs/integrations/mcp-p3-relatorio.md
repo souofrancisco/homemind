@@ -1,5 +1,7 @@
 # Pessoa 3 — relatório final (Home, FakeHome, McpHome, MCP)
 
+> **Relatório histórico (ObjectOS), preservado como passagem do MCP para P1.** Referências a «P3», «motor» e «gesto» são do produto antigo. Ponto de entrada: [altice-mcp.md](altice-mcp.md).
+
 Issues: #9, #10, #11 (fechadas), #12 (aberta). Branch: `feat/pessoa3-finalizar`. Data: 18/11/2026.
 
 ## Resumo
@@ -60,7 +62,7 @@ Resultado: **216 testes verdes** (eram 199) e `ruff` limpo. Não há dependênci
 ## Pedidos a colegas
 
 - **P4 (motor):** se `_guardado.lampada.ligada is None` no regresso de suspenso, reaplicar `self.modo.acoes` (`engine.py`, função `_repor`). Sem isto, uma falha persistente do MCP no momento da saída faz com que a luz não seja reposta. A B5 já cobre as falhas pontuais.
-- **Todos:** as latências em `docs/mcp-demo.md` §9 foram medidas com os pedidos duplicados e têm de ser medidas outra vez.
+- **Todos:** as latências em [mcp-demo.md](mcp-demo.md) §9 foram medidas com os pedidos duplicados e têm de ser medidas outra vez.
 
 ## O que falta para o projeto funcionar (só com o kit real)
 
@@ -75,7 +77,7 @@ Resultado: **216 testes verdes** (eram 199) e `ruff` limpo. Não há dependênci
    - Cortar a rede: deve ficar `mcp_ok=false`, os estados a `null` e recuperar sozinho.
    - Nenhuma escrita pode ser repetida.
    - Com a sessão expirada, o aviso tem de mandar fazer `make mcp-login`.
-6. Medir a latência do gesto à luz 10 vezes (#28) e atualizar o §9 do `docs/mcp-demo.md`.
+6. Medir a latência do gesto à luz 10 vezes (#28) e atualizar o §9 do [mcp-demo.md](mcp-demo.md).
 7. Perguntar aos mentores:
    - Se `update_device_capabilities` é assíncrono.
    - Se `color_rgb` exige `workMode=colour`.

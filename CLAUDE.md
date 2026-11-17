@@ -2,7 +2,13 @@
 
 Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home). Evolução do ObjectOS para **Conta Certa**: a casa partilhada onde cada um paga o que usa. Regras comuns a todos os agentes; detalhes por área em `app/backend/AGENTS.md` e `app/frontend/AGENTS.md`.
 
-Fonte de verdade do produto: documento Conta Certa v5.1 (secções citadas abaixo como §n) e as issues `[CC · …]` do GitHub. Roadmap e dependências: issue #129. Se o documento e uma issue discordarem, **a issue ganha**; em dúvida, perguntar.
+Fonte de verdade do produto: documento Conta Certa v5.1 ([`docs/references/Conta_Certa_Documento_Completo_v5.1.md`](docs/references/Conta_Certa_Documento_Completo_v5.1.md); secções citadas abaixo como §n) e as issues `[CC · …]` do GitHub. Roadmap e dependências: issue #129 e [`docs/development/roadmap.md`](docs/development/roadmap.md). Hierarquia: decisões da equipa ([`docs/decisions.md`](docs/decisions.md)) > v5.1 > evidência técnica verificada > documentação na `main` > código ObjectOS. Se o documento e uma issue discordarem, **a issue ganha**; em dúvida, perguntar.
+
+## Estado do repositório (ler primeiro)
+
+- O **código na `main` é ainda o do ObjectOS**; o que está «planeado» nos documentos **não existe**. Ao escrever código, docs, PRs ou respostas, distinguir sempre **IMPLEMENTADO** de **PLANEADO**.
+- Antes de tocar no código antigo, ler [`docs/architecture/migration.md`](docs/architecture/migration.md) (KEEP/ADAPT/REPLACE/REMOVE/DEFER). **Não remover código ObjectOS** fora de um PR da BASE-04 (#74).
+- Índice da documentação: [`docs/README.md`](docs/README.md). Divisão por pessoa e ficheiros preferenciais: [`docs/development/team.md`](docs/development/team.md). GitHub Project «Conta Certa — Desenvolvimento»: **PENDENTE** (ainda não criado; ver `docs/decisions.md` D-22).
 
 ## Produto
 
@@ -65,7 +71,7 @@ Respeitar as dependências declaradas na issue (ex.: `MCP-03` bloqueada por `MCP
 
 ## Fluxo de trabalho
 
-1. Ler a issue, as suas dependências e, se tocar em contratos, `docs/contratos.md`.
+1. Ler a issue, as suas dependências e, se tocar em contratos, [`docs/architecture/contracts.md`](docs/architecture/contracts.md) (proposto) e [`docs/architecture/api-implementada.md`](docs/architecture/api-implementada.md) (real).
 2. Uma issue por branch e worktree: `make worktree b=feat/<n>-<nome>` (cria `../homemind-<n>-<nome>` a partir de `origin/main`). Nunca trabalhar no worktree de outro agente.
 3. Implementar só o pedido, no estilo existente. Sem dependências, abstrações ou funcionalidades extra.
 4. `make check` (lint + pytest + contrato OpenAPI→TS + build) tem de passar. `make smoke` quando tocar em Docker, arranque ou proxy.
@@ -75,7 +81,7 @@ Comandos: só os do `Makefile` (ver `README.md`).
 
 ## Contratos partilhados
 
-`contracts/`, os eventos e modelos expostos na API e `docs/contratos.md` mudam juntos e só com acordo da equipa (BASE-03 define o contrato canónico). Tarefas que lhes tocam não correm em paralelo com outras. O frontend nunca redefine tipos da API: usa os gerados por `make contracts`.
+`contracts/`, os eventos e modelos expostos na API e [`docs/architecture/contracts.md`](docs/architecture/contracts.md) mudam juntos e só com acordo da equipa (BASE-03 define o contrato canónico). Tarefas que lhes tocam não correm em paralelo com outras. O frontend nunca redefine tipos da API: usa os gerados por `make contracts`.
 
 ## Regras de domínio (não quebrar)
 
@@ -107,15 +113,20 @@ Comandos: só os do `Makefile` (ver `README.md`).
 
 | Preciso de… | Ler |
 |---|---|
-| Estado atual, bloqueios, prioridades | issue #129 e `docs/estado-para-amanha.md` |
-| Modelos, rotas, WebSocket, erros | `docs/contratos.md` |
-| Arquitetura e decisões | `docs/architecture.md` |
-| Operar o MCP / capacidades reais | `docs/mcp-demo.md`, `docs/mcp-capabilities.md` |
-| Gestos, presença, afinador (ObjectOS) | `app/backend/src/homemind/features/gestos/README.md` |
-| YOLO, pesos, FPS | `app/backend/src/homemind/features/visao/README.md` |
-| Testes manuais | `docs/guia-validacao-manual.md` |
+| Índice, estado e convenções | `docs/README.md` |
+| Estado, bloqueios, prioridades | issue #129, `docs/development/roadmap.md`, `docs/development/backlog.md` |
+| Visão, personas, requisitos | `docs/product/` |
+| Arquitetura, contratos, modelo de dados, fluxo de eventos | `docs/architecture/` |
+| Código ObjectOS → destino | `docs/architecture/migration.md` |
+| Um módulo | `docs/modules/<nome>.md` |
+| Equipa, MVP, riscos, testes | `docs/development/` |
+| MCP e hardware real | `docs/integrations/` (`altice-mcp.md`, `mcp-demo.md`, `mcp-capabilities.md`) |
+| Decisões e pontos por resolver | `docs/decisions.md` |
+| Gestos, presença, YOLO (código atual) | `app/backend/src/homemind/features/gestos/README.md`, `…/visao/README.md` |
+| Testes manuais | `docs/development/guia-validacao-manual.md` |
+| PDFs e v5.1 originais | `docs/references/` (históricos; não editar) |
 
-Muitos documentos em `docs/` ainda descrevem o ObjectOS; atualizar o documento correspondente no mesmo PR que muda o comportamento e não criar documentos novos para o que cabe num existente.
+Atualizar o documento correspondente no mesmo PR que muda o comportamento; não criar documentos novos para o que cabe num existente. Etiquetar sempre IMPLEMENTADO / PLANEADO / PROPOSTA.
 
 ## graphify
 

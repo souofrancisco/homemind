@@ -1,5 +1,7 @@
 # Métricas
 
+> **ARQUIVADO — ObjectOS.** Só consulta histórica; não descreve a Conta Certa. Índice: [README](README.md).
+
 Só entram na coluna «Medido» valores com evidência. **REAL** = hardware/serviço real; **SIMULADO** = FakeHome, clip sintético ou IdP de teste.
 
 ## Critérios da demo

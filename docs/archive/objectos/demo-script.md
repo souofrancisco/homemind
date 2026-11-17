@@ -1,5 +1,7 @@
 # Guião da demo
 
+> **ARQUIVADO — ObjectOS.** Só consulta histórica; não descreve a Conta Certa. Índice: [README](README.md).
+
 Só se mostra como REAL o que foi validado em `guia-validacao-manual.md`. Tudo o resto é dito em voz alta como **simulado**. Checklist de preparação em `estado-para-amanha.md`.
 
 ## Antes de entrar (10 min)

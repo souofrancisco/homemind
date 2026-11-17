@@ -1,6 +1,8 @@
 # Perguntas aos mentores (Altice)
 
-Registar a resposta e a data por baixo de cada pergunta. Contexto técnico em `mcp-capabilities.md`.
+> Perguntas ainda abertas aos mentores Altice. A pergunta 6 (unidade de `instantPower`) e as 1–2 e 7 (escritas) são **bloqueios da Conta Certa**. Ponto de entrada: [altice-mcp.md](altice-mcp.md).
+
+Registar a resposta e a data por baixo de cada pergunta. Contexto técnico em [mcp-capabilities.md](mcp-capabilities.md).
 
 1. **Lâmpada não reage.** `update_device_capabilities` devolve «device updated» mas a lâmpada não muda e a releitura volta ao estado inicial. O `lastCommunicationTime` da lâmpada tinha 3 a 14 min. A lâmpada está online na cloud? É preciso re-emparelhar ou outra rede Wi-Fi? —
 2. **A escrita é assíncrona?** Quanto tempo pode passar entre o «device updated» e o efeito físico? Há forma de saber que o comando chegou ao dispositivo? —

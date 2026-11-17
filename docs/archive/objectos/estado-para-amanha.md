@@ -1,5 +1,7 @@
 # Estado para amanhã — auditoria de 17/11/2026
 
+> **ARQUIVADO — ObjectOS.** Só consulta histórica; não descreve a Conta Certa. Índice: [README](README.md).
+
 Resultado da auditoria, endurecimento e consolidação da documentação. Publicado num único commit na `main`: `refactor: harden ObjectOS, consolidate docs and prepare validation`.
 
 - **Base:** `8217368` (`origin/main` antes da auditoria).

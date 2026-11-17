@@ -1,5 +1,7 @@
 # Guia de validação manual — roteiro oficial
 
+> **Nota (Conta Certa):** guia herdado do ObjectOS. **Continuam válidos:** blocos A (arranque, login), B (API, WebSocket), E (MCP), F (vídeo e RTSP, YOLO de pessoas), PRIV-01 e as regras de evidência. **Só do ObjectOS (não aplicáveis ao produto novo):** bloco D (motor, regras, NVIDIA, «Desligar tudo»), bloco G (gestos), POSE-01, LAT-01/02 e DEMO-01/PB-01 na forma atual. Os testes manuais da Conta Certa (leituras, confirmações, recibos) serão acrescentados quando existirem ([mvp.md](mvp.md)). Só se marca PASS o que foi executado.
+
 Roteiro dos testes a executar à mão. Os testes automáticos (`make check`, `make smoke`) não o substituem: validam a lógica com simulações, não o hardware.
 
 **Regras**
@@ -155,7 +157,7 @@ auth() { curl -s -H "Authorization: Bearer $TOKEN" "$@"; }
 
 ## E. MCP Altice
 
-Operação detalhada em `mcp-demo.md`; hipóteses para a lâmpada em `mcp-capabilities.md`.
+Operação detalhada em [mcp-demo.md](../integrations/mcp-demo.md); hipóteses para a lâmpada em [mcp-capabilities.md](../integrations/mcp-capabilities.md).
 
 ### MCP-01 — OAuth
 - **Issue:** #10 · **Tipo:** REAL
