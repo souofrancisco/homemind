@@ -68,5 +68,5 @@
 
 - [x] Add tests for two-house device/room/owner isolation, tenant physical-device restrictions, demo-only device creation, and departed-member history.
 - [x] Run focused tests, `make check`, and inspect the full diff against the current `origin/main`.
-- [ ] Record the invariant/protection/test matrix, HOUSE-02/HOUSE-04 impact, and any pending decisions in the PR.
-- [ ] Request P1 and P4 validation on PR #142; do not merge or close #86.
+- [x] Record the invariant/protection/test matrix, HOUSE-02/HOUSE-04 impact, and pending P4 decisions in the PR.
+- [x] Request P1 and P4 validation on PR #142; keep the PR unmerged and #86 open.
