@@ -9,11 +9,11 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from homemind.contracts.household import (
-    MemberView,
     Membership,
     MembershipRole,
     MembershipSelfView,
     MembershipStatus,
+    MemberView,
     Resident,
     Room,
     RoomKind,
