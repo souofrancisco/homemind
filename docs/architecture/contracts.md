@@ -50,7 +50,7 @@ Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), 
 | `Attribution` (+`supersede`) | P4 | P3, agente | PLANEADA: índice único parcial `(consumption_event_id) WHERE status='active'` | modelos + cenário | — |
 | `ElectricityBill`, `BillAllocation` (+`validate_allocations`) | P4 | UI, agente, P3 | PLANEADA (P4) | fixtures A/B/C exatas | Entrada da fatura (manual vs LLM) |
 | `Budget`, `BudgetThreshold`, `Contestation` | P4 | P3 | PLANEADA (P4) | modelos | P-10 (individual vs fixa) |
-| `Notification`, `NotificationView`, `NotificationAction/Response/Preferences`, `ConfirmationRequest` | P3 (pedido: P4) | UI, P4 | PLANEADA (P3) | modelos + cenário | D-32 (votação nas confirmações) |
+| `Notification`, `NotificationView`, `NotificationAction/Response/Preferences`, `ConfirmationRequest` | P3 (pedido: P4) | UI, P4 | **IMPLEMENTADA** (`0300_notifications_core.sql`: `notification`, `notification_read`, `notification_preferences`; *compare-and-set* sobre o estado e a versão/n.º de votos) | modelos + cenário + `notifications/tests` | D-32 (votação nas confirmações) |
 | `AgentToolRequest/Result`, `ProposedAction`, `ActionConfirmation`, `ActionExecutionResult`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3); sem persistência (o assistente não tem estado) | modelos | P-06 (LLM e dados) |
 | `DomainEvent` (23 tipos), `StoredEvent` | cada módulo | cada módulo | **IMPLEMENTADA** (`domain_event`) | `test_events`, cenário | — |
 
@@ -71,7 +71,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `presence.occupancy_changed` (PROPOSTA) | P2 | `HouseOccupancy` (anónimo) | P2, P3 | idem |
 | `sensor.reading_recorded` (PROPOSTA) | P1 | `SensorReading` | P2 | idem |
 | `safety.alert_raised` (PROPOSTA) | P2 | `SafetyAlert` (o mesmo `id` volta com `status=resolved`) | P3 | idem |
-| `billing.confirmation_needed` | P4 | `ConfirmationRequest` | P3 | idem |
+| `billing.confirmation_needed` | P4 | `ConfirmationRequest` | P3 (consumidor `notifications.confirmation_needed`, **IMPLEMENTADO**) | idem |
 | `billing.attribution_changed` | P4 | `Attribution` | P3, P4 | idem |
 | `billing.bill_created` / `bill_finalized` | P4 | `BillRef` | P3, UI | idem |
 | `billing.allocation_published` | P4 | `AllocationPublished` | P3 | idem |
@@ -167,11 +167,11 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 
 | Método | Rota | Papéis | Notas |
 |---|---|---|---|
-| `GET` | `/api/notifications?status&scope&limit` | T, L (as suas) | Pessoais + da casa |
-| `POST` | `/api/notifications/{id}/read` | dono | |
-| `POST` | `/api/notifications/{id}/respond` | T autorizado | `NotificationRespondIn` `{ "action_id": "mine" \| "everyone" \| "unknown" \| "other", "target_resident_id"? }` (alvo só com `other`, outro inquilino elegível); `409 already_responded` (já votou / já fechada), `409 notification_expired`, `400 invalid_request` (alvo inválido) |
-| `GET` `PUT` | `/api/me/notification-preferences` | T, L | limiares, silêncio noturno |
-| `WS` | `/api/ws` | todos | Novas mensagens: `notification`, `notification_update` (ver abaixo) |
+| `GET` | `/api/households/{household_id}/notifications?status&scope&limit` | T, L (as suas) | **IMPLEMENTADO.** Pessoais + da casa, como `NotificationView` (com `voting`); o senhorio só recebe os tipos da allow-list (hoje `info`). Caminho por casa; revisão P5 |
+| `POST` | `/api/households/{household_id}/notifications/{id}/read` | dono | **IMPLEMENTADO.** Caminho por casa; revisão P5 |
+| `POST` | `/api/households/{household_id}/notifications/{id}/respond` | T autorizado | **IMPLEMENTADO.** `NotificationRespondIn` `{ "action_id": "mine" \| "everyone" \| "unknown" \| "other", "target_resident_id"? }` (alvo só com `other`, outro inquilino elegível); `409 already_responded` (já votou / já fechada), `409 notification_expired`, `400 invalid_request` (alvo inválido). Caminho por casa; revisão P5 |
+| `GET` `PUT` | `/api/households/{household_id}/notification-preferences` | T, L | **IMPLEMENTADO.** Silêncio noturno e tipos desligados, por casa (`security_alert` não se desliga: `400`). Caminho por casa; revisão P5 |
+| `WS` | `/api/ws` | todos | **PLANEADO.** Novas mensagens: `notification`, `notification_update` (ver abaixo) |
 
 ### Assistente e automações (P3)
 
@@ -196,7 +196,7 @@ O protocolo atual (`auth` na primeira mensagem, snapshot, `event`, `home_state`,
 { "type": "notification_update", "data": { "id": "…", "status": "actioned", "response": { "action_id": "mine" } } }
 ```
 
-O servidor só envia notificações do utilizador autenticado (pessoais) e da sua casa. O cliente que reconecta recupera por `GET /api/notifications`.
+O servidor só envia notificações do utilizador autenticado (pessoais) e da sua casa. O cliente que reconecta recupera por `GET /api/households/{household_id}/notifications`.
 
 ## 8. Códigos de erro
 

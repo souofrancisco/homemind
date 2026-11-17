@@ -104,6 +104,11 @@ Prefixo `/api`. JSON UTF-8, `snake_case`, horas ISO 8601 UTC. Todas as rotas `/a
 | `GET` | `/api/households/{id}/members` | `[MemberView]`: senhorio vê todos os estados, inquilino só ativos; operador `403`; nunca `presence_opt_in` nem `sub` |
 | `PATCH` | `/api/households/{id}/memberships/{mid}` | corpo `{ "presence_opt_in": bool }` (`extra=forbid`) → `MembershipSelfView`; só a própria membership de um inquilino (`403` a de outro, `404` se não é desta casa) |
 | `POST` | `/api/households/{id}/agent/messages` | corpo `{ "text": "…" }` → `AgentResponse` (`proposed_actions` vazio); só inquilino (`403 forbidden_role` ao senhorio e ao operador) · `404 household_not_found` (não-membro). Dados **SIMULADOS** (casa demo); LLM desligado por omissão (`AGENT_LLM_ENABLED`), sem escritas (**Conta Certa, P3**) |
+| `GET` | `/api/households/{id}/notifications?status&scope&limit` | `[NotificationView]` (`limit` 1..100); só pessoais do próprio e da casa; o senhorio só recebe os tipos da allow-list (hoje `info`); operador `403 forbidden_role` · `404 household_not_found` (não-membro) (**Conta Certa, P3**) |
+| `POST` | `/api/households/{id}/notifications/{nid}/read` | `NotificationView`; recibo por residente · `404 notification_not_found` · `403 forbidden_role` |
+| `POST` | `/api/households/{id}/notifications/{nid}/respond` | corpo `NotificationRespondIn` `{ "action_id": "mine"\|"other"\|"everyone"\|"unknown", "target_resident_id"?: uuid }` → `NotificationView` (com `voting`, votos anónimos); só inquilino elegível; **votação D-32**: um voto por pessoa, fecha quando a regra decide · `404 notification_not_found` · `403 forbidden_role` · `409 already_responded` (já votou ou votação fechada) · `409 notification_expired` · `400 invalid_request` (ação ou alvo inválido) |
+| `GET` | `/api/households/{id}/notification-preferences` | `NotificationPreferences` do próprio (por pessoa) · `403 forbidden_role` · `404 household_not_found` |
+| `PUT` | `/api/households/{id}/notification-preferences` | por casa; corpo `{ quiet_hours, disabled_kinds }` → `NotificationPreferences` · `400 invalid_request` (ex.: desligar `security_alert`) · `403` · `404` |
 
 ### `HomeState`
 
