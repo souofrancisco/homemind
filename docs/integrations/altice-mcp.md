@@ -52,7 +52,7 @@ Um «aceite» do MCP não é sucesso físico: só a releitura confirma.
 
 `refused` não conta como tentativa; `confirmed`, `failed` e `unknown` contam. Uma falha **antes de enviar** é `failed` (decisão do utilizador), logo conta para o cooldown e o limite, mas não inicia o bloqueio de incerteza. Estado em memória: reinicia com o processo.
 
-**Não feito (PLANEADO):** persistir o resultado e a decisão como evento/auditoria (não há contrato de comando físico em `contracts/`: precisa de acordo da equipa) e ligar as regras (SAFE-01 só levanta alertas hoje). **Validação em hardware não executada:** os testes usam só a sessão falsa `FakeMcp`; nenhuma escrita física foi feita para esta issue.
+**Não feito (PLANEADO):** persistir o resultado e a decisão como evento/auditoria (não há contrato de comando físico em `contracts/`: precisa de acordo da equipa) e ligar as regras (SAFE-01 só levanta alertas hoje). **Validação em hardware não executada:** os testes usam só a sessão falsa `FakeMcp`; nenhuma escrita física foi feita para esta issue. Por decisão do utilizador (17/11/2026), a validação física (corte da tomada e lâmpada, confirmada por releitura) fica para o **DEMO-03 (#122)**; até lá o corte por regra é **SIMULADO**.
 
 ## O que a Conta Certa pede ao MCP (e o estado)
 
