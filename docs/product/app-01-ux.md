@@ -87,12 +87,12 @@ Os percursos «mais frequentes» são inferidos dos requisitos; não existem mé
 | Critério | Peso | A | B | C |
 |---|---:|---:|---:|---:|
 | Clareza para o morador | 25% | 5 | 5 | 4 |
-| Privacidade e múltiplos papéis | 25% | 4 | 5 | 4 |
+| Privacidade e múltiplos papéis | 25% | 4 | 4 | 4 |
 | Demonstração da proposta de valor | 20% | 5 | 5 | 4 |
 | Independência de módulos ainda ausentes | 15% | 3 | 5 | 3 |
 | Simplicidade de implementação | 10% | 4 | 4 | 3 |
-| Evolução futura | 5% | 5 | 5 | 4 |
-| **Total ponderado** | **100%** | **4,35** | **4,90** | **3,80** |
+| Evolução futura | 5% | 4 | 4 | 3 |
+| **Total ponderado** | **100%** | **4,30** | **4,60** | **3,70** |
 
 **Decisão:** **B (House-first) com abertura de A (Dashboard-first) e uma área de atividade de C**. A casa e a membership são o contexto obrigatório; o Início é útil sem telemetria e evolui sem troca de navegação; Notificações recebem apenas os pedidos pessoais do backend quando P3 estiver disponível.
 

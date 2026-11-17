@@ -50,7 +50,6 @@ export default function Shell() {
       aria-current={active === page.path ? "page" : undefined}
       fw={active === page.path ? 700 : 500}
       py="sm"
-      radius="md"
     />
   ));
 
