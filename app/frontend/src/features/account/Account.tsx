@@ -1,39 +1,46 @@
 import {
   Accordion,
   Alert,
-  Badge,
+  Avatar,
   Button,
   Card,
+  Divider,
   Group,
   Loader,
   Stack,
   Switch,
-  Tabs,
   Text,
+  ThemeIcon,
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconDownload, IconLogout, IconShieldLock } from "@tabler/icons-react";
+import {
+  IconBook2,
+  IconCoffee,
+  IconDownload,
+  IconLogout,
+  IconMovie,
+  IconShieldLock,
+  IconSparkles,
+} from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { getMe, type Me } from "../auth/api";
 import { demoSuggestionDecisions, demoSuggestions } from "../dashboard/demoSuggestions";
 import { useHomeSocket } from "../dashboard/useHomeSocket";
 import type { MemorySnapshot } from "../dashboard/types";
-import DemoGuide from "./DemoGuide";
 
 function memoryMarkdown(memory: MemorySnapshot) {
   return [
-    "# ObjectOS Memory — exemplos de demonstração",
+    "# ObjectOS — hábitos e privacidade",
     "",
-    "> Este ficheiro contém apenas dados simulados desta sessão. Não representa memória guardada permanentemente.",
+    "> Este resumo contém apenas exemplos da sessão de demonstração. Não representa gostos confirmados nem dados guardados permanentemente.",
     "",
-    `- Aprendizagem nesta sessão: ${memory.learningEnabled ? "ativa" : "desativada"}`,
-    `- Exemplos de eventos: ${memory.observedEvents.length}`,
-    `- Padrões inferidos: ${memory.inferredPatterns.length}`,
-    `- Preferências confirmadas: ${memory.confirmedPreferences.length}`,
+    `- Aprendizagem nesta sessão: ${memory.learningEnabled ? "ativa" : "inativa"}`,
+    `- Eventos de exemplo: ${memory.observedEvents.length}`,
+    `- Padrões de exemplo: ${memory.inferredPatterns.length}`,
     "",
-    "## Padrões inferidos (simulados)",
+    "## Padrões de exemplo",
     ...(memory.inferredPatterns.length
       ? memory.inferredPatterns.flatMap((pattern) => [
           `### ${pattern.statement}`,
@@ -44,53 +51,28 @@ function memoryMarkdown(memory: MemorySnapshot) {
           "",
         ])
       : ["Nenhum padrão apresentado nesta sessão.", ""]),
-    "## Preferências confirmadas",
-    ...(memory.confirmedPreferences.length
-      ? memory.confirmedPreferences.map((item) => `- ${item.statement} (confirmada em ${item.confirmedAt})`)
-      : ["Nenhuma preferência confirmada." ]),
-    "",
     "## Eventos de exemplo",
     ...(memory.observedEvents.length
-      ? memory.observedEvents.map((event) => `- ${new Date(event.occurredAt).toLocaleString("pt-PT")} — ${event.text} [SIMULADO]`)
+      ? memory.observedEvents.map((event) => `- ${new Date(event.occurredAt).toLocaleString("pt-PT")} — ${event.text} [EXEMPLO]`)
       : ["Nenhum evento de exemplo." ]),
-    "",
-    "## Sugestões nesta sessão",
-    `- Pendentes: ${memory.pendingSuggestions.join(", ") || "nenhuma"}`,
-    `- Ignoradas: ${memory.ignoredSuggestions.join(", ") || "nenhuma"}`,
     "",
   ].join("\n");
 }
 
-function PatternCards({ memory }: { memory: MemorySnapshot }) {
-  if (!memory.inferredPatterns.length) {
-    return <Text size="sm" c="dimmed">A aprendizagem está desativada nesta sessão. Não há padrões a apresentar.</Text>;
-  }
-
+function SectionTitle({ id, title, description }: { id: string; title: string; description?: string }) {
   return (
-    <Stack gap="sm">
-      {memory.inferredPatterns.map((pattern) => (
-        <Card withBorder radius="md" key={pattern.id}>
-          <Group justify="space-between" align="flex-start" wrap="wrap">
-            <Text fw={600} size="sm">{pattern.statement}</Text>
-            <Badge color="yellow" variant="light" size="sm">SIMULADO</Badge>
-          </Group>
-          <Text size="sm" mt="xs">{pattern.frequency}</Text>
-          <Text size="xs" c="dimmed">Período: {pattern.timeWindow}</Text>
-          <Accordion variant="contained" radius="sm" mt="sm">
-            <Accordion.Item value={pattern.id}>
-              <Accordion.Control>Ver evidências</Accordion.Control>
-              <Accordion.Panel>
-                <Stack gap={4}>
-                  {pattern.evidence.map((evidence) => <Text size="xs" key={evidence}>{evidence}</Text>)}
-                </Stack>
-              </Accordion.Panel>
-            </Accordion.Item>
-          </Accordion>
-        </Card>
-      ))}
-    </Stack>
+    <div>
+      <Title id={id} order={3}>{title}</Title>
+      {description && <Text size="sm" c="dimmed" mt={4}>{description}</Text>}
+    </div>
   );
 }
+
+const patternIcons = {
+  "pattern-reading-evening": IconBook2,
+  "pattern-coffee-entry": IconCoffee,
+  "pattern-cinema-weekend": IconMovie,
+};
 
 export default function Account() {
   const { logout } = useAuth();
@@ -101,161 +83,187 @@ export default function Account() {
 
   useEffect(() => { getMe().then(setMe).catch(() => setFailed(true)); }, []);
 
+  const simulated = source === "mock";
   const memory = useMemo<MemorySnapshot>(() => ({
     profileId: "demo-profile",
     updatedAt: new Date().toISOString(),
     learningEnabled,
-    observedEvents: [
+    observedEvents: simulated ? [
       { id: "obs-book", occurredAt: "2026-11-14T21:12:00Z", text: "Livro levantado e modo Leitura ativado", source: "fake" },
       { id: "obs-mug", occurredAt: "2026-11-15T08:33:00Z", text: "Presença seguida de deteção de caneca", source: "fake" },
       { id: "obs-remote", occurredAt: "2026-11-16T20:47:00Z", text: "Comando levantado e modo Cinema ativado", source: "fake" },
-    ],
-    inferredPatterns: learningEnabled ? demoSuggestions.map(({ id, statement, frequency, timeWindow, evidence }) => ({
+    ] : [],
+    inferredPatterns: simulated && learningEnabled ? demoSuggestions.map(({ id, statement, frequency, timeWindow, evidence }) => ({
       id, statement, frequency, timeWindow, evidence, simulated: true as const,
     })) : [],
     confirmedPreferences: [],
     pendingSuggestions: demoSuggestions.filter((item) => !demoSuggestionDecisions.has(item.id)).map((item) => item.title),
     ignoredSuggestions: demoSuggestions.filter((item) => demoSuggestionDecisions.has(item.id)).map((item) => item.title),
-  }), [learningEnabled]);
-  const simulated = source === "mock";
+  }), [learningEnabled, simulated]);
 
   const exportMemory = () => {
     const url = URL.createObjectURL(new Blob([memoryMarkdown(memory)], { type: "text/markdown;charset=utf-8" }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = "objectos-memory-exemplo.md";
+    link.download = "objectos-habitos.md";
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
-    notifications.show({ color: "teal", message: "Exemplos exportados em Markdown para este dispositivo." });
+    notifications.show({ color: "teal", message: "Resumo Markdown exportado para este dispositivo." });
   };
 
   return (
-    <Stack gap="lg">
+    <Stack gap="xl" maw={760} mx="auto">
       <div>
-        <Text c="dimmed" size="sm">IDENTIDADE E PRIVACIDADE</Text>
+        <Text c="dimmed" size="sm">A TUA CASA, AO TEU RITMO</Text>
         <Title order={2}>Perfil</Title>
-        <Text c="dimmed">Conta, preferências e dados usados nesta sessão.</Text>
       </div>
 
-      <Tabs defaultValue="account" keepMounted={false}>
-        <Tabs.List grow>
-          <Tabs.Tab value="account">Conta</Tabs.Tab>
-          <Tabs.Tab value="preferences">Preferências</Tabs.Tab>
-          <Tabs.Tab value="memory">Memória</Tabs.Tab>
-          <Tabs.Tab value="privacy">Privacidade</Tabs.Tab>
-        </Tabs.List>
-
-        <Tabs.Panel value="account" pt="md">
-          <Stack gap="md">
-            {failed ? <Alert color="red">Não foi possível obter os dados da conta. A sessão continua ativa.</Alert> : me ? (
-              <Card withBorder radius="lg">
-                <Group justify="space-between" wrap="nowrap">
-                  <div>
-                    <Text fw={600}>{me.name ?? me.username}</Text>
-                    <Text c="dimmed" size="sm">{me.email}</Text>
-                  </div>
-                  <IconShieldLock size={22} aria-label="Identidade autenticada" />
-                </Group>
-              </Card>
-            ) : <Group><Loader size="sm" /><Text size="sm" c="dimmed">A carregar conta…</Text></Group>}
-            <Button leftSection={<IconLogout size={16} />} onClick={() => logout()} variant="light" color="red" w="fit-content">
-              Terminar sessão
-            </Button>
-          </Stack>
-        </Tabs.Panel>
-
-        <Tabs.Panel value="preferences" pt="md">
-          <Card withBorder radius="lg">
-            <Stack gap="sm">
-              <Group justify="space-between" align="flex-start">
-                <div><Title order={4}>Preferências confirmadas</Title><Text size="sm" c="dimmed">Só aparecem aqui escolhas confirmadas explicitamente.</Text></div>
-                <Badge color="gray" variant="light">{memory.confirmedPreferences.length}</Badge>
+      <section aria-labelledby="account-title">
+        <SectionTitle id="account-title" title="Conta" />
+        <Stack gap="sm" mt="sm">
+          <Card withBorder radius="lg" p="md">
+            {failed ? (
+              <Alert color="red" variant="light">Não foi possível carregar os dados da conta.</Alert>
+            ) : me ? (
+              <Group wrap="nowrap" align="flex-start">
+                <Avatar radius="xl" size={48} color="teal">{(me.name ?? me.username ?? "U").slice(0, 1).toUpperCase()}</Avatar>
+                <Stack gap={2} style={{ minWidth: 0 }}>
+                  <Text fw={600} size="lg">{me.name ?? me.username ?? "Utilizador"}</Text>
+                  {me.email && <Text size="sm" c="dimmed" style={{ overflowWrap: "anywhere" }}>{me.email}</Text>}
+                </Stack>
               </Group>
-              {memory.confirmedPreferences.length ? memory.confirmedPreferences.map((item) => (
-                <Text size="sm" key={item.id}>{item.statement} · Confirmada em {item.confirmedAt}</Text>
-              )) : <Text size="sm" c="dimmed">Ainda não há preferências confirmadas associadas a esta demonstração.</Text>}
-              <Text size="xs" c="dimmed">Os padrões inferidos são sugestões e não alteram as tuas preferências.</Text>
-            </Stack>
+            ) : (
+              <Group><Loader size="sm" /><Text size="sm" c="dimmed">A carregar conta…</Text></Group>
+            )}
           </Card>
-        </Tabs.Panel>
 
-        <Tabs.Panel value="memory" pt="md">
-          <Stack gap="md">
-            <Card withBorder radius="lg">
-              <Stack gap="sm">
-                <Group justify="space-between" align="flex-start" wrap="wrap">
-                  <div><Title order={3}>ObjectOS Memory</Title><Text size="sm" c="dimmed" mt={4}>Exemplos de padrões inferidos a partir de eventos textuais.</Text></div>
-                  <Badge color={simulated ? "yellow" : "gray"} variant="light">{simulated ? "EXEMPLOS SIMULADOS" : "MEMÓRIA REAL INDISPONÍVEL"}</Badge>
+          <Card withBorder radius="lg" p={0}>
+            <Accordion variant="transparent">
+              <Accordion.Item value="preferences">
+                <Accordion.Control icon={<ThemeIcon variant="light" radius="xl"><IconShieldLock size={16} /></ThemeIcon>}>
+                  <Text fw={500}>Preferências confirmadas</Text>
+                </Accordion.Control>
+                <Accordion.Panel>
+                  {memory.confirmedPreferences.length ? (
+                    <Stack gap="xs">
+                      {memory.confirmedPreferences.map((item) => <Text size="sm" key={item.id}>{item.statement}</Text>)}
+                    </Stack>
+                  ) : (
+                    <Text size="sm" c="dimmed">Ainda não confirmaste preferências.</Text>
+                  )}
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
+          </Card>
+
+          <Button leftSection={<IconLogout size={17} />} onClick={() => logout()} variant="subtle" color="red" w="fit-content">
+            Terminar sessão
+          </Button>
+        </Stack>
+      </section>
+
+      <section aria-labelledby="habits-title">
+        <SectionTitle id="habits-title" title="Os teus hábitos" description="Padrões que podem ajudar a casa a acompanhar o teu ritmo." />
+        <Stack gap="sm" mt="sm">
+          {simulated && (
+            <Alert color="gray" variant="light" icon={<IconSparkles size={18} />}>
+              Exemplos desta demonstração. Não são hábitos reais nem preferências confirmadas.
+            </Alert>
+          )}
+          {memory.inferredPatterns.length ? memory.inferredPatterns.map((pattern) => {
+            const suggestion = demoSuggestions.find((item) => item.id === pattern.id);
+            const HabitIcon = patternIcons[pattern.id as keyof typeof patternIcons] ?? IconSparkles;
+
+            return (
+              <Card withBorder radius="lg" p="md" key={pattern.id}>
+                <Group align="flex-start" wrap="nowrap">
+                  <ThemeIcon size={42} radius="xl" variant="light" color="teal"><HabitIcon size={21} /></ThemeIcon>
+                  <Stack gap={4} style={{ minWidth: 0, flex: 1 }}>
+                    <Text fw={600}>{suggestion?.title ?? "Padrão observado"}</Text>
+                    <Text size="sm" c="dimmed">{pattern.statement}</Text>
+                    <Text size="xs" c="dimmed">{pattern.frequency} · {pattern.timeWindow}</Text>
+                  </Stack>
                 </Group>
-                {!simulated && <Alert color="blue">A memória real ainda não está ligada a um contrato backend. Os cartões abaixo continuam a usar apenas exemplos simulados.</Alert>}
-                <Alert color="gray" variant="light">Uma inferência não é uma preferência confirmada. Os exemplos existem apenas durante esta sessão e não representam armazenamento permanente.</Alert>
-                <Switch
-                  checked={learningEnabled}
-                  onChange={(event) => setLearningEnabled(event.currentTarget.checked)}
-                  label="Apresentar padrões inferidos (exemplos)"
-                  description="Só controla estes exemplos nesta sessão; não elimina dados já existentes noutros sistemas."
-                />
+                <Accordion variant="transparent" mt="xs">
+                  <Accordion.Item value={pattern.id}>
+                    <Accordion.Control>Ver detalhes</Accordion.Control>
+                    <Accordion.Panel>
+                      <Stack gap="xs">
+                        {suggestion?.explanation && <Text size="sm">{suggestion.explanation}</Text>}
+                        <Text size="xs" fw={600}>Eventos relacionados</Text>
+                        {pattern.evidence.map((evidence) => <Text size="sm" c="dimmed" key={evidence}>{evidence}</Text>)}
+                        <Text size="xs" c="dimmed">Este padrão não altera as tuas preferências.</Text>
+                      </Stack>
+                    </Accordion.Panel>
+                  </Accordion.Item>
+                </Accordion>
+              </Card>
+            );
+          }) : (
+            <Card withBorder radius="lg" p="md">
+              <Text size="sm" c="dimmed">Ainda não há hábitos observados nesta sessão.</Text>
+            </Card>
+          )}
+        </Stack>
+      </section>
+
+      <section aria-labelledby="privacy-title">
+        <SectionTitle id="privacy-title" title="Privacidade" description="Tu decides como os teus dados são usados." />
+        <Stack gap="sm" mt="sm">
+          <Card withBorder radius="lg" p="md">
+            <Group justify="space-between" align="center" wrap="nowrap">
+              <Stack gap={3}>
+                <Text fw={500}>Aprendizagem por eventos</Text>
+                <Text size="sm" c="dimmed">{simulated ? "Controla os exemplos apenas nesta sessão." : "A aprendizagem ainda não está disponível nesta conta."}</Text>
               </Stack>
-            </Card>
+              <Switch
+                checked={learningEnabled}
+                onChange={(event) => setLearningEnabled(event.currentTarget.checked)}
+                aria-label="Apresentar exemplos de hábitos nesta sessão"
+                disabled={!simulated}
+              />
+            </Group>
+          </Card>
 
-            <Card withBorder radius="lg">
-              <Group justify="space-between" mb="sm">
-                <Title order={4}>Padrões observados</Title>
-                <Badge color="yellow" variant="light">{memory.inferredPatterns.length}</Badge>
-              </Group>
-              <PatternCards memory={memory} />
-            </Card>
-
-            <Accordion variant="separated">
-              <Accordion.Item value="observed-events">
-                <Accordion.Control>Eventos textuais de exemplo ({memory.observedEvents.length})</Accordion.Control>
+          <Card withBorder radius="lg" p={0}>
+            <Accordion variant="transparent">
+              <Accordion.Item value="data">
+                <Accordion.Control>
+                  <Stack gap={2}>
+                    <Text fw={500}>Dados utilizados</Text>
+                    <Text size="xs" c="dimmed">{simulated ? `${memory.observedEvents.length} eventos de exemplo` : "Eventos da sessão"}</Text>
+                  </Stack>
+                </Accordion.Control>
                 <Accordion.Panel>
                   <Stack gap="xs">
+                    <Text size="sm" c="dimmed">{simulated ? "Eventos de exemplo e dados essenciais da tua conta. Estes eventos não são observações reais." : "Eventos disponíveis e dados essenciais da tua conta."}</Text>
                     {memory.observedEvents.map((event) => (
-                      <Group key={event.id} justify="space-between" align="flex-start" wrap="wrap">
+                      <Group key={event.id} gap="xs" wrap="nowrap" align="flex-start">
+                        <ThemeIcon size={22} variant="light" color="gray" radius="xl"><IconShieldLock size={13} /></ThemeIcon>
                         <Text size="sm">{event.text}</Text>
-                        <Badge color="yellow" size="xs">SIMULADO</Badge>
                       </Group>
                     ))}
+                    {!simulated && <Text size="sm" c="dimmed">Ainda não há eventos disponíveis para esta conta.</Text>}
                   </Stack>
                 </Accordion.Panel>
               </Accordion.Item>
             </Accordion>
+          </Card>
 
-            <Button leftSection={<IconDownload size={16} />} variant="light" onClick={exportMemory}>
-              Exportar exemplos em Markdown
-            </Button>
-          </Stack>
-        </Tabs.Panel>
+          <Button leftSection={<IconDownload size={17} />} variant="light" onClick={exportMemory} w="fit-content">
+            Exportar dados em Markdown
+          </Button>
 
-        <Tabs.Panel value="privacy" pt="md">
-          <Stack gap="md">
-            <Alert color="blue" title="Vídeo e câmara">
-              O vídeo é processado localmente para deteção e não é armazenado nem enviado para serviços externos.
-            </Alert>
-            <Card withBorder radius="lg">
-              <Stack gap="sm">
-                <Title order={4}>Dados usados nesta demonstração</Title>
-                <Text size="sm">• Eventos textuais de deteção de objetos, gestos, presença e modos.</Text>
-                <Text size="sm">• Nome de apresentação e email fornecidos pela identidade OIDC para mostrar a conta.</Text>
-                <Text size="sm" c="dimmed">Não são apresentados tokens nem credenciais.</Text>
-              </Stack>
-            </Card>
-            <Card withBorder radius="lg">
-              <Stack gap="sm">
-                <Group justify="space-between" align="flex-start">
-                  <div><Title order={4}>Aprendizagem simulada</Title><Text size="sm" c="dimmed">{learningEnabled ? "Exemplos visíveis nesta sessão" : "Exemplos ocultos nesta sessão"}</Text></div>
-                  <Badge color={learningEnabled ? "teal" : "gray"} variant="light">{learningEnabled ? "ATIVA" : "INATIVA"}</Badge>
-                </Group>
-                <Text size="sm">Ocultar os exemplos interrompe apenas a sua apresentação nesta sessão. Isto não equivale a eliminar dados.</Text>
-                <Text size="sm">A eliminação de memória real não está disponível: o backend ainda não fornece um pedido ou confirmação de eliminação.</Text>
-              </Stack>
-            </Card>
-          </Stack>
-        </Tabs.Panel>
-      </Tabs>
-
-      <DemoGuide />
+          <Divider />
+          <Group gap="xs" align="flex-start" wrap="nowrap">
+            <ThemeIcon variant="light" color="gray" radius="xl"><IconShieldLock size={16} /></ThemeIcon>
+            <Stack gap={3}>
+              <Text size="sm" fw={500}>Eliminação de dados</Text>
+              <Text size="sm" c="dimmed">A eliminação ainda não está disponível. Os exemplos desta sessão desaparecem ao terminar.</Text>
+            </Stack>
+          </Group>
+        </Stack>
+      </section>
     </Stack>
   );
 }
