@@ -136,11 +136,16 @@ foi comandada via MCP. O fator de potência aparente é `P / (V × I)` com `I` e
 
 ### Cadência e frescura (observado; amostra pequena)
 
-- Os valores mudam quando a carga muda e depois ficam parados, tipicamente **~30 s** (transições
-  observadas aos ~30,7 s e ~30,3 s de intervalo, e 28–32 s noutras séries; houve duas mudanças com
-  ~4 s de intervalo). Não é um período fixo confirmado.
-- Consequência: a deteção de degraus (ENERGY-02) tem resolução da ordem de 30 s, não do polling de 3–5 s.
-- `lastCommunicationTime` tem resolução de minutos: não serve para medir frescura abaixo disso.
+- `lastCommunicationTime` é um epoch em **milissegundos com resolução total**. Em 8 leituras
+  seguidas (a cada ~4 s) avançou **+30,0 s** e **+30,0 s** (30 016 ms e 29 968 ms): a tomada
+  reporta com um batimento periódico de **30 s**. Houve ainda uma atualização extra **+2,2 s**
+  depois, quando a carga mudou (135 → 110 W): além do batimento, há atualização por mudança.
+  Observação de uma só série, sem período garantido pelo fabricante.
+- Nas séries de potência, os valores ficavam parados cerca de 28–32 s entre mudanças, coerente
+  com o batimento de 30 s.
+- Consequência: a deteção de degraus (ENERGY-02) tem resolução da ordem de 30 s (mais fina só
+  quando a carga muda), não a do polling de 3–5 s. A frescura de uma leitura calcula-se com
+  `agora − lastCommunicationTime`; um limiar de «stale» deve ser um múltiplo do batimento (≥ 90 s).
 - Latência por chamada com sessão nova: ~1,4–1,7 s (uma série) e 2,4–4,8 s (outra); varia com a rede.
 
 ### Configuração
