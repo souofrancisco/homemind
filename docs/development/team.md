@@ -1,6 +1,6 @@
 # Equipa e divisão do trabalho
 
-Cinco pessoas, cinco áreas com o mínimo de sobreposição. **PLANEADO.** Prioridades: P0 = essencial, P1 = aprofundamento, P2 = extensão; fases F0–F3 ([roadmap.md](roadmap.md)). As tabelas de entregas por pessoa abaixo são o resumo; a lista autoritativa é o GitHub Project e o [backlog.md](backlog.md). Requisitos em [product/requirements.md](../product/requirements.md).
+Cinco pessoas, cinco áreas com o mínimo de sobreposição. **PLANEADO.** Prioridades: P0 = essencial, P1 = aprofundamento, P2 = extensão; fases F0–F3 ([roadmap.md](roadmap.md)). As tabelas de entregas por pessoa abaixo são o resumo; a lista autoritativa são as issues no GitHub (#129) e o [backlog.md](backlog.md); o GitHub Project está pendente de criação (D-22). Requisitos em [product/requirements.md](../product/requirements.md).
 
 | Pessoa | GitHub | Área |
 |---|---|---|
