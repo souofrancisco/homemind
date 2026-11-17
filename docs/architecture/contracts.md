@@ -1,5 +1,7 @@
 # Contratos
 
+> **HOUSE-03 #86 (Draft PR #142):** catálogo temporal de aparelhos e medidores, API filtrada por papel e contrato de leitura histórica para P1/P4. Ver [house-03-appliance-catalog.md](house-03-appliance-catalog.md). Não confundir branch em revisão com código já integrado na `main`.
+
 **IMPLEMENTADO (fundação F0)**: modelos Pydantic, eventos de domínio, SQLite, barramento persistente, guardas por casa/papel e OpenAPI→TS. **PLANEADO**: os motores e as rotas de cada módulo (P1–P5). **DECISÃO PENDENTE**: marcadas por «(proposta)» e listadas em §9 e em [decisions.md](../decisions.md).
 
 A API que já existia (ObjectOS) está em [api-implementada.md](api-implementada.md) e **não mudou**. Entidades e estados: [data-model.md](data-model.md); eventos: [event-flow.md](event-flow.md).
