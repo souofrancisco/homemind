@@ -6,9 +6,8 @@ from datetime import UTC, datetime
 
 from homemind.contracts.eventos import Evento, ObjetoLevantado, Presenca
 from homemind.contracts.visao import FrameDeteccoes
-from homemind.features.gestos.gesto import DetetorGesto
 from homemind.features.gestos.ponte import PublicadorFila, PublicadorLista
-from homemind.features.gestos.presenca import DetetorPresenca
+from homemind.features.gestos.processador import ProcessadorObjectOS
 from homemind.features.gestos.tests._fakes import (
     DetetorFalso,
     FonteVideoFalsa,
@@ -34,17 +33,6 @@ class UmEventoPorFrame:
 
     def processar(self, frame: FrameDeteccoes) -> tuple[Evento, ...]:
         return (evento_n(frame.indice),)
-
-
-class GestoEPresenca:
-    """Mesma ordem do futuro `ProcessadorObjectOS` (#8): presença e depois gesto."""
-
-    def __init__(self) -> None:
-        self.presenca = DetetorPresenca()
-        self.gesto = DetetorGesto()
-
-    def processar(self, frame: FrameDeteccoes) -> tuple[Evento, ...]:
-        return (*self.presenca.processar(frame), *self.gesto.processar(frame))
 
 
 def frames_vazios(n: int) -> list[FrameDeteccoes]:
@@ -181,7 +169,10 @@ def test_ponta_a_ponta_presenca_antes_do_gesto():
     async def main() -> list[Evento]:
         fila: asyncio.Queue[Evento] = asyncio.Queue()
         thread = montar(
-            0, PublicadorFila(asyncio.get_running_loop(), fila), GestoEPresenca(), frames=frames
+            0,
+            PublicadorFila(asyncio.get_running_loop(), fila),
+            ProcessadorObjectOS(),
+            frames=frames,
         )
         thread.iniciar()
         recebidos = [await asyncio.wait_for(fila.get(), 5) for _ in range(3)]
