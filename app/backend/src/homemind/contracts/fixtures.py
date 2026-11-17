@@ -387,7 +387,12 @@ def confirmation_request() -> notification.ConfirmationRequest:
 def confirmation_notification() -> notification.Notification:
     """«De quem é esta conta?» para a casa; qualquer inquilino ativo pode responder."""
     req = confirmation_request()
-    labels = {"mine": "É minha", "everyone": "É de todos", "unknown": "Não sei"}
+    labels = {
+        "mine": "É minha",
+        "everyone": "É de todos",
+        "unknown": "Não sei",
+        "other": "É de outra pessoa",
+    }
     return notification.Notification(
         id=NOTIFICATION,
         household_id=HOUSEHOLD,

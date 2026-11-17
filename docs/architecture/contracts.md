@@ -28,7 +28,7 @@ A API que já existia (ObjectOS) está em [api-implementada.md](api-implementada
 - `PresenceEvent` e `DoorCrossed` sobrepunham-se → `DoorCrossed` (anónimo), `PresenceEvent` (pista por pessoa: só Wi-Fi/manual; Wi-Fi nunca diz «fora») e `PersonPresence` (estado fundido, `uncertain` exige `reason`).
 - `Device` ≠ `Appliance`; `ApplianceOwnership` (dono ≠ quem usa). Uma tomada mede vários aparelhos; a assinatura sugere, não decide quem paga.
 - Fatura: `total_wh` é da fatura real, **não** a soma da tomada; correções = nova revisão (`supersedes_id`), a finalizada nunca se edita; resíduo comum explícito em `residual_share_cents`.
-- Notificação: `responder_ids` (snapshot de quem pode responder; o senhorio nunca), `Notification.respond` é a regra pura (primeira resposta vence; `409 already_responded`, `409 notification_expired`) e a persistência tem de fazer *compare-and-set*.
+- Notificação: `responder_ids` (snapshot de quem pode responder; o senhorio nunca), `Notification.respond` é a regra pura e a persistência tem de fazer *compare-and-set*. **REGRA B = VOTAÇÃO (D-32, prevalece):** em `confirmation_request` cada inquilino vota uma vez; um «É minha» fecha; atribuir a outro exige ≥ metade dos elegíveis com o mesmo alvo (fecha antes se o próprio assumir); todos votaram sem decisão ou 24 h → por todos. Fonte única: `confirmation_outcome` em `contracts/notification.py`. **Quem fizer merge (pessoa ou agente) adapta o código de P3/P5/billing a esta regra; não reintroduzir «primeira resposta vence» nas confirmações.** Outros tipos: primeira resposta vence (`409 already_responded`); expirada: `409 notification_expired`.
 - Execução física: `isError=false` **não** confirma; `ActionExecutionResult(confirmed)` exige `readback_confirmed`; `uncertain` nunca se repete (`may_retry=False`).
 - Um não-membro recebe **404** (não revela que a casa existe); um membro sem papel recebe **403 `forbidden_role`**.
 
@@ -50,7 +50,7 @@ Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), 
 | `Attribution` (+`supersede`) | P4 | P3, agente | PLANEADA: índice único parcial `(consumption_event_id) WHERE status='active'` | modelos + cenário | — |
 | `ElectricityBill`, `BillAllocation` (+`validate_allocations`) | P4 | UI, agente, P3 | PLANEADA (P4) | fixtures A/B/C exatas | Entrada da fatura (manual vs LLM) |
 | `Budget`, `BudgetThreshold`, `Contestation` | P4 | P3 | PLANEADA (P4) | modelos | P-10 (individual vs fixa) |
-| `Notification`, `NotificationView`, `NotificationAction/Response/Preferences`, `ConfirmationRequest` | P3 (pedido: P4) | UI, P4 | PLANEADA (P3) | modelos + cenário | P-03 (primeira resposta vence?) |
+| `Notification`, `NotificationView`, `NotificationAction/Response/Preferences`, `ConfirmationRequest` | P3 (pedido: P4) | UI, P4 | PLANEADA (P3) | modelos + cenário | D-32 (votação nas confirmações) |
 | `AgentToolRequest/Result`, `ProposedAction`, `ActionConfirmation`, `ActionExecutionResult`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3) | modelos | P-06 (LLM e dados) |
 | `DomainEvent` (23 tipos), `StoredEvent` | cada módulo | cada módulo | **IMPLEMENTADA** (`domain_event`) | `test_events`, cenário | — |
 
@@ -76,7 +76,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `billing.bill_created` / `bill_finalized` | P4 | `BillRef` | P3, UI | idem |
 | `billing.allocation_published` | P4 | `AllocationPublished` | P3 | idem |
 | `notification.created` | P3 | `NotificationCreatedData` | UI (DTO) | idem |
-| `notification.responded` | P3 | `NotificationRespondedData` (resposta + `ref`) | P4 | idem |
+| `notification.responded` | P3 | `NotificationRespondedData` (resposta + `ref` + `outcome` nas confirmações: um evento por voto; P4 só atribui com `outcome.decided`) | P4 | idem |
 | `alerts.threshold_crossed` | P4 | `BudgetThreshold` | P3 | idem |
 | `alerts.alert_raised` | P4 | `AlertRaisedData` | P3 | idem |
 | `agent.action_proposed` | P3 | `ProposedAction` | P3 | idem |
@@ -169,7 +169,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 |---|---|---|---|
 | `GET` | `/api/notifications?status&scope&limit` | T, L (as suas) | Pessoais + da casa |
 | `POST` | `/api/notifications/{id}/read` | dono | |
-| `POST` | `/api/notifications/{id}/respond` | T autorizado | `{ "action_id": "mine" \| "everyone" \| "unknown" }`; `409 already_responded`, `409 notification_expired` |
+| `POST` | `/api/notifications/{id}/respond` | T autorizado | `NotificationRespondIn` `{ "action_id": "mine" \| "everyone" \| "unknown" \| "other", "target_resident_id"? }` (alvo só com `other`, outro inquilino elegível); `409 already_responded` (já votou / já fechada), `409 notification_expired`, `400 invalid_request` (alvo inválido) |
 | `GET` `PUT` | `/api/me/notification-preferences` | T, L | limiares, silêncio noturno |
 | `WS` | `/api/ws` | todos | Novas mensagens: `notification`, `notification_update` (ver abaixo) |
 

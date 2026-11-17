@@ -93,7 +93,7 @@ Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `
 |---|---|
 | `features/billing/attribution.py`: primeira decisão (quarto → morador; comum → perguntar/igual) | IMPLEMENTADO (puro, sem persistência) |
 | `features/billing/allocation.py`: repartição + arredondamento + recibo por linhas | IMPLEMENTADO (puro, sem persistência) |
-| Votação da regra B (D-32) | PLANEADO: falta alterar o contrato `Notification` (P3/P5) |
+| Votação da regra B (D-32) | IMPLEMENTADO no contrato (`confirmation_outcome`); consumo do `outcome` em billing: PLANEADO |
 | Entrada da fatura (BILL-01), fecho e persistência (BILL-04), orçamentos, alertas | PLANEADO |
 
 ## Ficheiros novos previstos
