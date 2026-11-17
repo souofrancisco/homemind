@@ -51,7 +51,7 @@ Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), 
 | `ElectricityBill`, `BillAllocation` (+`validate_allocations`) | P4 | UI, agente, P3 | PLANEADA (P4) | fixtures A/B/C exatas | Entrada da fatura (manual vs LLM) |
 | `Budget`, `BudgetThreshold`, `Contestation` | P4 | P3 | PLANEADA (P4) | modelos | P-10 (individual vs fixa) |
 | `Notification`, `NotificationView`, `NotificationAction/Response/Preferences`, `ConfirmationRequest` | P3 (pedido: P4) | UI, P4 | PLANEADA (P3) | modelos + cenário | D-32 (votação nas confirmações) |
-| `AgentToolRequest/Result`, `ProposedAction`, `ActionConfirmation`, `ActionExecutionResult`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3) | modelos | P-06 (LLM e dados) |
+| `AgentToolRequest/Result`, `ProposedAction`, `ActionConfirmation`, `ActionExecutionResult`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3); sem persistência (o assistente não tem estado) | modelos | P-06 (LLM e dados) |
 | `DomainEvent` (23 tipos), `StoredEvent` | cada módulo | cada módulo | **IMPLEMENTADA** (`domain_event`) | `test_events`, cenário | — |
 
 ## 4. Eventos de domínio
@@ -177,7 +177,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 
 | Método | Rota | Papéis | Notas |
 |---|---|---|---|
-| `POST` | `/api/agent/messages` | T | `{ "text": "…" }` → resposta + `proposed_actions[]` |
+| `POST` | `/api/households/{household_id}/agent/messages` | T | **IMPLEMENTADO** (parcial). `{ "text": "…" }` → `AgentResponse` (`proposed_actions` sempre vazio). Dados **SIMULADOS** da casa demo (as outras casas não têm dados); LLM desligado por omissão (`AGENT_LLM_ENABLED`); sem escrita. Caminho por casa; revisão P5 |
 | `POST` | `/api/agent/actions/{id}/confirm` · `/reject` | T | Só aqui uma ação sugerida é executada |
 | `GET` `POST` | `/api/households/{id}/automations` | T, O | |
 | `PATCH` | `/api/automations/{id}` | T, O | `{ "status" }`; ativação é passo explícito |

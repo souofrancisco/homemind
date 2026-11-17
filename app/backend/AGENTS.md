@@ -39,6 +39,7 @@ Regras gerais em [`../../CLAUDE.md`](../../CLAUDE.md). Aqui só o específico do
 | `features/visao` | `DetetorYolo` (extra `visao`), thread de visão, anotação | ADAPT: só pessoa + linha na porta |
 | `features/gestos` | Gesto, presença, ponte thread→loop, afinador. Lógica pura | Gesto/afinador REMOVE; ponte KEEP; presença ADAPT |
 | `features/engine` | Regras (`rules.json`), máquina de estados, energia, registo (`events.jsonl`), NVIDIA, REST e WS | Motor REMOVE; `llm.py` e WS ADAPT |
+| `features/agent` (**parcial**, P3) | Assistente só de leitura: `POST /api/households/{id}/agent/messages`, dados SIMULADOS da casa demo, LLM desligado por omissão (`AGENT_LLM_ENABLED`), sem ações. Sem persistência | [agent](../../docs/modules/agent.md) |
 | `features/auth`, `features/health`, `features/mcp` | JWT Authentik, healthz, diagnóstico MCP | KEEP/ADAPT |
 | `connectors` | `FakeHome`, `McpHome` (sessão única, polling 5 s, whitelist, releitura), OAuth, grant de escritas | KEEP/ADAPT |
 
@@ -50,7 +51,7 @@ Regras gerais em [`../../CLAUDE.md`](../../CLAUDE.md). Aqui só o específico do
 | `devices`, `energy` | P1 | [energy](../../docs/modules/energy.md) |
 | `presence` | P2 | [presence](../../docs/modules/presence.md) |
 | `billing`, `budgets`, `alerts` | P4 | [billing](../../docs/modules/billing.md) |
-| `notifications`, `agent`, `automations` | P3 | [notifications](../../docs/modules/notifications.md), [agent](../../docs/modules/agent.md) |
+| `notifications`, `automations` | P3 | [notifications](../../docs/modules/notifications.md) |
 
 O SDK `mcp` só é importado em `connectors/`. O resto do código só conhece o protocolo `Home` (`contracts/home.py`).
 
