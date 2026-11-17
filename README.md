@@ -13,6 +13,7 @@ Este repositório era o *HomeMind Spaces* e já contém infraestrutura reutiliz�
 ## Documentação e tarefas
 
 - [Plano de implementação ObjectOS](docs/objectos-plano.md) — requisitos, arquitetura, interfaces, cinco responsáveis, critérios e riscos.
+- [Guia de validação manual](docs/guia-validacao-manual.md) — tutorial passo a passo para testar as funcionalidades e decidir se a demo está pronta.
 - [Instruções para Claude e agentes](CLAUDE.md) — regras, paths reais e segurança.
 - [Trabalho paralelo](docs/parallel-work.md) — divisão por pessoa e integração.
 - [Issues ObjectOS](https://github.com/souofrancisco/homemind/issues) — unidades de implementação e critérios de aceitação.
