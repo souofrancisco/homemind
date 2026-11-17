@@ -31,6 +31,7 @@ class ErrorCode(StrEnum):
     already_responded = "already_responded"
     notification_expired = "notification_expired"
     bill_finalized = "bill_finalized"
+    bill_not_finalized = "bill_not_finalized"
     bill_inconsistent = "bill_inconsistent"
     simulation_disabled = "simulation_disabled"
     internal_error = "internal_error"
