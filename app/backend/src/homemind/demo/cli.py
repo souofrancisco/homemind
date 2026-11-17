@@ -16,7 +16,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from homemind.contracts import billing, fixtures as fx
+from homemind.contracts import billing
+from homemind.contracts import fixtures as fx
 from homemind.core.db import Database, migrate
 from homemind.core.events import append_event, load_events
 from homemind.demo.scenario import events, references
