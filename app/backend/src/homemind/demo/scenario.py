@@ -12,8 +12,9 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from homemind.contracts import billing, devices, domain_events as ev, energy, fixtures as fx
-from homemind.contracts import notification, presence
+from homemind.contracts import billing, devices, energy, notification, presence
+from homemind.contracts import domain_events as ev
+from homemind.contracts import fixtures as fx
 from homemind.contracts.common import Audit, Provenance, replace, stable_id
 
 
