@@ -1,5 +1,2 @@
-# Backend
-Regras gerais em `../../AGENTS.md` (MVP simples, sem testes, reutilizar a stack).
-- Features em `src/homemind/features/<modulo>/` (router, schemas, serviços) consomem contratos Pydantic de `contracts/`; sem imports cruzados entre features exceto via serviços.
-- `connectors/`: `DeviceGateway` (discover/get_states/execute) com `SimulationProvider` e `AlticeMCPProvider`. O gateway não decide autorização.
-- Config só via `core/config.py`; nunca logar `mcp_auth_token`.
+# Backend ObjectOS
+Ler `../../AGENTS.md`, `../../../CLAUDE.md` (na raiz do repositório) e `docs/objectos-plano.md`. O código vive em `app/backend/src/homemind/`; reutilizar FastAPI, `core/config.py`, router discovery e `connectors/altice.py`. Criar módulos de vídeo, visão, gestos, motor, regras, Home e LLM nas áreas aprovadas; os nomes de ficheiros do plano são conceptuais, não caminhos existentes. Nenhum SDK MCP fora do conector; apenas tools e dispositivos autorizados. Testes de lógica com FakeHome e eventos simulados, sem hardware nem rede.
