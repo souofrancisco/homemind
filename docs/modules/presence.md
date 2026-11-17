@@ -29,6 +29,16 @@ Saber **quando alguém entra ou sai** e, a partir daí, **quem está em casa** �
 
 Contratos novos (`PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`, `PresenceDevice`, `CameraStatus`, `SensorReading`, `SafetyAlert`): **PROPOSTA** (D-31), em `contracts/{presence,sensors,safety}.py`.
 
+## Segurança e conforto (`features/safety`, SAFE-01 #114)
+
+**IMPLEMENTADO (SAFE-01, lógica + consumidor do barramento; sem rotas, sem migrações):**
+- `engine.py` (puro): janela (`SensorReading` contacto) aberta ≥ 5 min **e** aquecimento a decorrer no mesmo quarto (`ConsumptionEvent` `ongoing` cujo aparelho é de aquecimento) → `SafetyAlert(window_open_heating, warning)` com `suggested_command` = `power=false` na tomada do consumo. É só uma **proposta**: nunca escreve no MCP nem usa `ENABLE_PHYSICAL_WRITES`; a confirmação e a execução são de P3/P1.
+- Relógio = `ts` do evento em processamento (determinístico). Um alerta por episódio (`id` estável); resolve-se (mesmo `id`, `resolved`) quando a janela fecha ou o aquecimento acaba; reabre só com novo episódio (janela fechada e reaberta, ou aquecimento religado). `unknown`/`stale` nunca disparam nem resolvem; sensor sem quarto, quarto diferente ou aparelho não-aquecimento não disparam. `coverage()` identifica sensores ausentes (`absent`).
+- `service.py`: consumidor `safety` (`sensor.reading_recorded`, `energy.consumption_detected/closed`) → `safety.alert_raised`. O estado refaz-se do registo de eventos ao arrancar.
+- `texts.py`: texto pt-PT com origem (SIMULADO/REAL) e o aviso de que a tomada pode alimentar mais do que o aquecedor (na demo, a tomada agregada corta todas as cargas). `simulation.py`: leituras/consumos **SIMULADOS** para demo e testes.
+
+**PLANEADO:** o router arranca o serviço **sem** resolvedor de aquecedores (por omissão nada é «aquecimento»), porque depende de ENERGY-03 #81 (identificar aparelhos/`ApplianceCategory.heating`); sem leituras reais de contacto até MCP-03 #76; entrega ao utilizador e confirmação da proposta em APP-02 #95 / MCP-04 #77. Até lá só os cenários simulados exercitam a regra.
+
 ## Passos
 
 | Passo | Descrição | Prioridade |
