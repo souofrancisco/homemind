@@ -23,8 +23,9 @@ class SafetyService:
     def __init__(
         self,
         is_heating: HeatingResolver = no_heating_known,
+        notify_landlord: bool = False,
     ) -> None:
-        self.engine = SafetyEngine(is_heating)
+        self.engine = SafetyEngine(is_heating, notify_landlord)
         # Saída por evento já visto: se a transação do barramento falhar depois do handler (o
         # estado do motor já mudou) o retry reemite o mesmo alerta em vez de o perder.
         self._outputs: OrderedDict[UUID, list] = OrderedDict()
