@@ -88,7 +88,7 @@ def test_concurrent_writers_serialize(db):
     def work(i):
         try:
             for j in range(20):
-                db.run_sync(lambda c: c.execute("INSERT INTO n VALUES (?)", (i * 100 + j,)))
+                db.run_sync(lambda c, v=i * 100 + j: c.execute("INSERT INTO n VALUES (?)", (v,)))
         except Exception as e:  # noqa: BLE001 - o teste só quer saber se houve erro
             errors.append(e)
 
@@ -149,12 +149,14 @@ def test_migration_names_are_validated(tmp_path, monkeypatch):
 def test_domain_event_is_immutable(db):
     db.run_sync(
         lambda c: c.execute(
-            "INSERT INTO household (id,name,timezone,source_kind,created_at) VALUES ('h','C','UTC','demo','x')"
+            "INSERT INTO household (id,name,timezone,source_kind,created_at)"
+            " VALUES ('h','C','UTC','demo','x')"
         )
     )
     db.run_sync(
         lambda c: c.execute(
-            "INSERT INTO domain_event (id,type,schema_version,ts,household_id,correlation_id,origin,kind,payload_json,recorded_at)"
+            "INSERT INTO domain_event (id,type,schema_version,ts,household_id,correlation_id,"
+            "origin,kind,payload_json,recorded_at)"
             " VALUES ('e','t',1,'x','h','c','real','measured','{}','x')"
         )
     )
