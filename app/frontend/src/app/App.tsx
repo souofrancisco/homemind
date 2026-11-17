@@ -1,16 +1,23 @@
 import { ActionIcon, AppShell, Center, Group, Loader, NavLink, Tabs, Title, useComputedColorScheme, useMantineColorScheme } from "@mantine/core";
-import { IconHome, IconMoon, IconSun, IconUser } from "@tabler/icons-react";
+import { IconAutomation, IconCamera, IconHome, IconMoon, IconSun, IconTimeline, IconUser } from "@tabler/icons-react";
 import { useEffect, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import Account from "../features/account/Account";
 import Dashboard from "../features/dashboard/Dashboard";
+import CameraPage from "../features/dashboard/CameraPage";
+import EventsPage from "../features/dashboard/EventsPage";
+import AutomationsPage from "../features/dashboard/AutomationsPage";
+import { HomeDataProvider } from "../features/dashboard/useHomeSocket";
 import { useAuth } from "../features/auth/AuthProvider";
 import { completeLogin } from "../features/auth/oidc";
 
 // Para uma nova feature: acrescentar uma linha aqui (rota + item de navegação).
 const pages = [
   { path: "/", label: "Início", icon: IconHome, element: <Dashboard /> },
-  { path: "/conta", label: "Conta", icon: IconUser, element: <Account /> },
+  { path: "/camera", label: "Câmara", icon: IconCamera, element: <CameraPage /> },
+  { path: "/events", label: "Eventos", icon: IconTimeline, element: <EventsPage /> },
+  { path: "/automations", label: "Automações", icon: IconAutomation, element: <AutomationsPage /> },
+  { path: "/account", label: "Perfil", icon: IconUser, element: <Account /> },
 ];
 
 function Protected({ children }: { children: ReactNode }) {
@@ -44,10 +51,11 @@ function Shell() {
   const scheme = useComputedColorScheme("light");
 
   return (
-    <AppShell header={{ height: 56 }} navbar={{ width: 220, breakpoint: "sm", collapsed: { mobile: true } }} footer={{ height: 56 }} padding="md">
+    <HomeDataProvider>
+    <AppShell header={{ height: 64 }} navbar={{ width: 240, breakpoint: "sm", collapsed: { mobile: true } }} footer={{ height: 64 }} padding="md">
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
-          <Title order={3}>HomeMind</Title>
+          <Group gap="xs"><Title order={3}>ObjectOS</Title><span style={{ color: "var(--mantine-color-dimmed)", fontSize: 12 }}>HOME SYSTEM</span></Group>
           <ActionIcon variant="default" aria-label="Tema" onClick={() => setColorScheme(scheme === "dark" ? "light" : "dark")}>
             {scheme === "dark" ? <IconSun size={18} /> : <IconMoon size={18} />}
           </ActionIcon>
@@ -63,12 +71,13 @@ function Shell() {
           {pages.map((p) => (
             <Route key={p.path} path={p.path} element={p.element} />
           ))}
+          <Route path="/conta" element={<Navigate to="/account" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AppShell.Main>
       <AppShell.Footer hiddenFrom="sm" pb="env(safe-area-inset-bottom)">
-        <Tabs value={pathname} onChange={(v) => v && navigate(v)} variant="pills">
-          <Tabs.List h={56} grow>
+        <Tabs value={pathname === "/conta" ? "/account" : pathname} onChange={(v) => v && navigate(v)} variant="pills">
+          <Tabs.List h={64} grow style={{ flexWrap: "nowrap", overflowX: "auto" }}>
             {pages.map((p) => (
               <Tabs.Tab key={p.path} value={p.path} leftSection={<p.icon size={18} />}>
                 {p.label}
@@ -78,6 +87,7 @@ function Shell() {
         </Tabs>
       </AppShell.Footer>
     </AppShell>
+    </HomeDataProvider>
   );
 }
 

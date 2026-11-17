@@ -1,11 +1,12 @@
-export type HomeMode = "leitura" | "cinema" | "cafe" | null;
+export type HomeMode = string | null;
 export type HomeStatus = "ativo" | "em_espera" | "suspenso" | "inativo";
 export type DataSource = "fake" | "mcp";
 
 export interface HomeState {
   mode: HomeMode;
+  mode_name?: string | null;
   state: HomeStatus;
-  presence: boolean;
+  presence: boolean | null;
   camera_ok: boolean;
   mcp_ok: boolean;
   backend: DataSource;
@@ -13,6 +14,16 @@ export interface HomeState {
   energy_saved_wh: number;
   energy_saved_eur: number;
   updated_at: string;
+  casa?: CasaState | null;
+}
+
+export interface CasaState {
+  backend: DataSource;
+  mcp_ok: boolean;
+  lampada?: { ligada: boolean; cor: string | null; rgb: number[] | null; brilho: number | null } | null;
+  tomada?: { ligada: boolean; consumo_w: number | null; consumo_lido_em: string | null } | null;
+  atualizado_em: string;
+  aviso: string | null;
 }
 
 export interface EventLogItem {
@@ -21,6 +32,38 @@ export interface EventLogItem {
   level: "info" | "warning" | "error";
   message: string;
   source: DataSource;
+  category?: EventCategory;
+  correlation_id?: string;
+  details?: Record<string, unknown>;
+  result?: "verified" | "failed" | "unverified" | "unsupported";
+}
+
+export type EventCategory = "presence" | "object" | "gesture" | "mode" | "rule" | "device" | "energy" | "system";
+
+export interface ObservedEvent { id: string; occurredAt: string; text: string; source: DataSource }
+export interface InferredPattern {
+  id: string;
+  statement: string;
+  frequency: string;
+  timeWindow: string;
+  evidence: string[];
+  simulated: true;
+}
+export interface ConfirmedPreference { id: string; statement: string; confirmedAt: string }
+export interface MemorySnapshot {
+  profileId: string;
+  updatedAt: string;
+  learningEnabled: boolean;
+  observedEvents: ObservedEvent[];
+  inferredPatterns: InferredPattern[];
+  confirmedPreferences: ConfirmedPreference[];
+  pendingSuggestions: string[];
+  ignoredSuggestions: string[];
+}
+export interface RoutineSuggestion extends InferredPattern {
+  title: string;
+  explanation: string;
+  proposedRule: RuleDraft;
 }
 
 export interface RuleAction { dispositivo: string; ligada: boolean; cor?: string; brilho?: number }

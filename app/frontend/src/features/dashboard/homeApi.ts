@@ -48,7 +48,7 @@ const apiService: HomeService = {
   setRuleEnabled: (id, enabled) => request<HomeRule>(`/rules/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ enabled }) }),
   deleteRule: (id) => request<void>(`/rules/${encodeURIComponent(id)}`, { method: "DELETE" }),
   proposeRule: (text) => request<RuleProposal>("/rules/parse", { method: "POST", body: JSON.stringify({ text }) }),
-  saveRule: (rule) => request<HomeRule>("/rules", { method: "POST", body: JSON.stringify(rule) }),
+  saveRule: (rule) => request<HomeRule>("/rules", { method: "POST", body: JSON.stringify({ ...rule, enabled: false }) }),
   turnOff: () => request<OffResult>("/off", { method: "POST", body: JSON.stringify({}) }),
 };
 
