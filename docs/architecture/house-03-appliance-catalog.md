@@ -103,31 +103,46 @@ obrigatoriamente `null`. O operador pode associar:
 ```
 ou desligar a associação com `{"device_id":null}`. Estes UUIDs são ilustrativos.
 
-## Contratos estáveis para P1 e P4
+## Port partilhado para P1 e P4
 
-**P1 (energia/assinaturas), interface interna implementada:**
+O limite entre features está em `contracts.appliance_catalog.ApplianceCatalog`, com os tipos
+`MeterContextSegment` e `ApplianceContextSegment`. P1/P4 recebem o port por injeção e importam
+apenas `contracts/`; não importam `features.appliances`. `features.appliances.repo.appliance_catalog()`
+fornece a implementação SQLite ao composition root. Cada operação recebe a conexão da transação
+atual. A composição no runtime P1/P4 permanece por validar quando esses handlers forem ligados.
+
+```python
+from homemind.contracts.appliance_catalog import ApplianceCatalog
+
+def handle_consumption(conn, event, catalog: ApplianceCatalog):
+    context = catalog.context_for_consumption(conn, event)
+```
+
+## Contratos de domínio para P1 e P4
+
+**P1 (energia/assinaturas), operações implementadas no adapter:**
 - Pode provisionar um dispositivo descoberto pelo MCP com
--  `register_device(conn, Device(...))`, dentro de `db.run`/`run_sync`; replay da mesma identidade
+-  `catalog.register_device(conn, Device(...))`, dentro de `db.run`/`run_sync`; replay da mesma identidade
   MCP é idempotente e preserva o UUID interno já referenciado pelos links; descobertas com
   `last_seen_at` mais antigo não regridem o nome/estado atual. A chave `external_ref`
   permanece privada. A API `/devices/demo` não serve de integração MCP.
-- Grava e lê assinaturas com `save_appliance_signature(conn, household_id, ApplianceSignature)` e
-  `signatures_for_household(conn, household_id)`. A leitura é uma consulta por casa, sem N+1, e só
+- Grava e lê assinaturas com `catalog.save_appliance_signature(conn, household_id, ApplianceSignature)` e
+  `catalog.signatures_for_household(conn, household_id)`. A leitura é uma consulta por casa, sem N+1, e só
   devolve assinaturas dos aparelhos ativos dessa casa. Replays de `updated_at` antigo não substituem
   assinaturas mais recentes; aparelhos retirados não aceitam novas assinaturas. P1 gere
   aprendizagem/classificação; HOUSE-03 não fornece classificador, treino nem ingestão de potência.
-- `meter_at(conn, household_id, appliance_id, ts)` e
-  `meters_for_period(conn, household_id, appliance_id, start, end)` devolvem a associação
+- `catalog.meter_at(conn, household_id, appliance_id, ts)` e
+  `catalog.meters_for_period(conn, household_id, appliance_id, start, end)` devolvem a associação
   configurada, com períodos sem associação representados por `device_id=None`. Uma associação não é
   prova de utilização. Vários aparelhos podem partilhar o mesmo medidor.
 - Preserva `ApplianceMatch` probabilístico. `unknown`, candidatos empatados e cargas simultâneas não
   recebem aparelho por inferência forçada.
 
-**P4 (faturação), interface de contexto implementada:**
-- `ownership_at(conn, household_id, appliance_id, ts)` consulta a versão válida no instante, sem
+**P4 (faturação), operações implementadas no adapter:**
+- `catalog.ownership_at(conn, household_id, appliance_id, ts)` consulta a versão válida no instante, sem
   consultar membership atual.
-- `context_segments_for_consumption(conn, event)` devolve segmentos `[start, end)` com o contexto
-  histórico em cada segmento. `context_for_consumption(conn, event)` devolve um único
+- `catalog.context_segments_for_consumption(conn, event)` devolve segmentos `[start, end)` com o contexto
+  histórico em cada segmento. `catalog.context_for_consumption(conn, event)` devolve um único
   `ApplianceOwnership` apenas se todo o evento tiver um único contexto; devolve `None` para match
   desconhecido, aparelho ausente/retirado nesse período ou evento que cruza uma alteração temporal.
   Tem em conta `started_at` e `ended_at`; a leitura de estado dos episódios fechados usa uma única

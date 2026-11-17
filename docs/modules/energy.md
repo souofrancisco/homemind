@@ -76,12 +76,15 @@ deve vir de um pedido de inquilino nem sair em DTOs, eventos ou logs. O registo 
 por `(household_id, source, external_ref)` e mantém o UUID interno em replays.
 
 ```python
-repo.register_device(conn, discovered_device)
-signatures = repo.signatures_for_household(conn, household_id)
-meter_history = repo.meters_for_period(conn, household_id, appliance_id, start, end)
+catalog.register_device(conn, discovered_device)
+signatures = catalog.signatures_for_household(conn, household_id)
+meter_history = catalog.meters_for_period(conn, household_id, appliance_id, start, end)
 ```
 
-`save_appliance_signature(conn, household_id, signature)` grava aprendizagem de P1. As assinaturas
+`catalog` é injetado com o tipo `ApplianceCatalog` de `contracts.appliance_catalog`; a feature de
+energia não importa `features.appliances`. O composition root fornece o adapter SQLite de HOUSE-03.
+
+`catalog.save_appliance_signature(conn, household_id, signature)` grava aprendizagem de P1. As assinaturas
 são candidatas para `ApplianceMatch`; a tomada habitual não identifica o que estava ligado. P1
 mantém `unknown`/`ambiguous`, guarda candidatos e confiança e não força um vencedor em cargas
 simultâneas ou próximas.

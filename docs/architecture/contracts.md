@@ -1,6 +1,6 @@
 # Contratos
 
-> **HOUSE-03 #86 (Draft PR #142):** catálogo temporal de aparelhos e medidores, API filtrada por papel e contrato de leitura histórica para P1/P4. Ver [house-03-appliance-catalog.md](house-03-appliance-catalog.md). Não confundir branch em revisão com código já integrado na `main`.
+> **HOUSE-03 #86 (PR #142 pronto para revisão):** catálogo temporal de aparelhos e medidores, API filtrada por papel e port tipado de leitura histórica para P1/P4 em `contracts/appliance_catalog.py`. Ver [house-03-appliance-catalog.md](house-03-appliance-catalog.md). Não confundir branch em revisão com código já integrado na `main`.
 
 **IMPLEMENTADO (fundação F0)**: modelos Pydantic, eventos de domínio, SQLite, barramento persistente, guardas por casa/papel e OpenAPI→TS. **PLANEADO**: os motores e as rotas de cada módulo (P1–P5). **DECISÃO PENDENTE**: marcadas por «(proposta)» e listadas em §9 e em [decisions.md](../decisions.md).
 
@@ -43,6 +43,7 @@ Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), 
 | `Household`, `Room`, `Resident`, `Membership` | P5 | todos (via guardas) | **IMPLEMENTADA** (`0001_core_households.sql`) | `tests/test_contracts_foundation`, `households/tests` | Convites e fim de contrato por REST |
 | `HouseholdView`, `MemberView`, `MeContext` | P5 | frontend | — (DTO) | `test_authorization`, `test_openapi_contract` | P-04 (o que um inquilino vê dos outros) |
 | `Device`, `DeviceView`, `Appliance`, `ApplianceSignature` | P1 | P1, P4, P3 | PLANEADA (P1: `0030_energy_*.sql`) | modelos | Capacidades por dispositivo |
+| `ApplianceCatalog` port, `MeterContextSegment`, `ApplianceContextSegment` | HOUSE-03 (implementação SQLite) | P1, P4 via injeção tipada | **IMPLEMENTADO nesta branch** (`contracts/appliance_catalog.py`) | adapter estrutural + catálogo | Composição/injeção no runtime P1/P4 |
 | `EnergyReading`, `PowerStep` | P1 | P1 (P4 só o resumo) | PLANEADA (retenção P-08) | modelos + evento | Limiar de `stale` |
 | `ApplianceMatch`, `ConsumptionEvent` | P1 | P4, P3 | PLANEADA (P1) | modelos + cenário | Limiar de «bate certo» (0,9?) |
 | `DoorCrossed`, `PresenceEvent`, `PersonPresence` | P2 | P4 (regra C), P3 | PLANEADA (P2) | modelos | Tolerância 20–30 min na fusão |

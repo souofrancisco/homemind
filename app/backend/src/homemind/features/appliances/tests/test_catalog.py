@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from homemind.contracts import fixtures as fx
+from homemind.contracts.appliance_catalog import ApplianceCatalog
 from homemind.contracts.common import inferred
 from homemind.contracts.devices import (
     ApplianceCategory,
@@ -191,7 +192,8 @@ def test_temporal_owner_and_room_snapshots_for_consumption(client, app, now):
         room_id=fx.ROOM_SALA,
         provenance=inferred(),
     )
-    historical = app.state.db.run_sync(lambda c: repo.context_for_consumption(c, e))
+    catalog = repo.appliance_catalog()
+    historical = app.state.db.run_sync(lambda c: catalog.context_for_consumption(c, e))
     assert historical.owner_resident_id == fx.BRUNO
     assert e.match.confidence == 0.84
     assert e.location == LocationKind.common
@@ -214,8 +216,10 @@ def test_temporal_owner_and_room_snapshots_for_consumption(client, app, now):
     )
 
     crossing = e.model_copy(update={"ended_at": moved + timedelta(seconds=1)})
-    assert app.state.db.run_sync(lambda c: repo.context_for_consumption(c, crossing)) is None
-    segments = app.state.db.run_sync(lambda c: repo.context_segments_for_consumption(c, crossing))
+    assert app.state.db.run_sync(lambda c: catalog.context_for_consumption(c, crossing)) is None
+    segments = app.state.db.run_sync(
+        lambda c: catalog.context_segments_for_consumption(c, crossing)
+    )
     assert [(s.started_at, s.ended_at) for s in segments] == [
         (before, moved),
         (moved, moved + timedelta(seconds=1)),
@@ -417,6 +421,10 @@ def test_ambiguous_signatures_and_unidentified_appliances(client, app):
     assert ambiguous.match.appliance_id is None
 
 
+def test_sqlite_adapter_implements_shared_p1_p4_contract():
+    assert isinstance(repo.appliance_catalog(), ApplianceCatalog)
+
+
 def test_p1_signature_catalog_is_house_scoped_and_replay_safe(client, app):
     heater = make_appliance(client).json()
     signature = ApplianceSignature(
@@ -431,11 +439,12 @@ def test_p1_signature_catalog_is_house_scoped_and_replay_safe(client, app):
         origin=SignatureOrigin.learned,
         updated_at=NOW,
     )
+    catalog = repo.appliance_catalog()
 
     def write_and_read(conn):
-        repo.save_appliance_signature(conn, fx.HOUSEHOLD, signature)
-        repo.save_appliance_signature(conn, fx.HOUSEHOLD, signature)
-        return repo.signatures_for_household(conn, fx.HOUSEHOLD)
+        catalog.save_appliance_signature(conn, fx.HOUSEHOLD, signature)
+        catalog.save_appliance_signature(conn, fx.HOUSEHOLD, signature)
+        return catalog.signatures_for_household(conn, fx.HOUSEHOLD)
 
     signatures = app.state.db.run_sync(write_and_read)
     assert signatures == {signature.appliance_id: [signature]}

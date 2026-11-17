@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from homemind.contracts.appliance_catalog import (
+    ApplianceCatalog,
+    ApplianceContextSegment,
+    MeterContextSegment,
+)
 from homemind.contracts.common import new_id
 from homemind.contracts.devices import (
     ApplianceOwnership,
@@ -594,15 +598,6 @@ def meter_at(
     return UUID(row["device_id"]) if row else None
 
 
-@dataclass(frozen=True)
-class MeterContextSegment:
-    """Configured meter for one half-open portion of a requested period."""
-
-    started_at: datetime
-    ended_at: datetime
-    device_id: UUID | None
-
-
 def meters_for_period(
     conn: sqlite3.Connection,
     household_id: UUID,
@@ -660,15 +655,6 @@ def meters_for_period(
         )
         for segment_start, segment_end in zip(ordered, ordered[1:], strict=False)
     ]
-
-
-@dataclass(frozen=True)
-class ApplianceContextSegment:
-    """Context valid for one half-open portion of a consumption event."""
-
-    started_at: datetime
-    ended_at: datetime | None
-    ownership: ApplianceOwnership | None
 
 
 def context_segments_for_consumption(
@@ -784,3 +770,60 @@ def context_for_consumption(
     if len(segments) != 1 or segments[0].ownership is None:
         return None
     return segments[0].ownership
+
+
+class SqliteApplianceCatalog:
+    """HOUSE-03 implementation of the shared P1/P4 port.
+
+    Consumers receive this adapter through composition/injection and import only
+    ``contracts.appliance_catalog.ApplianceCatalog``. Every call uses the caller's
+    connection so transaction and event-replay boundaries remain intact.
+    """
+
+    def register_device(self, conn: sqlite3.Connection, device: Device) -> DeviceView:
+        return register_device(conn, device)
+
+    def save_appliance_signature(
+        self, conn: sqlite3.Connection, household_id: UUID, signature: ApplianceSignature
+    ) -> None:
+        save_appliance_signature(conn, household_id, signature)
+
+    def signatures_for_household(
+        self, conn: sqlite3.Connection, household_id: UUID
+    ) -> dict[UUID, list[ApplianceSignature]]:
+        return signatures_for_household(conn, household_id)
+
+    def meter_at(
+        self, conn: sqlite3.Connection, household_id: UUID, appliance_id: UUID, at: datetime
+    ) -> UUID | None:
+        return meter_at(conn, household_id, appliance_id, at)
+
+    def meters_for_period(
+        self,
+        conn: sqlite3.Connection,
+        household_id: UUID,
+        appliance_id: UUID,
+        started_at: datetime,
+        ended_at: datetime,
+    ) -> list[MeterContextSegment]:
+        return meters_for_period(conn, household_id, appliance_id, started_at, ended_at)
+
+    def ownership_at(
+        self, conn: sqlite3.Connection, household_id: UUID, appliance_id: UUID, at: datetime
+    ) -> ApplianceOwnership | None:
+        return ownership_at(conn, household_id, appliance_id, at)
+
+    def context_segments_for_consumption(
+        self, conn: sqlite3.Connection, event: ConsumptionEvent
+    ) -> list[ApplianceContextSegment]:
+        return context_segments_for_consumption(conn, event)
+
+    def context_for_consumption(
+        self, conn: sqlite3.Connection, event: ConsumptionEvent
+    ) -> ApplianceOwnership | None:
+        return context_for_consumption(conn, event)
+
+
+def appliance_catalog() -> ApplianceCatalog:
+    """Factory exposed to the composition root for transaction-scoped injection."""
+    return SqliteApplianceCatalog()

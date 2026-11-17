@@ -24,17 +24,18 @@ ainda não integrada na `main`. P4 continua responsável por escolher e justific
 
 ## Contexto temporal do catálogo (HOUSE-03)
 
-Para um `ConsumptionEvent` identificado, P4 consulta
-`context_for_consumption(conn, event)`; a consulta usa `event.started_at`, `event.ended_at` e a casa
+P4 depende do port `ApplianceCatalog` de `contracts.appliance_catalog`, injetado no handler; a
+feature `billing` não importa `features.appliances`. Para um `ConsumptionEvent` identificado, P4 consulta
+`catalog.context_for_consumption(conn, event)`; a consulta usa `event.started_at`, `event.ended_at` e a casa
 do evento, nunca o proprietário/membership atual. Para auditar uma transição, usa
-`context_segments_for_consumption(conn, event)`, que devolve intervalos semiabertos com o contexto
+`catalog.context_segments_for_consumption(conn, event)`, que devolve intervalos semiabertos com o contexto
 válido em cada parte. `None` no resultado singular significa que não há um contexto único seguro:
 match desconhecido, catálogo ausente/retirado no instante ou consumo que cruza uma transição.
 
 ```python
-context = repo.context_for_consumption(conn, event)
+context = catalog.context_for_consumption(conn, event)
 if context is None:
-    segments = repo.context_segments_for_consumption(conn, event)
+    segments = catalog.context_segments_for_consumption(conn, event)
     # Manter como ambíguo até P4 aplicar a regra aprovada ou pedir confirmação.
 ```
 
