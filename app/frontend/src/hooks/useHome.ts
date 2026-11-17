@@ -6,6 +6,8 @@ export type HomeData = {
   events: EventLogItem[];
   online: boolean;
   source: "mock" | "api";
+  /** Dados do browser (VITE_OBJECTOS_SOURCE=mock), sem backend. */
+  mock: boolean;
   /** Backend a usar dados de exemplo: não altera dispositivos reais. */
   simulated: boolean;
 };

@@ -1,7 +1,16 @@
+import type { components } from "../shared/api/schema";
+
+// Tipos vindos do OpenAPI do backend (`make contracts`). Não redefinir à mão.
+type Schemas = components["schemas"];
+export type ScenarioId = "book" | "remote" | "mug" | "absence" | "return";
+
 export interface HomeService {
+  /** "api" = backend real (FakeHome ou MCP); "mock" = só fallback de desenvolvimento no browser. */
   mode: "mock" | "api";
   connect(onState: (state: HomeState) => void, onEvent: (event: EventLogItem) => void, onStatus: (online: boolean) => void): () => void;
+  getState(): Promise<HomeState>;
   getEvents(): Promise<EventLogItem[]>;
+  simulate(scenario: ScenarioId): Promise<void>;
   getRules(): Promise<HomeRule[]>;
   setRuleEnabled(id: string, enabled: boolean): Promise<HomeRule>;
   deleteRule(id: string): Promise<void>;
@@ -11,44 +20,19 @@ export interface HomeService {
 }
 
 export type HomeMode = string | null;
-export type HomeStatus = "ativo" | "em_espera" | "suspenso" | "inativo";
-export type DataSource = "fake" | "mcp";
+export type HomeStatus = Schemas["HomeState"]["state"];
+export type DataSource = Schemas["HomeState"]["backend"];
 
-export interface HomeState {
-  mode: HomeMode;
-  mode_name?: string | null;
-  state: HomeStatus;
-  presence: boolean | null;
-  camera_ok: boolean;
-  mcp_ok: boolean;
-  backend: DataSource;
-  waiting_remaining_seconds: number | null;
-  energy_saved_wh: number;
-  energy_saved_eur: number;
-  updated_at: string;
-  casa?: CasaState | null;
-}
+export type HomeState = Schemas["HomeState"];
+export type CasaState = Schemas["EstadoCasa"];
 
-export interface CasaState {
-  backend: DataSource;
-  mcp_ok: boolean;
-  lampada?: { ligada: boolean; cor: string | null; rgb: number[] | null; brilho: number | null } | null;
-  tomada?: { ligada: boolean; consumo_w: number | null; consumo_lido_em: string | null } | null;
-  atualizado_em: string;
-  aviso: string | null;
-}
-
-export interface EventLogItem {
-  id: string;
-  timestamp: string;
-  level: "info" | "warning" | "error";
-  message: string;
-  source: DataSource;
+// Só id/timestamp/level/message/source vêm do backend. Os campos extra são opcionais e só os traz o mock.
+export type EventLogItem = Schemas["EventLogItem"] & {
   category?: EventCategory;
   correlation_id?: string;
   details?: Record<string, unknown>;
   result?: "verified" | "failed" | "unverified" | "unsupported";
-}
+};
 
 export type EventCategory = "presence" | "object" | "gesture" | "mode" | "rule" | "device" | "energy" | "system";
 
@@ -78,11 +62,11 @@ export interface RoutineSuggestion extends InferredPattern {
   proposedRule: RuleDraft;
 }
 
-export interface RuleAction { dispositivo: string; ligada: boolean; cor?: string; brilho?: number }
-export interface HomeRule { id: string; objeto: string; nome: string; enabled: boolean; acoes: RuleAction[] }
+export type RuleAction = Schemas["AcaoLampada"] | Schemas["AcaoTomada"];
+export type HomeRule = Schemas["Rule"];
 export type RuleDraft = Omit<HomeRule, "enabled">;
-export interface RuleProposal { proposal: RuleDraft; summary: string }
-export interface OffResult { success: boolean; state: HomeStatus; backend: DataSource; message: string }
+export type RuleProposal = Omit<Schemas["ParseResponse"], "proposal"> & { proposal: RuleDraft };
+export type OffResult = Schemas["OffResult"];
 
 /** Eventos da mesma operação (correlation_id) agrupados; `newest` = timestamp do mais recente. */
 export interface EventGroup { events: EventLogItem[]; newest: number }

@@ -5,9 +5,11 @@ import CameraDiagnostics from "../components/camera/CameraDiagnostics";
 import CameraViewer from "../components/camera/CameraViewer";
 import DemoScenarios from "../components/camera/DemoScenarios";
 import { useCamera } from "../hooks/useCamera";
+import { useHome } from "../hooks/useHome";
 
 export default function CameraPage() {
-  const { state, online, simulated, detected, gesture, activeMode, mode, cameraAvailable, status } = useCamera();
+  const { state, online, simulated, streamEnabled, detected, gesture, activeMode, mode, cameraAvailable, status } = useCamera();
+  const { mock } = useHome();
   const [view, setView] = useState("simples");
 
   return <Stack gap="md">
@@ -16,7 +18,7 @@ export default function CameraPage() {
       <SegmentedControl value={view} onChange={setView} data={[{ label: "Simples", value: "simples" }, { label: "Técnica", value: "tecnica" }]} />
     </Group>
 
-    <CameraViewer status={status} loading={online && !state} simulated={simulated} />
+    <CameraViewer status={status} loading={online && !state} simulated={simulated} streamEnabled={streamEnabled} />
 
     {view === "simples" ? <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
       <Paper withBorder radius="md" p="sm"><Text size="xs" c="dimmed">ÚLTIMO GESTO</Text><Text fw={500}>{gesture?.message ?? "Sem gesto registado"}</Text></Paper>
@@ -24,7 +26,7 @@ export default function CameraPage() {
       <Paper withBorder radius="md" p="sm"><Text size="xs" c="dimmed">MODO ATIVADO</Text><Text fw={500}>{activeMode?.message ?? (mode ? `Modo ${mode}` : "Sem modo ativo")}</Text></Paper>
     </SimpleGrid> : <CameraDiagnostics state={state} online={online} cameraAvailable={cameraAvailable} detected={detected} />}
 
-    {simulated ? <DemoScenarios /> : null}
+    {simulated && !mock ? <DemoScenarios /> : null}
 
     <Alert icon={<IconAlertCircle size={18} />} color="teal" variant="light" title="Privacidade">
       O processamento é local. Os frames não são gravados e não é feito reconhecimento facial.

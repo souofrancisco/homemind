@@ -20,7 +20,7 @@ export default function HomeStatusCards({ state, lastDecision }: { state: HomeSt
     </Card>
     <Card withBorder radius="lg">
       <Group justify="space-between"><Text c="dimmed" size="sm">Luz</Text><ThemeIcon size="sm" variant="light" color="yellow"><IconBulb size={16} /></ThemeIcon></Group>
-      <Title order={3} mt="sm">{state.casa?.lampada ? (state.casa.lampada.ligada ? "Ligada" : "Desligada") : "Sem dados"}</Title>
+      <Title order={3} mt="sm">{state.casa?.lampada?.ligada == null ? "Sem dados" : state.casa.lampada.ligada ? "Ligada" : "Desligada"}</Title>
       {state.casa?.lampada?.brilho != null ? <Text size="sm" c="dimmed">{state.casa.lampada.brilho}%</Text> : null}
     </Card>
     <Card withBorder radius="lg">

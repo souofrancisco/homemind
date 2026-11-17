@@ -5,11 +5,11 @@ export function RuleActions({ rule }: { rule: HomeRule | RuleDraft }) {
   return <Stack gap="sm">
     {rule.acoes.map((action, index) => <Group key={`${action.dispositivo}-${index}`} justify="space-between" align="flex-start">
       <div>
-        <Text fw={500}>{action.dispositivo === "lâmpada" ? "Luz" : action.dispositivo === "tomada" ? "Tomada" : action.dispositivo}</Text>
+        <Text fw={500}>{action.dispositivo === "lampada" ? "Luz" : "Tomada"}</Text>
         <Text size="sm" c="dimmed">
           {action.ligada ? "Ligar" : "Desligar"}
-          {action.dispositivo === "lâmpada" && action.brilho != null ? ` com brilho a ${action.brilho}%` : ""}
-          {action.dispositivo === "lâmpada" && action.cor ? `, em ${action.cor}` : ""}
+          {action.dispositivo === "lampada" && action.brilho != null ? ` com brilho a ${action.brilho}%` : ""}
+          {action.dispositivo === "lampada" && action.cor ? `, em ${action.cor.replace("_", " ")}` : ""}
         </Text>
       </div>
       <Badge variant="light" color={action.ligada ? "yellow" : "gray"}>{action.ligada ? "Ligada" : "Desligada"}</Badge>

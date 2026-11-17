@@ -11,7 +11,17 @@ export const eventLevels = [{ value: "info", label: "Informação" }, { value: "
 export const eventPeriods = [{ value: "24h", label: "Últimas 24 horas" }, { value: "7d", label: "Últimos 7 dias" }, { value: "all", label: "Todos os eventos carregados" }];
 export const resultLabels: Record<NonNullable<EventLogItem["result"]>, string> = { verified: "Confirmado", failed: "Falhou", unverified: "Sem confirmação", unsupported: "Não disponível" };
 
-export const categoryOf = (event: EventLogItem): EventCategory => event.category ?? "system";
+// O backend só envia texto (id/timestamp/level/message/source): a categoria deduz-se das mensagens do motor.
+const categoryRules: [EventCategory, RegExp][] = [
+  ["rule", /^regra |sem regra ativa/i],
+  ["energy", /poupança|consumo/i],
+  ["mode", /ativado|regresso|em espera|suspens|já está ativo/i],
+  ["object", /levantado\(a\)/i],
+  ["presence", /entrou alguém|divisão vazia/i],
+  ["device", /^(?:liga|desliga) |desligar tudo|falha ao atuar|aviso: luz/i],
+];
+export const categoryOf = (event: EventLogItem): EventCategory =>
+  event.category ?? categoryRules.find(([, pattern]) => pattern.test(event.message.replace(/^\[SIMULADO\]\s*/, "")))?.[0] ?? "system";
 export const eventTime = (event: EventLogItem) => Date.parse(event.timestamp);
 
 export function resultColor(result: NonNullable<EventLogItem["result"]>) {

@@ -7,7 +7,7 @@ import { useNewRule } from "../hooks/useRules";
 import type { RuleDraft } from "../types/home";
 
 const presets: { title: string; description: string; draft: RuleDraft }[] = [
-  { title: "Luz suave para ler", description: "Quando levantar o livro, ajustar a luz.", draft: { id: "preset-reading", nome: "Luz suave para ler", objeto: "livro", acoes: [{ dispositivo: "lâmpada", ligada: true, cor: "branco quente", brilho: 40 }] } },
+  { title: "Luz suave para ler", description: "Quando levantar o livro, ajustar a luz.", draft: { id: "preset-reading", nome: "Luz suave para ler", objeto: "livro", acoes: [{ dispositivo: "lampada", ligada: true, cor: "branco_quente", brilho: 40 }] } },
   { title: "Ligar a tomada", description: "Quando levantar o comando, ligar a tomada.", draft: { id: "preset-plug", nome: "Ligar a tomada", objeto: "comando", acoes: [{ dispositivo: "tomada", ligada: true }] } },
 ];
 

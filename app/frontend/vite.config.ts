@@ -8,13 +8,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/api": target,
+      "/api": { target, ws: true }, // inclui /api/ws e /api/video
       "/healthz": target,
-      "/ws": { target, ws: true },
-      "/video": target,
-      "/events": target,
-      "/rules": target,
-      "/off": target,
     },
   },
 });

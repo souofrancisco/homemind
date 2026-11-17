@@ -5,13 +5,12 @@ import HomeDetails from "../components/home/HomeDetails";
 import HomeStatusCards from "../components/home/HomeStatusCards";
 import PowerOffModal from "../components/home/PowerOffModal";
 import { useHome } from "../hooks/useHome";
-
-const isDecision = (message: string) => /modo .* ativ(?:ado|o)|regra aplicad|regra escolhida/i.test(message);
+import { categoryOf } from "../utils/events";
 
 export default function HomePage() {
   const { state, events, online, simulated } = useHome();
   const [powerOpened, powerModal] = useDisclosure(false);
-  const lastDecision = events.find((event) => event.category === "mode" || event.category === "rule" || isDecision(event.message));
+  const lastDecision = events.find((event) => ["mode", "rule"].includes(categoryOf(event)));
 
   return (
     <Stack gap="lg">

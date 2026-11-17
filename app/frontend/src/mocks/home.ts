@@ -1,13 +1,12 @@
-import type { EventCategory, EventLogItem, HomeRule, HomeService, HomeState, OffResult, RuleDraft, RuleProposal } from "../types/home";
-
-export type DemoScenario = "book" | "remote" | "mug" | "absence" | "return" | "connection";
+// FALLBACK DE DESENVOLVIMENTO (VITE_OBJECTOS_SOURCE=mock): não é o backend. A demonstração integrada usa a API + FakeHome.
+import type { EventCategory, EventLogItem, HomeRule, HomeService, HomeState, OffResult, RuleDraft, RuleProposal, ScenarioId } from "../types/home";
 
 let state: HomeState = {
   mode: "leitura", state: "ativo", presence: true, camera_ok: false, mcp_ok: false,
   backend: "fake", waiting_remaining_seconds: null, energy_saved_wh: 126.4,
-  energy_saved_eur: 0.038, updated_at: new Date().toISOString(),
+  energy_saved_eur: 0.038, updated_at: new Date().toISOString(), mode_name: "Modo leitura", casa: null,
 };
-let online = true;
+const online = true;
 let events: EventLogItem[] = [
   { id: "evt-1", timestamp: "2026-11-17T20:42:13Z", message: "Modo Leitura ativo", level: "info", source: "fake", category: "mode" },
   { id: "evt-2", timestamp: "2026-11-17T20:42:12Z", message: "Gesto: livro levantado", level: "info", source: "fake", category: "gesture" },
@@ -15,9 +14,9 @@ let events: EventLogItem[] = [
   { id: "evt-4", timestamp: "2026-11-17T20:35:00Z", message: "Câmara indisponível.", level: "warning", source: "fake", category: "system" },
 ];
 let rules: HomeRule[] = [
-  { id: "leitura", objeto: "livro", nome: "Modo leitura", enabled: true, acoes: [{ dispositivo: "lâmpada", ligada: true, cor: "branco quente", brilho: 40 }] },
-  { id: "cinema", objeto: "comando", nome: "Noite de cinema", enabled: true, acoes: [{ dispositivo: "lâmpada", ligada: true, brilho: 15 }, { dispositivo: "tomada", ligada: true }] },
-  { id: "cafe", objeto: "caneca", nome: "Pausa para café", enabled: true, acoes: [{ dispositivo: "lâmpada", ligada: true, brilho: 70 }] },
+  { id: "leitura", objeto: "livro", nome: "Modo leitura", enabled: true, acoes: [{ dispositivo: "lampada", ligada: true, cor: "branco_quente", brilho: 40 }] },
+  { id: "cinema", objeto: "comando", nome: "Noite de cinema", enabled: true, acoes: [{ dispositivo: "lampada", ligada: true, brilho: 15 }, { dispositivo: "tomada", ligada: true }] },
+  { id: "cafe", objeto: "caneca", nome: "Pausa para café", enabled: true, acoes: [{ dispositivo: "lampada", ligada: true, brilho: 70 }] },
 ];
 const listeners = new Set<(state: HomeState) => void>();
 const eventListeners = new Set<(event: EventLogItem) => void>();
@@ -25,7 +24,6 @@ const statusListeners = new Set<(online: boolean) => void>();
 let eventSequence = 5;
 let proposalSequence = 1;
 let waitTimer: ReturnType<typeof setInterval> | undefined;
-let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
 const publish = () => { state = { ...state, updated_at: new Date().toISOString() }; listeners.forEach((fn) => fn(state)); };
 const addEvent = (message: string, level: EventLogItem["level"] = "info", category?: EventCategory) => {
   const event: EventLogItem = { id: `demo-${eventSequence++}`, timestamp: new Date().toISOString(), message, level, source: "fake", category };
@@ -55,7 +53,9 @@ export const mockService: HomeService = {
     resetWaitTimer();
     return () => { listeners.delete(onState); eventListeners.delete(onEvent); statusListeners.delete(onStatus); };
   },
+  async getState() { return state; },
   async getEvents() { return events; },
+  async simulate(scenario) { simulateScenario(scenario); },
   async getRules() { return rules; },
   async setRuleEnabled(id, enabled) {
     rules = rules.map((rule) => rule.id === id ? { ...rule, enabled } : rule);
@@ -67,23 +67,23 @@ export const mockService: HomeService = {
   async proposeRule(text): Promise<RuleProposal> {
     const object = /livro|caneca|comando/i.exec(text)?.[0]?.toLowerCase() ?? "livro";
     const name = `Regra para ${object}`;
-    return { proposal: { id: `${object}-${proposalSequence++}`, objeto: object, nome: name, acoes: [{ dispositivo: "lâmpada", ligada: true, brilho: 50 }] }, summary: `Quando detetar ${object}, ligar a lâmpada com brilho a 50%. Proposta simulada, sem chamada a serviços externos.` };
+    return { proposal: { id: `${object}-${proposalSequence++}`, objeto: object as RuleDraft["objeto"], nome: name, acoes: [{ dispositivo: "lampada", ligada: true, brilho: 50 }] }, summary: `Quando detetar ${object}, ligar a lâmpada com brilho a 50%. Proposta simulada, sem chamada a serviços externos.` };
   },
   async saveRule(rule: RuleDraft) { const saved: HomeRule = { ...rule, enabled: false }; rules = [saved, ...rules]; addEvent(`Nova regra guardada como inativa: ${saved.nome}`); return saved; },
   async turnOff(): Promise<OffResult> {
     state = { ...state, mode: null, state: "inativo", waiting_remaining_seconds: null };
     publish(); addEvent("Pedido para desligar tudo.", "info", "device");
-    return { success: true, state: "inativo", backend: "fake", message: "Simulação concluída; nenhum dispositivo físico foi alterado." };
+    return { success: true, state: "inativo", backend: "fake", devices: { lampada: "off", tomada: "off" }, message: "Simulação concluída; nenhum dispositivo físico foi alterado." };
   },
 };
 
-export function simulateScenario(scenario: DemoScenario) {
+function simulateScenario(scenario: ScenarioId) {
   const activate = (object: string) => {
     const rule = rules.find((item) => item.objeto === object && item.enabled);
     addEvent(`Objeto: ${object}`, "info", "object");
     addEvent(`Gesto: ${object} levantado`, "info", "gesture");
     if (!rule) { addEvent("Não há uma regra para este gesto.", "warning", "rule"); return; }
-    state = { ...state, mode: rule.id as HomeState["mode"], state: "ativo", presence: true, waiting_remaining_seconds: null };
+    state = { ...state, mode: rule.id, mode_name: rule.nome, state: "ativo", presence: true, waiting_remaining_seconds: null };
     publish();
     addEvent(`Regra escolhida: ${rule.nome}`, "info", "rule");
     addEvent(`Modo ${rule.nome} ativo`, "info", "mode");
@@ -100,11 +100,5 @@ export function simulateScenario(scenario: DemoScenario) {
     case "return":
       state = { ...state, presence: true, state: state.mode ? "ativo" : "inativo", waiting_remaining_seconds: null };
       publish(); addEvent("Presença detetada. Modo anterior mantido.", "info", "presence"); break;
-    case "connection":
-      online = false; statusListeners.forEach((fn) => fn(false));
-      addEvent("Ligação perdida.", "error", "system");
-      if (recoveryTimer) clearTimeout(recoveryTimer);
-      recoveryTimer = setTimeout(() => { online = true; statusListeners.forEach((fn) => fn(true)); addEvent("Ligação restabelecida.", "info", "system"); }, 4000);
-      break;
   }
 }
