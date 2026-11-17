@@ -76,7 +76,7 @@ ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` →
 - Anti-dupla contagem: histerese à volta da linha (oscilar não conta); um cruzamento só é emitido
   após `PRESENCE_DOOR_CONFIRM_S` e, se a mesma pessoa voltar para trás nesse tempo, anulam-se; no mesmo
   sentido uma 2.ª passagem em `PRESENCE_DOOR_COOLDOWN_S` é ignorada (mesma pessoa em duas pistas;
-  duas pessoas coladas contam como uma: preferimos contar a menos a inventar entradas).
+  duas pessoas coladas contam como uma: **limitação conhecida, aceite para a demo**: preferimos contar a menos a inventar entradas).
 - A soleira configura-se só por variáveis de ambiente, sem UI: **aceite para a demo**.
 - `track_id` vive só em memória e é esquecido; pistas sem ID confirmado não contam. Visitas não são
   distinguidas aqui: são só mais passagens anónimas (o número de visitas é da PRES-05).
