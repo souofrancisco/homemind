@@ -1,6 +1,6 @@
 # Gestos e presença (P2)
 
-Lógica pura, sem router e sem I/O. Por agora: `DetetorGesto` (#5). Presença, ponte e afinador vêm nas issues #6–#8.
+Lógica pura, sem router e sem I/O. `DetetorGesto` (#5) e `DetetorPresenca` (#6). Ponte e afinador vêm nas issues #7–#8.
 
 ```python
 from homemind.core.config import get_settings
@@ -28,3 +28,26 @@ Frame válido por classe: existe um objeto da classe e um pulso (esq. ou dir., d
 - **Integração:** P1 chama `processar` por frame novo (via `ProcessadorObjectOS` em #8); P4 consome os eventos pela fila (#7).
 - **Pendente:** validar 10/10 e 0 «beber» no clip MEARI real (P1 + afinador #8). Os testes usam dados SIMULADOS.
 - Ambiente: sem `uv`, `make check` não foi corrido; usado venv local + `ruff` + `pytest`.
+
+## Presença binária (#6)
+
+```python
+from homemind.features.gestos.parametros import ParametrosPresenca
+from homemind.features.gestos.presenca import DetetorPresenca
+
+det = DetetorPresenca(ParametrosPresenca.de_settings(get_settings()))
+eventos = det.processar(frame)  # tuple[Presenca, ...] (0 ou 1); hora = frame.hora
+det.ha_alguem  # só leitura
+```
+
+Inicial `False`. Frame com pessoas: regresso confirmado após `presenca_frames_regresso` (2) frames positivos seguidos. Frame sem pessoas: ausência confirmada quando `t - t_primeiro_vazio >= presenca_ausencia_s` (3 s). Só transições. Só se guardam contadores e tempos.
+
+### Assunções (presença)
+- **Qualquer pessoa conta**, sem confiança mínima própria: P1 filtra pessoas por confiança antes de entregar. Nada de contagem, IDs ou caixas.
+- **Arranque com pessoa** gera `Presenca(True)` ao 2.º frame (estado inicial `False`); P4 deve tratar o evento inicial.
+- **Ausência medida em tempo de frames reais**: um buraco entre frames > `visao_intervalo_max_s` (1 s) reinicia `t_primeiro_vazio=t` e os positivos. Câmara sem frames nunca desliga a casa; depois do buraco, a ausência conta 3 s a partir do primeiro frame vazio real.
+- **Frames positivos separados por buraco** não são «consecutivos» (contador reiniciado).
+- **Um frame positivo isolado** apaga a contagem de ausência (vazios intermitentes < 3 s nunca desligam); um falso negativo do detetor de pessoa só desliga a casa se durar 3 s seguidos.
+- A ausência de 3 s é a do detetor; o «em espera» de 180 s (10 s no demo) é do motor de P4.
+- **Integração:** P1 chama via `ProcessadorObjectOS` (#8), que corre presença antes de gesto. P4 consome `Presenca` pela fila (#7).
+- **Pendente:** validar no clip MEARI real (P1 + afinador #8). Testes com dados SIMULADOS.
