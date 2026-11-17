@@ -270,7 +270,7 @@ def test_existing_resident_reused_across_houses(client):
 
 def test_401_and_privileged_contracts_cannot_be_self_assigned(client):
     room = create_room(client)
-    assert client.post("/api/invitations/accept", json={"token": "x" * 45}).status_code == 401
+    assert client.post("/api/invitations/accept", json={"code": "x" * 45}).status_code == 401
     response = invite(client, room, email="malformed")
     assert error(response) == (400, "invalid_request")
     current = str(fx.memberships()[0].id)
