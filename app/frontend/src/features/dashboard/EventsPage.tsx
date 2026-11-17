@@ -1,4 +1,4 @@
-import { Badge, Button, Card, Group, Pagination, Select, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Button, Card, Group, Pagination, Select, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { EventItem, type EventGroup } from "../events/EventItem";
@@ -6,12 +6,12 @@ import { useHomeSocket } from "./useHomeSocket";
 import type { EventLogItem } from "./types";
 
 const categories: { value: string; label: string }[] = [
-  { value: "presence", label: "Presença" }, { value: "object", label: "Objeto detetado" }, { value: "gesture", label: "Gesto confirmado" },
-  { value: "mode", label: "Modo ativado" }, { value: "rule", label: "Regra executada" }, { value: "device", label: "Dispositivo atualizado" },
-  { value: "energy", label: "Energia" }, { value: "system", label: "Sistema / sem categoria" },
+  { value: "presence", label: "Presença" }, { value: "object", label: "Objeto" }, { value: "gesture", label: "Gesto" },
+  { value: "mode", label: "Modo" }, { value: "rule", label: "Regra" }, { value: "device", label: "Dispositivo" },
+  { value: "energy", label: "Energia" }, { value: "system", label: "Outros" },
 ];
 const levels = [{ value: "info", label: "Informação" }, { value: "warning", label: "Aviso" }, { value: "error", label: "Erro" }];
-const periods = [{ value: "24h", label: "Últimas 24 horas" }, { value: "7d", label: "Últimos 7 dias" }, { value: "all", label: "Todo o período disponível" }];
+const periods = [{ value: "24h", label: "Últimas 24 horas" }, { value: "7d", label: "Últimos 7 dias" }, { value: "all", label: "Todos os eventos carregados" }];
 const pageLoadedAt = Date.now();
 const eventTime = (event: EventLogItem) => Date.parse(event.timestamp);
 const categoryOf = (event: EventLogItem) => event.category ?? "system";
@@ -30,7 +30,7 @@ const eventGroups = (items: EventLogItem[]): EventGroup[] => {
 };
 
 export default function EventsPage() {
-  const { events, online, source } = useHomeSocket();
+  const { events, online } = useHomeSocket();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [level, setLevel] = useState<string | null>(null);
@@ -77,8 +77,6 @@ export default function EventsPage() {
   const first = currentEvents.length ? (pages.slice(0, safePage - 1).reduce((sum, entry) => sum + entry.reduce((n, group) => n + group.events.length, 0), 0) + 1) : 0;
   const last = first ? first + currentEvents.length - 1 : 0;
   const hasFilters = Boolean(search.trim() || category || level || period !== "all");
-  const simulated = source === "mock";
-
   const updateFilter = (update: () => void) => {
     update();
     setPage(1);
@@ -93,8 +91,7 @@ export default function EventsPage() {
 
   return <Stack gap="lg">
     <Group justify="space-between" align="flex-start" wrap="wrap">
-      <div><Text c="dimmed" size="sm">REGISTO EXPLICÁVEL</Text><Title order={2}>Eventos</Title><Text c="dimmed">Eventos recentes agrupados apenas quando partilham uma correlação.</Text></div>
-      <Stack gap={4} align="flex-end"><Badge size="lg" color={simulated ? "yellow" : "teal"}>{simulated ? "SIMULADO" : "ORIGEM API"}</Badge><Text size="xs" c={online ? "teal" : "dimmed"}>{online ? "Ligação disponível" : "Ligação indisponível"}</Text></Stack>
+      <Title order={2}>Eventos</Title>
     </Group>
 
     <Card withBorder radius="lg" p="md">
@@ -102,7 +99,7 @@ export default function EventsPage() {
         <TextInput label="Pesquisar mensagens" placeholder="Ex.: modo leitura" value={search} onChange={(event) => updateFilter(() => setSearch(event.currentTarget.value))} />
         <SimpleGrid cols={{ base: 1, xs: 2, sm: 3 }}>
           <Select label="Categoria" placeholder="Todas" clearable data={categories} value={category} onChange={(value) => updateFilter(() => setCategory(value))} />
-          <Select label="Gravidade" placeholder="Todas" clearable data={levels} value={level} onChange={(value) => updateFilter(() => setLevel(value))} />
+          <Select label="Tipo" placeholder="Todos" clearable data={levels} value={level} onChange={(value) => updateFilter(() => setLevel(value))} />
           <Select label="Período" value={period} onChange={(value) => updateFilter(() => setPeriod(value))} data={periods} />
         </SimpleGrid>
         {hasFilters ? <Group justify="flex-end"><Button variant="subtle" size="compact-sm" leftSection={<IconX size={14} />} onClick={clearFilters}>Limpar filtros</Button></Group> : null}
@@ -110,7 +107,7 @@ export default function EventsPage() {
     </Card>
 
     <Group justify="space-between" align="center" wrap="wrap">
-      <Text size="sm" c="dimmed">{first}–{last} de {filtered.length} eventos disponíveis nesta consulta (máximo 50)</Text>
+      <Text size="sm" c="dimmed">{first}–{last} de {filtered.length} eventos</Text>
       <Select aria-label="Eventos por página" w={130} value={pageSize} onChange={(value) => { setPageSize(value ?? "10"); setPage(1); }} data={[{ value: "10", label: "10 por página" }, { value: "20", label: "20 por página" }, { value: "50", label: "50 por página" }]} />
     </Group>
 
@@ -118,7 +115,7 @@ export default function EventsPage() {
       : <Card withBorder radius="lg"><Text ta="center" c="dimmed" py="lg">{events.length ? `Nenhum evento corresponde aos filtros${filterSummary(search, category, level, period)}.` : online ? "Ainda não há eventos disponíveis." : "Não foi possível carregar eventos. Verifica a ligação e tenta novamente mais tarde."}</Text>{hasFilters ? <Group justify="center"><Button variant="subtle" onClick={clearFilters}>Limpar filtros</Button></Group> : null}</Card>}
 
     {pageCount > 1 ? <Group justify="space-between" align="center"><Button variant="default" disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Anterior</Button><Pagination total={pageCount} value={safePage} onChange={setPage} size="sm" siblings={0} boundaries={1} /><Button variant="default" disabled={safePage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>Seguinte</Button></Group> : null}
-    <Text size="xs" c="dimmed">O backend disponibiliza até 50 eventos recentes por consulta; este ecrã não representa o histórico completo.</Text>
+    <Text size="xs" c="dimmed">A lista mostra até 50 eventos recentes.</Text>
   </Stack>;
 }
 
