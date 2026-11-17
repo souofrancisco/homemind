@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import fcntl
 import json
 import logging
 import os
@@ -28,6 +27,11 @@ from pydantic import ValidationError
 
 from homemind.core.config import get_settings
 
+if os.name == "nt":  # `fcntl` só existe em Unix; no Windows usa-se `msvcrt`.
+    import msvcrt
+else:
+    import fcntl
+
 log = logging.getLogger(__name__)
 
 
@@ -44,6 +48,23 @@ def needs_login(exc: BaseException) -> bool:
     if isinstance(exc, OAuthReauthRequired):
         return True
     return isinstance(exc, BaseExceptionGroup) and any(needs_login(e) for e in exc.exceptions)
+
+
+def _lock_exclusive(lock: Any) -> None:
+    """Bloqueia o ficheiro de lock para este processo (flock em Unix, locking no Windows)."""
+    if os.name == "nt":
+        lock.seek(0)
+        msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+    else:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+
+
+def _unlock(lock: Any) -> None:
+    if os.name == "nt":
+        lock.seek(0)
+        msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 class JsonTokenStorage:
@@ -67,11 +88,11 @@ class JsonTokenStorage:
     def _flock(self) -> Iterator[None]:
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         with open(self.path.parent / ".tokens.lock", "a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+            _lock_exclusive(lock)
             try:
                 yield
             finally:
-                fcntl.flock(lock, fcntl.LOCK_UN)
+                _unlock(lock)
 
     def _load(self) -> None:
         path = self.path
@@ -140,7 +161,8 @@ class JsonTokenStorage:
         with self._flock():
             fd, temp_path = tempfile.mkstemp(prefix=".mcp-tokens-", dir=self.path.parent)
             try:
-                os.fchmod(fd, 0o600)
+                if hasattr(os, "fchmod"):  # inexistente no Windows (permissões POSIX)
+                    os.fchmod(fd, 0o600)
                 with os.fdopen(fd, "w", encoding="utf-8") as file:
                     json.dump(payload, file)
                     file.flush()

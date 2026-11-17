@@ -127,3 +127,18 @@ def test_doctor_prints_raw_plug_measures(capsys: pytest.CaptureFixture[str]) -> 
     assert '"value": 550' in out and '"max": 3680' in out
     assert '"unitOfMeasure": "V"' in out
     assert "instantCurrent: não declarada" in out
+
+
+def test_token_storage_lock_and_save_work_on_any_os(tmp_path: Path) -> None:
+    """O lock de ficheiro e a gravação dos tokens não dependem de `fcntl`/`os.fchmod` (Windows)."""
+    storage = JsonTokenStorage(tmp_path / "auth" / "tokens.json")
+    for _ in range(2):  # adquire e liberta mais do que uma vez
+        with storage._flock():
+            pass
+    storage.tokens = OAuthToken(access_token="a", token_type="Bearer")
+    storage.saved_at = time.time()
+    storage.client_info = OAuthClientInformationFull(
+        client_id="c", redirect_uris=["http://localhost/cb"]
+    )
+    storage._save()
+    assert JsonTokenStorage(storage.path).tokens is not None
