@@ -1,6 +1,7 @@
 """Contrato da DEMO-01: zero hardware, idempotência, isolamento e resultados de referência."""
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -59,7 +60,11 @@ def test_identified_ambiguous_unknown_do_not_become_identity():
 
 
 def test_sensor_failure_is_not_0_w_and_never_requires_hardware():
-    last = next(e for e in events() if e.data.id == stable_id("demo-reading", "missing"))
+    last = next(
+        e for e in events()
+        if e.type == "energy.reading_recorded"
+        and e.data.id == stable_id("demo-reading", "missing")
+    )
     assert last.data.status is ReadingStatus.missing
     assert last.data.power_w is None
     assert not last.data.usable
@@ -144,8 +149,6 @@ def test_symlink_and_hardlink_are_never_reset(store, tmp_path):
     store.prepare()
     original.unlink()
     store.path.rename(original)
-    original.hardlink_to(store.path) if False else None  # apenas garantir o mesmo inode
-    import os
     os.link(original, store.path)
     with pytest.raises(DemoSafetyError):
         store.reset()
