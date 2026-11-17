@@ -1,5 +1,7 @@
 # Arquitetura
 
+> **ARQUIVADO — ObjectOS.** Só consulta histórica; não descreve a Conta Certa. Índice: [README](README.md).
+
 Um processo FastAPI (monólito modular, organizado por features), um painel React e, opcionalmente, o MCP Altice. Sem base de dados, filas externas ou microserviços.
 
 ## Componentes

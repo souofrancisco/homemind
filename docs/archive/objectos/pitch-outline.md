@@ -1,5 +1,7 @@
 # Pitch
 
+> **ARQUIVADO — ObjectOS.** Só consulta histórica; não descreve a Conta Certa. Índice: [README](README.md).
+
 Abertura: «A casa inteligente obriga-nos a pegar no telemóvel. E se bastasse pegar na caneca?»
 
 ## 3 minutos (+1 pergunta)

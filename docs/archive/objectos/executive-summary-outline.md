@@ -1,5 +1,7 @@
 # Resumo executivo (PDF, máximo 2 páginas)
 
+> **ARQUIVADO — ObjectOS.** Só consulta histórica; não descreve a Conta Certa. Índice: [README](README.md).
+
 Usar o template oficial se existir. Prazos nos documentos anteriores do repositório: **18/11/2026 19h00** (resumo) e 20/11 17h30 (apresentação) — confirmar com a organização.
 
 1. **Problema** — interfaces de casa inteligente exigem atenção (app, voz); energia desperdiçada em divisões vazias.

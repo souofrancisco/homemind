@@ -1,0 +1,74 @@
+# Decisões, pressupostos e pontos por resolver
+
+Registo das decisões desta reorganização (17/11/2026). Onde os PDFs originais ([references/](references/README.md)) divergem deste ficheiro, **prevalece este ficheiro**.
+
+## Decisões tomadas
+
+| ID | Decisão | Porquê |
+|---|---|---|
+| **D-01** | **A aplicação substitui o Telegram.** Toda a interação (perguntas, alertas, confirmações, assistente) passa para a aplicação React/Mantine/Capacitor. Ver tabela abaixo | Pedido da equipa; uma só interface; menos dependências externas e de privacidade |
+| D-02 | Os PDFs originais ficam **intactos** em `docs/references/`, como documentos históricos da proposta | Rastreabilidade |
+| D-03 | A arquitetura mantém-se: FastAPI, React/TS/Mantine, Authentik, MCP Altice, OpenAPI, Docker Compose; acrescenta-se SQLite e um barramento de eventos em processo. Sem microserviços | Simplicidade para a hackathon |
+| D-04 | Proveniência obrigatória `measured \| estimated \| inferred \| simulated` em todos os contratos de energia, atribuição e fatura | Honestidade REAL vs SIMULADO |
+| D-05 | MVP com **uma só tomada** (`main_meter`); os outros quartos são simulados; a identificação de aparelhos é provável (com `confidence`), nunca garantida | Limite do kit |
+| D-06 | Recursos partilhados (db, barramento) vivem em `core/` e arrancam antes das features; nenhuma feature depende da ordem de arranque de outra | Os `lifespan` correm por ordem alfabética |
+| D-07 | A política MCP mantém-se: 3 ferramentas, só lâmpada e tomada, escritas físicas com flag + grant + autorização, escrita incerta nunca repetida. Segurança, alarme e cenários continuam fora de âmbito | Segurança; a evidência não mudou |
+| D-08 | O código do ObjectOS (modos por gesto) deixa de ser produto; remove-se na fase M4, não nesta tarefa | Migração segura |
+| D-09 | O senhorio só vê totais por quarto e alertas; as permissões aplicam-se no servidor com DTOs por papel | PDF §2.2 |
+| D-10 | Módulos novos em inglês (`households`, `energy`, `billing`…); o pacote `homemind`, o cliente OIDC e o projeto Compose mantêm o nome herdado | Compatibilidade (CLAUDE.md anterior) |
+| D-11 | Dinheiro em cêntimos inteiros; arredondamento pelo maior resto; `Σ` das partes = total da fatura | Recibos exatos |
+| D-12 | Fixtures de fatura do PDF: o modelo §7.1 (45,12 / 29,76 / 24,64 / 20,48 €) é o do MVP; as «três regras» do sumário (46,80 / 27,60 / 24,40 / 21,20 €) são a versão mínima. Ambas são testes. Valores ilustrativos, não resultados nossos | O PDF usa dois conjuntos |
+
+### Telegram → aplicação (D-01), mapeamento completo
+
+| No PDF (Telegram) | Na aplicação (planeado) | Doc |
+|---|---|---|
+| «De quem é esta conta?» com botões [É minha] [É de todos] | Notificação interativa `confirmation_request` com ações **É minha / É de todos / Não sei**; resposta persistida | [notifications.md](modules/notifications.md) |
+| Aviso no grupo vs mensagem privada | Notificação **da casa** vs **pessoal** (`scope`) | [notifications.md](modules/notifications.md) |
+| Avisos de orçamento 50/80/100 %, pico, aparelho esquecido, «não bate certo» | Notificações `budget_alert`, `peak_alert`, `forgotten_appliance`, … | [billing.md](modules/billing.md) |
+| «Desligo?» [Desliga] [Deixa estar] | Notificação com ação; só executa depois de confirmada (flag + grant) | [agent.md](modules/agent.md) |
+| QR na porta para entrar no grupo | Convite à casa por ligação, com aceitação (membership `invited`) | [households.md](modules/households.md) |
+| Registar aparelhos e telemóvel pelo bot | Formulários na aplicação | [energy.md](modules/energy.md), [presence.md](modules/presence.md) |
+| Botão «cheguei / saí» (também plano B da hora zero) | `PUT /api/presence/me` | [presence.md](modules/presence.md) |
+| Votação 👍/👎 de regras e da câmara | Aprovação na aplicação (**PROPOSTA**, P2) | [agent.md](modules/agent.md) |
+| Resumo semanal no grupo | Notificação `info` e página de resumo (**PROPOSTA**, P2) | [notifications.md](modules/notifications.md) |
+| Botão «contestar» do recibo | Contestação na aplicação | [billing.md](modules/billing.md) |
+| Silêncio noturno, limiares | Preferências de notificação | [notifications.md](modules/notifications.md) |
+| Agente LLM a conversar no Telegram | Assistente dentro da aplicação | [agent.md](modules/agent.md) |
+| Streamlit (painel) | Aplicação React existente | — |
+| `python-telegram-bot` | Removido da arquitetura | — |
+| «Sem app nova» (adoção) | **Substituído:** a aplicação é a interface; o argumento de adoção passa a ser «um convite, uma aplicação» | [product/vision.md](product/vision.md) |
+
+Os PDFs continuam a mencionar Telegram; essa parte **não faz parte da arquitetura futura**.
+
+## Pressupostos
+
+| ID | Pressuposto | Como confirmar |
+|---|---|---|
+| A-01 | Os números dos PDFs (mercado, preços, payback, exemplos) são do PDF e não foram verificados por nós | Validação do problema (inquérito, senhorio), PDF §1.3 |
+| A-02 | O estado do hardware é o de 17/11/2026 (leituras MCP reais; escrita não comprovada; unidade desconhecida) | Guia de validação no dia da demo |
+| A-03 | `lastCommunicationTime` é o último contacto do dispositivo com a cloud | Mentores ([integrations/mentor-questions.md](integrations/mentor-questions.md)) |
+| A-04 | A tomada do kit mede a carga que passa pela extensão e faz de «contador da casa» no MVP | MCP-06 |
+| A-05 | Autenticação continua no Authentik (OIDC + PKCE); o `sub` identifica o utilizador | Já em uso |
+| A-06 | Não foi reexecutada nenhuma verificação (`make check`, MCP, câmara) nesta tarefa documental | — |
+| A-07 | O utilizador GitHub de P1 é `brunovieira88` (o pedido escrevia `brunoviera88`) | Confirmar com P1 |
+
+## Pontos por resolver
+
+| ID | Questão | Quem decide | Antes de |
+|---|---|---|---|
+| P-01 | Estender o MCP a **leitura** de sensores de contacto/clima e/ou a segurança/cenários? (hoje proibido) | Equipa + mentores | Qualquer automação por sensores |
+| P-02 | Papéis (`landlord/tenant/operator`) na base de dados ou em grupos do Authentik? Recomendação: base de dados | P5 | C-P5-04 |
+| P-03 | Quem pode responder a um pedido de confirmação e como se contesta (primeira resposta vence?); omissão da regra da casa (`ask`), limiar (0,50 €) e prazo (24 h) | Equipa | C-P3-02, C-P4-01 |
+| P-04 | O que vê um inquilino dos outros (totais da casa/quartos vs mais)? | Equipa | UI de consumo |
+| P-05 | Biblioteca de acesso a SQLite (stdlib `sqlite3` vs SQLAlchemy/aiosqlite) e política de migrações; nova dependência exige acordo | P5 | C-P5-02 |
+| P-06 | Fornecedor de LLM para o assistente e que dados de consumo podem sair; consentimento | Equipa | C-P3-04 |
+| P-07 | O «Desligar tudo» do ObjectOS mantém-se como ação manual? Para quem? | Equipa | C-P5-06 |
+| P-08 | Retenção de leituras e eventos (prazos com DPO) | Equipa | Piloto |
+| P-09 | `docs/altice-mcp-guia-ligacao.pdf` aparece **apagado** na árvore de trabalho (alteração anterior a esta tarefa, não commitada). É o guia oficial do MCP. Restaurar para `docs/references/`? | Utilizador | Já |
+| P-10 | O orçamento pessoal conta só consumo individual ou também a base fixa? (proposta: só o individual) | P4 + equipa | C-P4-04 |
+| P-11 | Prazos reais (resumo PDF e apresentação): os documentos antigos diziam 18/11 19h00 e 20/11 17h30 | P5 com a organização | Hoje |
+| P-12 | Testes automáticos de frontend (componentes) para as notificações interativas? | P5 | C-P3-01 |
+| P-13 | Apagar os apontadores nos caminhos antigos (`docs/contratos.md`, …) quando o código, `.env.example` e CODEOWNERS forem atualizados | P5 | Fase M4 |
+| P-14 | Renomear «HomeMind» no Android e no pacote `homemind` (hoje mantido) | Equipa | Depois da demo |
+| P-15 | Validação jurídica (RGPD, câmara, repartição de custos) | Equipa/jurista | Piloto |
