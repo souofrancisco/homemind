@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost,https://localhost"
     # Fonte legado: serviço só aceita clip de teste allowlisted em demo; nunca logar/devolver path.
     video_source: str = ""
+    # Que fonte é (PRES-01): kit | rtsp | clip | phone. Vazio = deduzir do URL (rtsp:// -> rtsp;
+    # http(s):// -> phone, SIMULADO; sem esquema -> clip, SIMULADO). Nunca promove a «real».
+    video_source_kind: Literal["", "kit", "rtsp", "clip", "phone"] = ""
     # PRIV-02: flag adicional para processamento de clips sintéticos permitidos em PROFILE=demo.
     # Não reabre o endpoint MJPEG, que permanece desativado.
     enable_dev_video_preview: bool = False

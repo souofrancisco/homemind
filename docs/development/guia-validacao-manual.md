@@ -21,7 +21,7 @@ Roteiro dos testes a executar à mão. Os testes automáticos (`make check`, `ma
 | [C. Painel](#c-painel) | UI-01, UI-02 |
 | [D. Motor, regras e NVIDIA](#d-motor-regras-e-nvidia) | MOT-01, MOT-02, REG-01, NV-01, OFF-01 |
 | [E. MCP Altice](#e-mcp-altice) | MCP-01 … MCP-07 |
-| [F. Vídeo e visão](#f-vídeo-e-visão) | VID-01, VID-02, VID-03, YOLO-01, YOLO-02, POSE-01, TRK-01 |
+| [F. Vídeo e visão](#f-vídeo-e-visão) | PRES-01, VID-01, VID-02, VID-03, YOLO-01, YOLO-02, POSE-01, TRK-01 |
 | [G. Gestos e presença](#g-gestos-e-presença) | GES-01, GES-02, PRE-01 |
 | [H. Demo](#h-demo) | LAT-01, LAT-02, DEMO-01, PB-01, PRIV-01 |
 | [Folha de resultados](#folha-de-resultados) | tabela para preencher |
@@ -214,6 +214,13 @@ Operação detalhada em [mcp-demo.md](../integrations/mcp-demo.md); hipóteses p
 
 **Bloqueado por PRIV-02 #119:** não executar validações com câmara real, RTSP, pessoas ou clips de origem real. `GET /api/video` está desativado, `criar_fonte` recusa RTSP e a visão só aceita clips sintéticos allowlisted com perfil demo e FakeHome. Reabrir estas validações exige os controlos PRES-02/03 e revisão de produto/jurídica.
 
+### PRES-01 — Câmara da porta (kit via app/link) e plano B
+- **Issue:** #105 · **Tipo:** REAL (kit) / SIMULADO (clip, telemóvel) · **Estado: NÃO EXECUTADO**
+- **Pré-requisitos:** `app/.env` com `VIDEO_SOURCE=<link RTSP partilhado pela app MEARI>` e `VIDEO_SOURCE_KIND=kit`; um utilizador com papel `operator`.
+- **Passos:** 1) arrancar o backend; 2) `GET /api/presence/camera/status` com o token do operador; 3) repetir com o link inválido e com a câmara desligada 15 s; 4) plano B: `VIDEO_SOURCE_KIND=phone` com o URL da app do telemóvel (IP Webcam / similar) e, sem rede, `VIDEO_SOURCE=data/porta.mp4` + `VIDEO_SOURCE_KIND=clip`.
+- **Esperado:** kit ligado: `source=kit`, `origin=real`, `camera_ok=true`, `fps>0` (2.ª consulta). Link inválido ou câmara desligada: `camera_ok=false`, sem `fps`, e **nenhum** estado de «casa vazia». Telemóvel e clip: `origin=simulated`. O URL nunca aparece na resposta, nos logs nem nos erros. Se a app MEARI não partilhar um stream utilizável, registar «kit sem stream» e usar o plano B.
+- **PASS** só com a evidência do kit (ou «kit sem stream» registado) e os dois planos B a funcionar.
+
 ### VID-01 — RTSP estável (BLOQUEADO)
 - **Issue:** #2 · **Tipo:** REAL
 - **Pré-requisitos:** `VIDEO_SOURCE=<rtsp>` em `app/.env`.
@@ -362,6 +369,7 @@ Data: ________ · Testador(es): ________ · Hardware (GPU/CPU): ________ · Comm
 | MCP-05 | ⚠️ Tomada | | | | #11 |
 | MCP-06 | Consumo | | | valor bruto: ____ com carga de ____ W | #12 |
 | MCP-07 | ⚠️ Falhas e reconexão | | | | #11, #12 |
+| PRES-01 | Câmara da porta: kit e plano B | | | kit: ____ · FPS: ____ | #105 |
 | VID-01 | RTSP 10 min | | | quedas: ____ · FPS: ____ | #2 |
 | VID-02 | Atraso câmara → ecrã | | | 0/5/10 min: ____ / ____ / ____ s | #2 |
 | VID-03 | Reconexão da câmara | | | | #3 |

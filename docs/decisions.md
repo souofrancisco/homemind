@@ -100,6 +100,7 @@ Os PDFs continuam a mencionar Telegram; essa parte **não faz parte da arquitetu
 | P-19 | Um morador «manual» (declarado) é `measured`? Hoje sim (`origin` real, `kind` measured) | P2 | PRES-03 |
 | P-20 | Retenção de `domain_event` e de `payload_json` (dados de presença/consumo); hoje sem expurgo | Equipa | Piloto (P-08) |
 | P-21 | Quem pode ler `domain_event` por API (hoje ninguém; a app recebe DTOs). Um endpoint de diagnóstico para o operador? | P5 | WS/notificações |
+| P-28 | `GET /api/presence/camera/status` (e `GET /api/video`) não têm `household_id`: hoje exigem papel `operator` em qualquer casa. **Decisão para a demo (uma casa); definitivo: `household_id` na rota (PLANEADO).** | P2 | PRES-01 |
 
 ## PRIV-02 #119 — propostas de decisão pendentes de revisão (17/11/2026)
 

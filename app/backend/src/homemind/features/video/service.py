@@ -35,6 +35,11 @@ def get_fonte() -> FonteVideo:
         return _fonte
 
 
+def fonte_atual() -> FonteVideo | None:
+    """A fonte já iniciada, sem a criar nem falhar quando não está configurada."""
+    return _fonte
+
+
 def fonte_dev_permitida(settings=None) -> bool:
     """Aceita clips de teste dentro do diretório dedicado; RTSP e caminhos arbitrários falham."""
     settings = settings or get_settings()
