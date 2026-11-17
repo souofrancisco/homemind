@@ -55,3 +55,35 @@ def test_bus_flow_persists_one_alert_and_restore_after_restart_does_not_duplicat
     got = [s.event.data for s in alerts(db)]
     assert [a.status.value for a in got] == ["active", "resolved"] and got[0].id == got[1].id
     assert all(s.event.provenance.simulated for s in alerts(db))
+
+
+def test_failed_transaction_then_retry_emits_the_alert_once():
+    db = make()
+    svc = SafetyService(lambda a: a == fx.HEATER)
+    boom = {"left": 1}
+
+    def flaky(conn, stored):
+        out = svc.handle(conn, stored)
+        if out and boom["left"]:
+            boom["left"] -= 1
+            raise RuntimeError("falha depois do handler")
+        return out
+
+    async def main():
+        bus = EventBus(db)
+        bus.subscribe(
+            "safety", flaky, types=["sensor.reading_recorded", "energy.consumption_detected"]
+        )
+        evs = [sim.heater_on(fx.T0), sim.contact(fx.T0, C.open), sim.contact(at(5), C.open)]
+        stored = [await bus.publish(e) for e in evs]
+        for s in stored[:2]:
+            await bus.deliver("safety", s)
+        try:
+            await bus.deliver("safety", stored[2])
+        except RuntimeError:
+            pass
+        assert alerts(db) == []  # a transação fez rollback
+        assert await bus.deliver("safety", stored[2])  # retry
+
+    asyncio.run(main())
+    assert [s.event.data.status.value for s in alerts(db)] == ["active"]

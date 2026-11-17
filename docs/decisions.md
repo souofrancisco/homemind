@@ -99,3 +99,5 @@ Os PDFs continuam a mencionar Telegram; essa parte **não faz parte da arquitetu
 | P-19 | Um morador «manual» (declarado) é `measured`? Hoje sim (`origin` real, `kind` measured) | P2 | PRES-03 |
 | P-20 | Retenção de `domain_event` e de `payload_json` (dados de presença/consumo); hoje sem expurgo | Equipa | Piloto (P-08) |
 | P-21 | Quem pode ler `domain_event` por API (hoje ninguém; a app recebe DTOs). Um endpoint de diagnóstico para o operador? | P5 | WS/notificações |
+| P-26 | **Para a demo (decisão do dono P2):** fumo → senhorio fica `notify_landlord=false` por omissão. Onde vive a política de autorização (provavelmente `HouseholdPolicy`, contrato partilhado com P5) fica em aberto | P2/P5 | SAFE-03 #116, APP-02 |
+| P-27 | **Para a demo:** o aviso «a tomada agregada corta todas as cargas» vive em `features/safety/texts.py` (o `SafetyAlert` não tem campo de texto); P3 usa-o nas notificações. Campo estruturado = mudança de contrato, em aberto | P2/P3 | SAFE-01 #114, APP-02 |

@@ -37,6 +37,8 @@ Contratos novos (`PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`
 - `service.py`: consumidor `safety` (`sensor.reading_recorded`, `energy.consumption_detected/closed`) → `safety.alert_raised`. O estado refaz-se do registo de eventos ao arrancar.
 - `texts.py`: texto pt-PT com origem (SIMULADO/REAL) e o aviso de que a tomada pode alimentar mais do que o aquecedor (na demo, a tomada agregada corta todas as cargas). `simulation.py`: leituras/consumos **SIMULADOS** para demo e testes.
 
+**Decisões para a demo (dono P2; não definitivas):** `notify_landlord=false` por omissão (onde vive a política: provavelmente `HouseholdPolicy`, com P5 — em aberto, P-26); o aviso da tomada agregada fica em `texts.py` para P3, sem mudar o contrato (P-27). O consumidor é idempotente por evento: se a transação do barramento falhar depois do handler, o retry reemite o mesmo alerta.
+
 **PLANEADO:** o router arranca o serviço **sem** resolvedor de aquecedores (por omissão nada é «aquecimento»), porque depende de ENERGY-03 #81 (identificar aparelhos/`ApplianceCategory.heating`); sem leituras reais de contacto até MCP-03 #76; entrega ao utilizador e confirmação da proposta em APP-02 #95 / MCP-04 #77. Até lá só os cenários simulados exercitam a regra.
 
 ## Passos

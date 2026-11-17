@@ -4,6 +4,8 @@ eventos (já persistente e auditado) e os alertas são eventos `safety.alert_rai
 from __future__ import annotations
 
 import sqlite3
+from collections import OrderedDict
+from uuid import UUID
 
 from homemind.contracts.domain_events import StoredEvent
 from homemind.core.events import EventBus, load_events
@@ -23,9 +25,17 @@ class SafetyService:
         is_heating: HeatingResolver = no_heating_known,
     ) -> None:
         self.engine = SafetyEngine(is_heating)
+        # Saída por evento já visto: se a transação do barramento falhar depois do handler (o
+        # estado do motor já mudou) o retry reemite o mesmo alerta em vez de o perder.
+        self._outputs: OrderedDict[UUID, list] = OrderedDict()
 
     def handle(self, _conn: sqlite3.Connection, stored: StoredEvent):
-        return self.engine.on_event(stored.event)
+        eid = stored.event.id
+        if eid not in self._outputs:
+            self._outputs[eid] = self.engine.on_event(stored.event)
+            while len(self._outputs) > 256:
+                self._outputs.popitem(last=False)
+        return self._outputs[eid]
 
     def restore(self, conn: sqlite3.Connection) -> int:
         """Refaz o estado a partir dos eventos já entregues a este consumidor (os alertas
