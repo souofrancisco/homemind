@@ -2,7 +2,7 @@
 
 PROPOSTA: interface a mover para contracts/agent.py (revisão #73). Hoje só os testes as
 implementam; as reais virão de P4 (consumo, orçamento, recibos) e P1 (energia), sem a feature
-importar outra: registam-se no arranque.
+importar outra: registam-se no arranque (ver `ProviderSet` e `REGISTRY_ATTR`).
 """
 
 from dataclasses import dataclass
@@ -41,9 +41,26 @@ class ReceiptProvider(Protocol):
         ...
 
 
+# PROPOSTA (#157 item 15): nome do atributo de `app.state` onde a composição (P4/P1) regista o
+# `ProviderSet`. Lido em tempo de pedido por `sources.get_registered`, não no arranque.
+REGISTRY_ATTR = "agent_providers"
+
+
+@dataclass(frozen=True)
+class ProviderSet:
+    """Providers reais registados na composição. Cada ferramenta é independente; `None` = ainda
+    não há provider real para ela (a cadeia de `sources.py` decide o que serve nesse caso)."""
+
+    consumption: ConsumptionProvider | None = None
+    budget: BudgetProvider | None = None
+    receipt: ReceiptProvider | None = None
+
+
 __all__ = [
+    "REGISTRY_ATTR",
     "BudgetProvider",
     "ConsumptionProvider",
+    "ProviderSet",
     "ReceiptProvider",
     "ToolValue",
 ]
