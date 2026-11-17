@@ -111,7 +111,7 @@ def issue_invitation(
         ),
     )
     # Apenas a resposta desta criação contém o segredo. Nunca é persistido em claro.
-    return {"invitation_id": invitation_id, "token": token, "expires_at": expires_at}
+    return {"invitation_id": invitation_id, "code": token, "expires_at": expires_at}
 
 
 def accept_invitation(
