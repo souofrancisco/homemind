@@ -102,12 +102,13 @@ def test_ended_tenant_keeps_historical_room_and_tenant_change_is_respected(db):
                      (str(old.id),))
         new = Membership(
             id=stable_id("membership", "new-ana"),
-            household_id=fx.HOUSEHOLD, resident_id=fx.LANDLORD,
+            household_id=fx.HOUSEHOLD, resident_id=stable_id("resident", "new-ana"),
             role=MembershipRole.tenant, room_id=fx.ROOM_ANA,
             starts_on=date(2026, 11, 19), status=MembershipStatus.active,
         )
-        # Using a new identity avoids reusing any of the existing demo tenants.
-        from homemind.features.households.repo import insert_membership
+        from homemind.contracts.household import Resident
+        from homemind.features.households.repo import insert_membership, insert_resident
+        insert_resident(conn, Resident(id=new.resident_id, display_name="Novo inquilino"))
         insert_membership(conn, new)
         return new
     new = db.run_sync(modify)
@@ -120,15 +121,19 @@ def test_ended_tenant_keeps_historical_room_and_tenant_change_is_respected(db):
     after_time = fx.T0 + timedelta(days=2)
     after = decision(db, episode(fx.ROOM_ANA, after_time),
                      now=after_time + timedelta(hours=2), memberships=members)
-    crossing_time = fx.T0 + timedelta(days=1, hours=4)
+    crossing_time = fx.T0 + timedelta(days=1, hours=4)  # 18 Nov, 23:00 UTC
+    crossing_episode = replace(
+        episode(fx.ROOM_ANA, crossing_time),
+        ended_at=crossing_time + timedelta(hours=2),
+    )
     crossing = decision(
-        db, episode(fx.ROOM_ANA, crossing_time), now=crossing_time + timedelta(hours=2),
+        db, crossing_episode, now=crossing_time + timedelta(hours=3),
         memberships=members,
     )
     assert before.target_resident_id == fx.ANA
     assert after.target_resident_id == new.resident_id
-    # Here the crossing episode does not span midnight; it still belongs to the old tenant.
-    assert crossing.target_resident_id == fx.ANA
+    assert crossing.reason is PolicyReason.room_occupancy_unknown
+    assert crossing.target_resident_id is None
 
 
 def test_uncertain_room_and_unverified_location_never_assign(db):
