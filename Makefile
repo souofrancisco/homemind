@@ -18,8 +18,6 @@ test:  ## pytest (lógica pura com fakes; sem hardware, rede nem NVIDIA)
 	cd $(BACKEND) && uv run pytest -q
 
 lint:  ## ruff + eslint
-	cd $(BACKEND) && uv run ruff format src/homemind/features/appliances
-	cd $(BACKEND) && python -c "import pathlib,base64; [print('@@HOUSE03@@'+str(p)+'::'+base64.b64encode(p.read_bytes()).decode()) for p in sorted(pathlib.Path('src/homemind/features/appliances').rglob('*.py'))]"
 	cd $(BACKEND) && uv run ruff check . && uv run ruff format --check .
 	cd $(FRONTEND) && npm ci --no-audit --no-fund && npm run lint
 
