@@ -6,9 +6,8 @@ All devices are simulated; these tests never contact the MCP or physical hardwar
 from datetime import timedelta
 from uuid import UUID, uuid4
 
-import pytest
-
 from homemind.contracts import fixtures as fx
+from homemind.contracts.common import inferred
 from homemind.contracts.devices import Device, DeviceKind, DeviceRole, DeviceSource
 from homemind.contracts.energy import (
     ApplianceCandidate,
@@ -17,7 +16,6 @@ from homemind.contracts.energy import (
     ConsumptionStatus,
     LocationKind,
 )
-from homemind.contracts.common import inferred
 from homemind.features.appliances import repo
 from homemind.features.households.tests.conftest import HOUSE_B, NOW, ROOM_B1, as_
 
