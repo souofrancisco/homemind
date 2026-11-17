@@ -22,7 +22,6 @@ from homemind.features.presence.tests.conftest import (
     SALT,
     TOKEN,
     A,
-    B,
     as_,
     cues,
     dump_text,
@@ -58,7 +57,6 @@ def observe(client, *macs):
 
 def _all_routes(h):
     return [
-        ("PUT", f"/api/presence/me?household_id={h}", {"state": "in"}),
         ("GET", f"/api/presence/devices?household_id={h}", None),
         (
             "POST",
@@ -81,41 +79,6 @@ def test_outsider_gets_404_and_anonymous_401(client):
     for method, url, body in _all_routes(A):
         assert code(client.request(method, url, json=body, headers=as_(OUTSIDER)))[0] == 404
         assert client.request(method, url, json=body).status_code == 401
-
-
-# --- declaração manual ---------------------------------------------------------------------------
-
-
-def test_manual_declaration_records_a_cue_for_the_session_resident(client):
-    r = client.put(f"/api/presence/me?household_id={A}", json={"state": "in"}, headers=as_(BRUNO))
-    assert r.status_code == 200
-    body = r.json()
-    assert body["resident_id"] == str(fx.BRUNO)
-    assert body["state"] == "in" and body["sources"] == ["manual"]
-    [ev] = cues(client.app_state.db)
-    assert ev.data.resident_id == fx.BRUNO and ev.data.source.value == "manual"
-    assert ev.provenance == Provenance(origin=Origin.real, kind=ValueKind.measured)  # P-19
-    client.put(f"/api/presence/me?household_id={A}", json={"state": "out"}, headers=as_(BRUNO))
-    assert [e.data.state.value for e in cues(client.app_state.db)] == ["in", "out"]
-
-
-def test_manual_body_cannot_name_another_resident_or_state(client):
-    url = f"/api/presence/me?household_id={A}"
-    for bad in (
-        {"state": "in", "resident_id": str(fx.CARLA)},
-        {"state": "uncertain"},
-        {"state": "in", "source": "wifi"},
-        {},
-    ):
-        assert client.put(url, json=bad, headers=as_(BRUNO)).status_code == 400
-    assert cues(client.app_state.db) == []
-
-
-def test_manual_cue_is_only_for_the_house_where_the_user_is_a_tenant(client):
-    # Bruno é inquilino nas casas A e B: cada declaração fica na casa pedida
-    client.put(f"/api/presence/me?household_id={B}", json={"state": "out"}, headers=as_(BRUNO))
-    [ev] = cues(client.app_state.db)
-    assert str(ev.household_id) == B and ev.data.resident_id == fx.BRUNO
 
 
 # --- registo e revogação de telemóveis -----------------------------------------------------------
@@ -414,3 +377,16 @@ def test_collection_switch_off_disables_ingest(client, monkeypatch):
     register(client, BRUNO, MAC_BRUNO)
     assert observe(client, MAC_BRUNO).status_code == 404
     assert cues(client.app_state.db) == []
+
+
+def test_no_manual_checkin_route_exists(client):
+    r = client.put(f"/api/presence/me?household_id={A}", json={"state": "in"}, headers=as_(BRUNO))
+    assert r.status_code in (404, 405)
+    assert "/api/presence/me" not in client.get("/openapi.json").json()["paths"]
+
+
+def test_answer_without_presence_opt_in_is_ignored(world):
+    set_presence_opt_in(world.db, fx.BRUNO, 0)
+    req = _ask(world.db)
+    _deliver(world, _answer(req, "in"))
+    assert cues(world.db) == []

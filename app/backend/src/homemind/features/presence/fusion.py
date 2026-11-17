@@ -5,8 +5,9 @@ Regras (v5.1 §6.8, CLAUDE.md):
 - Wi-Fi e aparelho pessoal a LIGAR contam a favor de «em casa»; a sua ausência não conta contra:
   um telemóvel «a dormir» (sem Wi-Fi) mantém o estado. Um aparelho que continua ligado não prova
   nada (só o evento de ligar chega aqui, e só se for recente: ver `service`).
-- «Fora» só por (a) declaração manual `out`, ou (b) saída pela porta E `tolerance` (20–30 min,
-  omissão 25) sem nenhuma pista depois dela. A câmara é anónima: uma saída pela porta é de
+- «Fora» só por saída pela porta E `tolerance` (20–30 min,
+  omissão 25) sem nenhuma pista depois dela (a pista `manual` `out` vem só da resposta «não» à
+  pergunta do sistema). A câmara é anónima: uma saída pela porta é de
   «alguém»; qualquer pista do morador durante a tolerância mostra que não foi ele.
 - Contradição → `uncertain` (+ pedido de confirmação, nunca acusação): uma pista Wi-Fi ou de
   aparelho depois de o morador estar «fora» e sem nenhuma entrada pela porta (±`door_window`).

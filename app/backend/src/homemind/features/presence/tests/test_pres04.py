@@ -6,15 +6,22 @@ from datetime import timedelta
 import pytest
 
 from homemind.contracts import fixtures as fx
-from homemind.contracts.common import Origin, Provenance, ValueKind, stable_id
+from homemind.contracts.common import Origin, Provenance, ValueKind, new_id, stable_id
 from homemind.contracts.domain_events import (
     EnergyConsumptionDetected,
     NotificationResponded,
     NotificationRespondedData,
+    PresenceCueRecorded,
     PresenceDoorCrossed,
 )
 from homemind.contracts.notification import NotificationRef, NotificationResponse, RefType
-from homemind.contracts.presence import DoorCrossed, DoorDirection
+from homemind.contracts.presence import (
+    DoorCrossed,
+    DoorDirection,
+    PresenceEvent,
+    PresenceSource,
+    PresenceState,
+)
 from homemind.core.events import load_events
 from homemind.features.presence.tests.conftest import (
     MAC_BRUNO,
@@ -31,6 +38,7 @@ BRUNO, ANA, CARLA, LANDLORD, OPERATOR = (
     "sub-bruno", "sub-ana", "sub-carla", "sub-senhorio", "sub-operador",
 )  # fmt: skip
 SIM = Provenance(origin=Origin.simulated, kind=ValueKind.inferred)
+MEASURED = Provenance(origin=Origin.real, kind=ValueKind.measured)
 
 
 def events(client, *types):
@@ -71,12 +79,29 @@ def tick(client):
     settle(client)
 
 
-def put_me(client, sub, state, household=A):
-    r = client.put(
-        f"/api/presence/me?household_id={household}", json={"state": state}, headers=as_(sub)
+RESIDENT = {BRUNO: fx.BRUNO, CARLA: fx.CARLA, ANA: fx.ANA}
+
+
+def put_me(client, sub, state):
+    """Pista `manual` (a única origem é a resposta a «estás em casa?»; aqui injetada direto)."""
+    clock = client.clock
+    rid = RESIDENT[sub]
+    ev = PresenceCueRecorded(
+        ts=clock.now,
+        household_id=fx.HOUSEHOLD,
+        provenance=MEASURED,
+        data=PresenceEvent(
+            id=new_id(),
+            household_id=fx.HOUSEHOLD,
+            resident_id=rid,
+            ts=clock.now,
+            state=PresenceState(state),
+            source=PresenceSource.manual,
+            confidence=1.0,
+            provenance=MEASURED,
+        ),
     )
-    assert r.status_code == 200, r.text
-    return r.json()
+    client.app_state.bus.publish_threadsafe(ev)
 
 
 def get_own(client, sub, household=A):
@@ -126,10 +151,10 @@ def changes(client):
 # --- em casa, a dormir, fora -----------------------------------------------------------------
 
 
-def test_manual_in_is_fused_and_published_once(client, clock):
-    out = put_me(client, BRUNO, "in")
-    assert out["state"] == "in" and out["sources"] == ["manual"]
+def test_answer_yes_is_fused_and_published_once(client, clock):
+    put_me(client, BRUNO, "in")
     settle(client)
+    assert state_of(client)[0] == "in" and state_of(client)[2]["sources"] == ["manual"]
     assert changes(client) == ["in"]
     put_me(client, BRUNO, "in")  # repetir não muda o estado: nada a publicar
     settle(client)
@@ -182,12 +207,12 @@ def test_exit_by_someone_else_is_refuted_by_the_residents_own_cue(client, clock)
     assert state_of(client)[0] == "in" and changes(client) == ["in"]
 
 
-def test_declared_out_is_out_immediately(client, clock):
+def test_answer_no_to_the_question_is_out_immediately(client, clock):
     put_me(client, BRUNO, "in")
     settle(client)
-    out = put_me(client, BRUNO, "out")
-    assert out["state"] == "out"
+    put_me(client, BRUNO, "out")
     settle(client)
+    assert state_of(client)[0] == "out"
     assert changes(client) == ["in", "out"]
 
 
@@ -349,10 +374,10 @@ def test_outsiders_and_anonymous(client):
 
 def test_each_resident_sees_only_their_own_state_even_if_a_colleague_opted_in(client, clock):
     put_me(client, BRUNO, "in")
+    set_presence_opt_in(client.app_state.db, fx.CARLA, 1)
     put_me(client, CARLA, "out")
     settle(client)
     set_presence_opt_in(client.app_state.db, fx.BRUNO, 1)
-    set_presence_opt_in(client.app_state.db, fx.CARLA, 1)
     for sub, rid, st in ((ANA, fx.ANA, "uncertain"), (BRUNO, fx.BRUNO, "in"),
                          (CARLA, fx.CARLA, "out")):  # fmt: skip
         own = get_own(client, sub)
@@ -364,3 +389,22 @@ def test_state_response_has_no_ids_of_cues_nor_images(client, clock):
     p = get_own(client, BRUNO)
     assert set(p) == {"resident_id", "state", "since", "confidence", "provenance", "sources",
                       "reason"}  # fmt: skip
+
+
+# --- sem presence_opt_in nada se grava ---
+
+
+def test_without_presence_opt_in_no_state_is_stored_or_published(client, clock):
+    put_me(client, CARLA, "in")  # Carla não tem opt-in
+    consumption_started(
+        client, clock, started_ago=timedelta(seconds=5), owner=fx.CARLA, cid="carla"
+    )
+    door(client, clock, "out")
+    clock.advance(hours=1)
+    tick(client)
+    db = client.app_state.db
+    assert (
+        db.run_sync(lambda c: c.execute("SELECT COUNT(*) FROM presence_state").fetchone()[0]) == 0
+    )
+    assert events(client, "presence.changed") == []
+    assert [c.data.source.value for c in cues(db)] == ["manual"]  # só o que injetámos à mão

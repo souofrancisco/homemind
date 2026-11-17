@@ -3,9 +3,10 @@
 Regras (contrato `PresenceEvent`, decisão D-30/D-31):
 - o Wi-Fi só produz `in`, e só quando um telemóvel registado COM opt-in aparece; a sua ausência
   nunca gera nada (nem `out`);
-- só a declaração manual diz `out`;
-- uma pista só se grava se o morador tem membership de inquilino ativa; a verificação e a gravação
-  do evento acontecem na MESMA transação, por isso uma revogação tem efeito imediato.
+- não há check-in manual: a presença vem da câmara (porta) e do Wi-Fi; só a RESPOSTA a «estás em
+  casa?» (pergunta do sistema, em caso de contradição) vira pista manual;
+- uma pista individual só se grava com `Membership.presence_opt_in` (e membership ativa); a
+  verificação e a gravação do evento acontecem na MESMA transação: a revogação é imediata.
 
 Fusão (`fusion.py`, pura): dois consumidores do barramento recalculam o estado do morador quando
 chega uma pista (`presence.cue_recorded`) ou uma passagem na porta (`presence.door_crossed`); um
@@ -92,15 +93,6 @@ def _cue(
     )
 
 
-def append_cue(conn: sqlite3.Connection, ev: PresenceCueRecorded) -> bool:
-    """Grava a pista se o morador é inquilino ativo (verificação e gravação na mesma transação)."""
-    cue = ev.data
-    if not repo.is_active_tenant(conn, cue.household_id, cue.resident_id, cue.ts):
-        return False
-    append_event(conn, ev)
-    return True
-
-
 def on_notification_responded(conn: sqlite3.Connection, stored: StoredEvent) -> list[DomainEvent]:
     """«Estás em casa?» respondido na app → pista manual. Só pedidos que presence emitiu, do
     próprio morador e uma única vez; qualquer outra coisa é ignorada sem erro."""
@@ -117,7 +109,7 @@ def on_notification_responded(conn: sqlite3.Connection, stored: StoredEvent) -> 
         or state is None
         or req["household_id"] != str(ev.household_id)
         or req["resident_id"] != str(resp.resident_id)
-        or not repo.is_active_tenant(conn, ev.household_id, resp.resident_id, resp.responded_at)
+        or not repo.has_presence_opt_in(conn, ev.household_id, resp.resident_id, resp.responded_at)
     ):
         return []
     if not repo.mark_confirmation_answered(conn, ref.id, resp.responded_at):
@@ -160,34 +152,6 @@ class PresenceService:
         self._wifi_last_ok: datetime | None = None
         self._last_cue: dict[tuple[UUID, UUID], datetime] = {}
         self._prev_seen: set[tuple[UUID, UUID]] = set()
-
-    # --- declaração manual ------------------------------------------------------------------
-
-    async def record_manual(
-        self, household_id: UUID, resident_id: UUID, state: PresenceState
-    ) -> PersonPresence:
-        """P-19: a declaração manual é `real/measured` (o contrato não a distingue; o morador
-        diz-nos o seu estado). Numa casa `real` nunca é simulada."""
-        ev = _cue(
-            household_id=household_id,
-            resident_id=resident_id,
-            ts=self.clock(),
-            state=state,
-            source=PresenceSource.manual,
-            confidence=1.0,
-            provenance=Provenance(origin=Origin.real, kind=ValueKind.measured),
-        )
-
-        def tx(conn: sqlite3.Connection) -> PersonPresence | None:
-            if not append_cue(conn, ev):
-                return None
-            return self.current_state(conn, household_id, resident_id, ev.ts)
-
-        state = await self.db.run(tx)
-        if state is None:
-            raise DeviceError("not_a_resident")
-        await self.bus.publish(ev)  # idempotente: só acorda os consumidores
-        return state
 
     # --- telemóveis -------------------------------------------------------------------------
 
@@ -289,8 +253,8 @@ class PresenceService:
         self, conn: sqlite3.Connection, hid: UUID, rid: UUID, now: datetime
     ) -> list[DomainEvent]:
         """Recalcula, grava o estado e devolve os eventos a publicar (não os grava)."""
-        if not repo.is_active_tenant(conn, hid, rid, now):
-            return []
+        if not repo.has_presence_opt_in(conn, hid, rid, now):
+            return []  # sem `presence_opt_in` não se grava estado nenhum
         prev = repo.get_state(conn, hid, rid)
         new, ask = self.compute(conn, hid, rid, now)
         if new is None:  # sem pistas na janela: mantém o que havia, nunca inventa «fora»
@@ -348,7 +312,7 @@ class PresenceService:
         if owner is None or ev.ts - d.started_at > self.appliance_fresh:
             return []
         cue_id = stable_id("appliance-cue", str(d.id))
-        if repo.cue_exists(conn, cue_id) or not repo.is_active_tenant(
+        if repo.cue_exists(conn, cue_id) or not repo.has_presence_opt_in(
             conn, ev.household_id, owner, ev.ts
         ):
             return []

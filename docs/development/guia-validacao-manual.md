@@ -353,13 +353,13 @@ Pistas por pessoa (PRES-03, **IMPLEMENTADO**). Pré-requisitos: backend no **anf
 ### PRW-03 — Wi-Fi desligado não é saída
 - **Tipo:** REAL · **Issue:** #107
 - **Passos:** com o telemóvel registado e visto, desligar o Wi-Fi do telemóvel 30 min.
-- **Esperado:** nenhum evento `presence.cue_recorded` com `state=out`; só uma declaração manual produz `out`.
+- **Esperado:** nenhum evento `presence.cue_recorded` com `state=out`; o Wi-Fi nunca produz `out`.
 - **PASS** com zero pistas `out`.
 
-### PRW-04 — Declaração manual e senhorio
+### PRW-04 — Isolamento por papel
 - **Tipo:** REAL (API) · **Issue:** #107
-- **Passos:** `PUT /api/presence/me?household_id=…` com `{"state":"in"}` e depois `"out"`, como inquilino; repetir qualquer rota de presença com a sessão do senhorio e do operador.
-- **Esperado:** `200` com `PersonPresence` do próprio; cada declaração gera `presence.cue_recorded` (`source=manual`); senhorio e operador recebem `403 forbidden_role` em todas as rotas.
+- **Passos:** repetir `GET /api/presence/devices` com a sessão do senhorio e do operador; sem `presence_opt_in` na membership, registar o telemóvel e voltar a ligá-lo ao Wi-Fi.
+- **Esperado:** `403 forbidden_role` em todas as rotas de presença para senhorio e operador; **nenhuma** pista Wi-Fi enquanto a membership não tiver `presence_opt_in=true`.
 - **PASS** se as duas observações coincidirem.
 
 ### PRF-01 — Telemóvel a dormir mantém «em casa»
@@ -370,15 +370,15 @@ Pistas por pessoa (PRES-03, **IMPLEMENTADO**). Pré-requisitos: backend no **anf
 
 ### PRF-02 — Saída pela porta + tolerância
 - **Tipo:** SIMULADO (a porta ainda não tem produtor real: PRES-02; publicar `presence.door_crossed` direção `out` por script/fixture) · **Issue:** #108
-- **Passos:** declarar `in`; publicar a saída; esperar `PRESENCE_TOLERANCE_MIN` minutos (usar 20 para encurtar) sem pistas.
+- **Passos:** com o telemóvel visto (`in`), publicar a saída; esperar `PRESENCE_TOLERANCE_MIN` minutos (usar 20 para encurtar) sem pistas.
 - **Esperado:** antes do fim da tolerância `in` (confiança 0,5); depois `out` com `sources=["camera_door"]` e um `presence.changed`.
 - **PASS** se as duas fases coincidirem.
 
 ### PRF-03 — Contradição gera pergunta, não acusação
-- **Tipo:** REAL (declaração) + SIMULADO (aparelho) · **Issue:** #108
-- **Passos:** declarar `out`; ligar um aparelho pessoal do morador (ou publicar `energy.consumption_detected` simulado com `appliance_owner_resident_id`) sem passar a porta.
-- **Esperado:** `uncertain` com `reason=conflicting_cues` e um `presence.confirmation_needed` (só `id`, `resident_id`, `reason`, `expires_at`); responder «in» resolve.
-- **PASS** se houver exatamente um pedido e a resposta resolver a dúvida.
+- **Tipo:** REAL (Wi-Fi) + SIMULADO (porta) · **Issue:** #108
+- **Passos:** com o Wi-Fi do telemóvel desligado, publicar uma saída simulada e esperar a tolerância (`out`); ligar o Wi-Fi do telemóvel sem passar a porta.
+- **Esperado:** `uncertain` com `reason=conflicting_cues` e um `presence.confirmation_needed` (só `id`, `resident_id`, `reason`, `expires_at`); a resposta «estás em casa?» (quando a APP-02 existir) resolve.
+- **PASS** se houver exatamente um pedido.
 
 ### PRF-04 — Falha do Wi-Fi nunca vira «fora»
 - **Tipo:** REAL · **Issue:** #108
@@ -433,7 +433,7 @@ Data: ________ · Testador(es): ________ · Hardware (GPU/CPU): ________ · Comm
 | PRW-01 | Telemóvel registado aparece (Wi-Fi) | | | | #107 |
 | PRW-02 | Opt-out imediato | | | | #107 |
 | PRW-03 | Wi-Fi desligado não é saída | | | | #107 |
-| PRW-04 | Declaração manual; senhorio 403 | | | | #107 |
+| PRW-04 | Isolamento por papel; sem opt-in sem pista | | | | #107 |
 | PRF-01 | Telemóvel a dormir mantém «em casa» | | | | #108 |
 | PRF-02 | Saída pela porta + tolerância | | | | #108 |
 | PRF-03 | Contradição → pergunta | | | | #108 |
