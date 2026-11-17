@@ -13,6 +13,7 @@ import os
 import sqlite3
 import stat
 import tempfile
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -53,13 +54,14 @@ class DemoStore:
         info = self.path.stat()
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise DemoSafetyError("a base de demo não é um ficheiro independente")
-        if self.path.open("rb").read(16) != SQLITE_MAGIC:
-            raise DemoSafetyError("ficheiro existente não é uma base SQLite válida")
+        with self.path.open("rb") as source:
+            if source.read(16) != SQLITE_MAGIC:
+                raise DemoSafetyError("ficheiro existente não é uma base SQLite válida")
         # Evitar reset com outra ligação/processo potencialmente ativo.
         if any(Path(str(self.path) + suffix).exists() for suffix in ("-wal", "-shm")):
             raise DemoSafetyError("SQLite WAL/SHM presente; parar processos antes do reset")
         try:
-            with sqlite3.connect(f"file:{self.path}?mode=ro", uri=True) as conn:
+            with closing(sqlite3.connect(f"file:{self.path}?mode=ro", uri=True)) as conn:
                 conn.execute("PRAGMA query_only=ON")
                 marker = conn.execute("SELECT token FROM demo_marker WHERE id=1").fetchone()
                 houses = conn.execute("SELECT id, source_kind FROM household").fetchall()
