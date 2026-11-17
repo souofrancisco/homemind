@@ -1,7 +1,7 @@
 import { Center, Loader } from "@mantine/core";
 import type { User } from "oidc-client-ts";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { login, logout, manager, onNativeRedirect } from "./oidc";
+import { login, logout, manager, onNativeRedirect } from "../../services/auth/oidc";
 
 type Auth = { user: User | null; login: typeof login; logout: typeof logout };
 const Ctx = createContext<Auth | null>(null);

@@ -56,7 +56,8 @@ export const manager = new Manager({
 });
 
 export async function login(): Promise<void> {
-  if (!isNative) return manager.signinRedirect();
+  // state = rota pedida, para regressar a ela após o login (web).
+  if (!isNative) return manager.signinRedirect({ state: window.location.pathname + window.location.search });
   // Navegador do sistema (Custom Tab), nunca WebView embebida.
   await Browser.open({ url: (await manager.client.createSigninRequest({ request_type: "si:r" })).url });
 }
