@@ -3,6 +3,7 @@
 All operations accept the *same* sqlite connection passed to an EventBus handler,
 so policy state, processed_event and follow-up events commit atomically.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -31,10 +32,13 @@ class StoredPolicy:
 
 def _policy(row: sqlite3.Row) -> PolicyVersion:
     return PolicyVersion(
-        household_id=row["household_id"], version=row["version"],
-        valid_from=row["valid_from"], common_area_rule=row["common_area_rule"],
+        household_id=row["household_id"],
+        version=row["version"],
+        valid_from=row["valid_from"],
+        common_area_rule=row["common_area_rule"],
         ask_threshold_cents=row["ask_threshold_cents"],
-        ask_timeout_hours=row["ask_timeout_hours"], fallback_rule=row["fallback_rule"],
+        ask_timeout_hours=row["ask_timeout_hours"],
+        fallback_rule=row["fallback_rule"],
     )
 
 
@@ -54,13 +58,20 @@ def ensure_initial_policy(conn: sqlite3.Connection, household_id: UUID) -> Polic
         " (household_id, version, valid_from, common_area_rule,"
         " ask_threshold_cents, ask_timeout_hours, fallback_rule)"
         " VALUES (?,1,?,?,?,?,'equal')",
-        (str(household_id), house["created_at"], house["common_area_rule"],
-         house["ask_threshold_cents"], house["ask_timeout_hours"]),
+        (
+            str(household_id),
+            house["created_at"],
+            house["common_area_rule"],
+            house["ask_threshold_cents"],
+            house["ask_timeout_hours"],
+        ),
     )
-    return _policy(conn.execute(
-        "SELECT * FROM household_policy_version WHERE household_id = ? AND version = 1",
-        (str(household_id),),
-    ).fetchone())
+    return _policy(
+        conn.execute(
+            "SELECT * FROM household_policy_version WHERE household_id = ? AND version = 1",
+            (str(household_id),),
+        ).fetchone()
+    )
 
 
 def policy_at(conn: sqlite3.Connection, household_id: UUID, at: datetime) -> PolicyVersion:
@@ -76,7 +87,10 @@ def policy_at(conn: sqlite3.Connection, household_id: UUID, at: datetime) -> Pol
 
 
 def append_policy(
-    conn: sqlite3.Connection, version: PolicyVersion, *, now: datetime,
+    conn: sqlite3.Connection,
+    version: PolicyVersion,
+    *,
+    now: datetime,
 ) -> None:
     """Future-only amendment. Caller authenticates landlord in P5 before invoking."""
     ensure_initial_policy(conn, version.household_id)
@@ -101,14 +115,22 @@ def append_policy(
         "INSERT INTO household_policy_version"
         " (household_id, version, valid_from, common_area_rule,"
         " ask_threshold_cents, ask_timeout_hours, fallback_rule) VALUES (?,?,?,?,?,?,?)",
-        (str(version.household_id), version.version, version.valid_from.isoformat(),
-         version.common_area_rule.value, version.ask_threshold_cents,
-         version.ask_timeout_hours, version.fallback_rule),
+        (
+            str(version.household_id),
+            version.version,
+            version.valid_from.isoformat(),
+            version.common_area_rule.value,
+            version.ask_threshold_cents,
+            version.ask_timeout_hours,
+            version.fallback_rule,
+        ),
     )
 
 
 def load_decision(
-    conn: sqlite3.Connection, household_id: UUID, consumption_id: UUID,
+    conn: sqlite3.Connection,
+    household_id: UUID,
+    consumption_id: UUID,
 ) -> StoredPolicy | None:
     row = conn.execute(
         "SELECT revision, decision_json FROM household_policy_decision"
@@ -127,14 +149,24 @@ def _history(
         "INSERT INTO household_policy_audit (household_id, consumption_event_id, revision,"
         " source_event_id, decided_at, status, reason, decision_json)"
         " VALUES (?,?,?,?,?,?,?,?)",
-        (str(decision.household_id), str(decision.consumption_event_id), revision,
-         str(cause), decision.decided_at.isoformat(), decision.status.value,
-         decision.reason.value, decision.model_dump_json()),
+        (
+            str(decision.household_id),
+            str(decision.consumption_event_id),
+            revision,
+            str(cause),
+            decision.decided_at.isoformat(),
+            decision.status.value,
+            decision.reason.value,
+            decision.model_dump_json(),
+        ),
     )
 
 
 def create_decision(
-    conn: sqlite3.Connection, decision: PolicyDecision, *, source_event_id: UUID,
+    conn: sqlite3.Connection,
+    decision: PolicyDecision,
+    *,
+    source_event_id: UUID,
 ) -> StoredPolicy:
     existing = load_decision(conn, decision.household_id, decision.consumption_event_id)
     if existing is not None:
@@ -143,16 +175,24 @@ def create_decision(
         "INSERT INTO household_policy_decision"
         " (household_id, consumption_event_id, revision, status, policy_version, decision_json)"
         " VALUES (?,?,1,?,?,?)",
-        (str(decision.household_id), str(decision.consumption_event_id),
-         decision.status.value, decision.policy_version, decision.model_dump_json()),
+        (
+            str(decision.household_id),
+            str(decision.consumption_event_id),
+            decision.status.value,
+            decision.policy_version,
+            decision.model_dump_json(),
+        ),
     )
     _history(conn, decision, 1, source_event_id)
     return StoredPolicy(decision, 1)
 
 
 def transition_decision(
-    conn: sqlite3.Connection, decision: PolicyDecision, *,
-    expected_revision: int, source_event_id: UUID,
+    conn: sqlite3.Connection,
+    decision: PolicyDecision,
+    *,
+    expected_revision: int,
+    source_event_id: UUID,
 ) -> StoredPolicy:
     current = load_decision(conn, decision.household_id, decision.consumption_event_id)
     if current is None or current.revision != expected_revision:
@@ -170,8 +210,10 @@ def transition_decision(
         pass
     elif old.reason is PolicyReason.awaiting_confirmation:
         if decision.reason not in (
-            PolicyReason.response_mine, PolicyReason.response_everyone,
-            PolicyReason.response_unknown, PolicyReason.confirmation_timeout,
+            PolicyReason.response_mine,
+            PolicyReason.response_everyone,
+            PolicyReason.response_unknown,
+            PolicyReason.confirmation_timeout,
         ):
             raise PolicyConflictError("transição inválida de confirmação")
     elif old.reason is PolicyReason.response_unknown:
@@ -188,8 +230,13 @@ def transition_decision(
         "UPDATE household_policy_decision SET revision = revision + 1, status = ?,"
         " decision_json = ? WHERE household_id = ? AND consumption_event_id = ?"
         " AND revision = ? AND status = 'pending'",
-        (decision.status.value, decision.model_dump_json(), str(decision.household_id),
-         str(decision.consumption_event_id), expected_revision),
+        (
+            decision.status.value,
+            decision.model_dump_json(),
+            str(decision.household_id),
+            str(decision.consumption_event_id),
+            expected_revision,
+        ),
     )
     if cur.rowcount != 1:
         raise PolicyConflictError("perdeu a corrida de atribuição")
@@ -206,12 +253,12 @@ def _context(
     if house is None:
         raise LookupError("casa desconhecida")
     rooms = [
-        Room(**dict(row)) for row in conn.execute(
-            "SELECT * FROM room WHERE household_id=?", (str(household_id),)
-        )
+        Room(**dict(row))
+        for row in conn.execute("SELECT * FROM room WHERE household_id=?", (str(household_id),))
     ]
     memberships = [
-        Membership(**dict(row)) for row in conn.execute(
+        Membership(**dict(row))
+        for row in conn.execute(
             "SELECT * FROM membership WHERE household_id=?", (str(household_id),)
         )
     ]
@@ -219,8 +266,12 @@ def _context(
 
 
 def resolve_and_store(
-    conn: sqlite3.Connection, consumption: ConsumptionEvent, *,
-    now: datetime, location_verified: bool, source_event_id: UUID,
+    conn: sqlite3.Connection,
+    consumption: ConsumptionEvent,
+    *,
+    now: datetime,
+    location_verified: bool,
+    source_event_id: UUID,
     appliance_name: str | None = None,
 ) -> StoredPolicy:
     """P4 energy handler integration: only a validated final episode can change ongoing."""
@@ -233,21 +284,34 @@ def resolve_and_store(
     tz, rooms, memberships = _context(conn, consumption.household_id)
     snapshot = policy_at(conn, consumption.household_id, consumption.started_at)
     result = resolve_policy(
-        consumption, snapshot, rooms, memberships, now=now,
-        household_timezone=tz, location_verified=location_verified,
+        consumption,
+        snapshot,
+        rooms,
+        memberships,
+        now=now,
+        household_timezone=tz,
+        location_verified=location_verified,
         appliance_name=appliance_name,
     )
     if current is not None:
         return transition_decision(
-            conn, result, expected_revision=current.revision, source_event_id=source_event_id,
+            conn,
+            result,
+            expected_revision=current.revision,
+            source_event_id=source_event_id,
         )
     return create_decision(conn, result, source_event_id=source_event_id)
 
 
 def respond_and_store(
-    conn: sqlite3.Connection, household_id: UUID, consumption_id: UUID,
-    response: NotificationResponse, ref: NotificationRef | None, *,
-    now: datetime, source_event_id: UUID,
+    conn: sqlite3.Connection,
+    household_id: UUID,
+    consumption_id: UUID,
+    response: NotificationResponse,
+    ref: NotificationRef | None,
+    *,
+    now: datetime,
+    source_event_id: UUID,
 ) -> StoredPolicy:
     """P4 notification.responded handler; caller must verify event.household_id."""
     current = load_decision(conn, household_id, consumption_id)
@@ -255,12 +319,19 @@ def respond_and_store(
         raise PolicyConflictError("decisão não existe")
     decision = apply_response(current.decision, response, ref, now=now)
     return transition_decision(
-        conn, decision, expected_revision=current.revision, source_event_id=source_event_id,
+        conn,
+        decision,
+        expected_revision=current.revision,
+        source_event_id=source_event_id,
     )
 
 
 def expire_and_store(
-    conn: sqlite3.Connection, household_id: UUID, consumption_id: UUID, *, now: datetime,
+    conn: sqlite3.Connection,
+    household_id: UUID,
+    consumption_id: UUID,
+    *,
+    now: datetime,
 ) -> StoredPolicy | None:
     """P4 calls this from a periodic sweep or before bill finalization (no P4 money here)."""
     current = load_decision(conn, household_id, consumption_id)
@@ -270,6 +341,8 @@ def expire_and_store(
     if expired is current.decision:
         return current
     return transition_decision(
-        conn, expired, expected_revision=current.revision,
+        conn,
+        expired,
+        expected_revision=current.revision,
         source_event_id=stable_id("house-04.timeout", str(household_id), str(consumption_id)),
     )

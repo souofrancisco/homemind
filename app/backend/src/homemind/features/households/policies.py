@@ -3,6 +3,7 @@
 The caller (P4) supplies verified location from HOUSE-03, a policy snapshot
 effective at consumption START, room/contract snapshots and an injected clock.
 """
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -68,10 +69,17 @@ def _overlaps(m: Membership, start, end) -> bool:
 
 
 def _decision(
-    c: ConsumptionEvent, p: PolicyVersion, now, status: PolicyStatus, reason: PolicyReason,
-    *, target: AttributionTarget | None = None, resident: UUID | None = None,
+    c: ConsumptionEvent,
+    p: PolicyVersion,
+    now,
+    status: PolicyStatus,
+    reason: PolicyReason,
+    *,
+    target: AttributionTarget | None = None,
+    resident: UUID | None = None,
     method: AttributionMethod | None = None,
-    request: ConfirmationRequest | None = None, expires_at=None,
+    request: ConfirmationRequest | None = None,
+    expires_at=None,
 ) -> PolicyDecision:
     # A policy uses contractual or human-declared facts. This provenance describes
     # the DECISION, not the accuracy of the underlying meter/signature.
@@ -129,14 +137,24 @@ def resolve_policy(
     if c.location is LocationKind.room:
         if room is None or room.kind is not RoomKind.bedroom:
             return _decision(c, p, now, PolicyStatus.pending, PolicyReason.room_occupancy_unknown)
-        relevant = [m for m in memberships if m.household_id == c.household_id
-                    and m.room_id == room.id and _overlaps(m, start, end)]
+        relevant = [
+            m
+            for m in memberships
+            if m.household_id == c.household_id
+            and m.room_id == room.id
+            and _overlaps(m, start, end)
+        ]
         whole = [m for m in relevant if _covers(m, start, end)]
         if len(relevant) != 1 or len(whole) != 1:
             return _decision(c, p, now, PolicyStatus.pending, PolicyReason.room_occupancy_unknown)
         return _decision(
-            c, p, now, PolicyStatus.automatic, PolicyReason.room_contract,
-            target=AttributionTarget.resident, resident=whole[0].resident_id,
+            c,
+            p,
+            now,
+            PolicyStatus.automatic,
+            PolicyReason.room_contract,
+            target=AttributionTarget.resident,
+            resident=whole[0].resident_id,
             method=AttributionMethod.room_rule,
         )
 
@@ -147,23 +165,37 @@ def resolve_policy(
         return _decision(c, p, now, PolicyStatus.pending, PolicyReason.presence_deferred)
     if p.common_area_rule is CommonAreaRule.equal:
         return _decision(
-            c, p, now, PolicyStatus.automatic, PolicyReason.equal_rule,
-            target=AttributionTarget.common, method=AttributionMethod.equal_rule,
+            c,
+            p,
+            now,
+            PolicyStatus.automatic,
+            PolicyReason.equal_rule,
+            target=AttributionTarget.common,
+            method=AttributionMethod.equal_rule,
         )
     if c.cost_estimate is None:
         return _decision(c, p, now, PolicyStatus.pending, PolicyReason.cost_unknown)
     if c.cost_estimate.cents < p.ask_threshold_cents:
         return _decision(
-            c, p, now, PolicyStatus.automatic, PolicyReason.below_threshold,
-            target=AttributionTarget.common, method=AttributionMethod.equal_rule,
+            c,
+            p,
+            now,
+            PolicyStatus.automatic,
+            PolicyReason.below_threshold,
+            target=AttributionTarget.common,
+            method=AttributionMethod.equal_rule,
         )
     today = now.astimezone(zone).date()
-    eligible = sorted({
-        m.resident_id for m in memberships
-        if m.household_id == c.household_id
-        and _covers(m, start, start)
-        and _covers(m, today, today)
-    }, key=str)
+    eligible = sorted(
+        {
+            m.resident_id
+            for m in memberships
+            if m.household_id == c.household_id
+            and _covers(m, start, start)
+            and _covers(m, today, today)
+        },
+        key=str,
+    )
     if not eligible:
         return _decision(c, p, now, PolicyStatus.pending, PolicyReason.no_eligible_residents)
     expires = now + timedelta(hours=p.ask_timeout_hours)
@@ -175,20 +207,29 @@ def resolve_policy(
         expires_at=expires,
     )
     return _decision(
-        c, p, now, PolicyStatus.pending, PolicyReason.awaiting_confirmation,
-        request=request, expires_at=expires,
+        c,
+        p,
+        now,
+        PolicyStatus.pending,
+        PolicyReason.awaiting_confirmation,
+        request=request,
+        expires_at=expires,
     )
 
 
 def apply_response(
-    decision: PolicyDecision, response: NotificationResponse,
-    ref: NotificationRef | None, *, now,
+    decision: PolicyDecision,
+    response: NotificationResponse,
+    ref: NotificationRef | None,
+    *,
+    now,
 ) -> PolicyDecision:
     """First valid reply wins. Unknown consumes the vote but leaves a timeout fallback."""
     if decision.status is not PolicyStatus.pending or decision.confirmation_request is None:
         raise PolicyConflictError("não há confirmação aberta")
     if (
-        ref is None or ref.type is not RefType.consumption_event
+        ref is None
+        or ref.type is not RefType.consumption_event
         or ref.id != decision.consumption_event_id
     ):
         raise PolicyConflictError("resposta não corresponde ao consumo")
@@ -204,20 +245,32 @@ def apply_response(
         raise PolicyConflictError("resposta desconhecida") from exc
     if choice is ConfirmationChoice.unknown:
         return replace(
-            decision, reason=PolicyReason.response_unknown, decided_at=now,
+            decision,
+            reason=PolicyReason.response_unknown,
+            decided_at=now,
             confirmation_request=None,
         )
     if choice is ConfirmationChoice.everyone:
         return replace(
-            decision, status=PolicyStatus.confirmed, reason=PolicyReason.response_everyone,
-            target_type=AttributionTarget.common, method=AttributionMethod.confirmation,
-            confirmation_request=None, expires_at=None, decided_at=now,
+            decision,
+            status=PolicyStatus.confirmed,
+            reason=PolicyReason.response_everyone,
+            target_type=AttributionTarget.common,
+            method=AttributionMethod.confirmation,
+            confirmation_request=None,
+            expires_at=None,
+            decided_at=now,
         )
     return replace(
-        decision, status=PolicyStatus.confirmed, reason=PolicyReason.response_mine,
-        target_type=AttributionTarget.resident, target_resident_id=response.resident_id,
+        decision,
+        status=PolicyStatus.confirmed,
+        reason=PolicyReason.response_mine,
+        target_type=AttributionTarget.resident,
+        target_resident_id=response.resident_id,
         method=AttributionMethod.confirmation,
-        confirmation_request=None, expires_at=None, decided_at=now,
+        confirmation_request=None,
+        expires_at=None,
+        decided_at=now,
     )
 
 
@@ -229,21 +282,24 @@ def expire_decision(decision: PolicyDecision, *, now) -> PolicyDecision:
         or now < decision.expires_at
     ):
         return decision
-    if decision.reason not in (
-        PolicyReason.awaiting_confirmation, PolicyReason.response_unknown
-    ):
+    if decision.reason not in (PolicyReason.awaiting_confirmation, PolicyReason.response_unknown):
         return decision
     return replace(
-        decision, status=PolicyStatus.fallback,
+        decision,
+        status=PolicyStatus.fallback,
         reason=PolicyReason.confirmation_timeout,
         target_type=AttributionTarget.common,
         method=AttributionMethod.equal_fallback,
-        confirmation_request=None, expires_at=None, decided_at=now,
+        confirmation_request=None,
+        expires_at=None,
+        decided_at=now,
     )
 
 
 def confirmation_intent(
-    decision: PolicyDecision, *, correlation_id: UUID,
+    decision: PolicyDecision,
+    *,
+    correlation_id: UUID,
 ) -> BillingConfirmationNeeded | None:
     """Typed event for P4 to append through its event-bus transaction (never send P3 directly).
 
@@ -252,8 +308,9 @@ def confirmation_intent(
     if decision.confirmation_request is None:
         return None
     return BillingConfirmationNeeded(
-        id=stable_id("house-04.confirmation", str(decision.household_id),
-                     str(decision.consumption_event_id)),
+        id=stable_id(
+            "house-04.confirmation", str(decision.household_id), str(decision.consumption_event_id)
+        ),
         ts=decision.decided_at,
         household_id=decision.household_id,
         correlation_id=correlation_id,
@@ -263,7 +320,10 @@ def confirmation_intent(
 
 
 def as_attribution(
-    decision: PolicyDecision, *, attribution_id: UUID, actor: Audit,
+    decision: PolicyDecision,
+    *,
+    attribution_id: UUID,
+    actor: Audit,
     supersedes_id: UUID | None = None,
 ) -> Attribution:
     """P4 adapter, NEVER persists; P4 owns the unique active attribution constraint."""

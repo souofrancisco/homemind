@@ -3,6 +3,7 @@
 O alvo é quem suporta o consumo, nunca o dono do aparelho. Uma decisão pendente
 não é uma Attribution: BILL-02 só persiste Attribution para decisões resolvidas.
 """
+
 from __future__ import annotations
 
 from enum import StrEnum
