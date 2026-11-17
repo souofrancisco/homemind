@@ -20,6 +20,7 @@ from homemind.contracts.common import (
     Confidence,
     ContractModel,
     EnergyWh,
+    Origin,
     Pct,
     Period,
     Provenance,
@@ -169,6 +170,50 @@ class ElectricityBill(ContractModel):
 
     def transition(self, new: BillStatus) -> None:
         check_transition(BILL_TRANSITIONS, self.status, new)
+
+
+class BillIn(ContractModel):
+    """Entrada manual da fatura (BILL-01), copiada da fatura real pelo senhorio.
+
+    `price_millicents_per_kwh` é opcional: a tarifa da fatura (com impostos), só para conferir
+    que os valores fecham. `origin=simulated` só em casas de demonstração."""
+
+    period: BillPeriod
+    total_cents: Annotated[Cents, Field(gt=0)]
+    fixed_cents: Cents
+    total_wh: Annotated[EnergyWh, Field(gt=0)]
+    price_millicents_per_kwh: Annotated[int, Field(strict=True, gt=0)] | None = None
+    origin: Origin = Origin.real
+
+
+class BillPreview(ContractModel):
+    """Pré-visualização para validação humana antes de gravar (nada é gravado)."""
+
+    period: BillPeriod
+    days: int
+    total_cents: Cents
+    fixed_cents: Cents
+    energy_cents: Cents
+    total_wh: EnergyWh
+    # Preço médio da energia derivado da fatura: (total − fixa) ÷ kWh.
+    price_millicents_per_kwh: int
+    origin: Origin
+
+
+class BillView(ContractModel):
+    """Cabeçalho da fatura (sem autor nem ids de terceiros)."""
+
+    id: UUID
+    period: BillPeriod
+    total_cents: Cents
+    fixed_cents: Cents
+    total_wh: EnergyWh
+    price_millicents_per_kwh: int
+    status: BillStatus
+    source: BillSource
+    provenance: Provenance
+    revision: int
+    created_at: UtcDatetime
 
 
 class BreakdownKind(StrEnum):

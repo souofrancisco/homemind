@@ -24,7 +24,11 @@ def test_migrate_creates_schema_and_is_idempotent(db):
     names = {
         r["name"] for r in db.run_sync(lambda c: c.execute("SELECT name FROM schema_migration"))
     }
-    assert {"0001_core_households.sql", "0002_core_events.sql"} <= names
+    assert {
+        "0001_core_households.sql",
+        "0002_core_events.sql",
+        "0003_core_membership_invitations.sql",
+    } <= names
     assert migrate(db) == []  # repetir não faz nada
     tables = {
         r["name"]
@@ -192,14 +196,13 @@ def test_core_lifespan_starts_before_and_stops_after_features(monkeypatch, tmp_p
     monkeypatch.setenv("DB_PATH", str(tmp_path / "l.sqlite3"))
     get_settings.cache_clear()
     seen: list = []
+    # cada módulo pode acrescentar migrações (D-29): contar as que existem, não um número fixo
+    n_migrations = len(list(dbmod.MIGRATIONS_DIR.glob("*.sql")))
     app = _app_with_probe(seen)
     with TestClient(app):
         db = app.state.db
-        migrated = db.run_sync(
-            lambda c: c.execute("SELECT count(*) FROM schema_migration").fetchone()[0]
-        )
-        assert seen == [migrated]
-    assert seen == [migrated, "feature-stopped"]
+        assert seen == [n_migrations]
+    assert seen == [n_migrations, "feature-stopped"]
     with pytest.raises(DatabaseClosedError):  # fechou no shutdown
         db.run_sync(lambda c: None)
     get_settings.cache_clear()

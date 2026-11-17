@@ -1,6 +1,6 @@
 # Contratos ObjectOS (documento canónico)
 
-> **IMPLEMENTADO — API que existe hoje no código (ObjectOS).** Não descreve a Conta Certa. Os contratos **propostos** da Conta Certa estão em [contracts.md](contracts.md). Os endpoints `/api/state`, `/api/rules`, `/api/off`, `/api/simulate` e o `HomeState` pertencem ao motor antigo e saem na fase M4 de [migration.md](migration.md); `/healthz`, `/api/me`, `/api/status`, `/api/mcp/tools`, `/api/video` e o protocolo WebSocket são reutilizados. Por isso este documento **não foi arquivado**: o código ainda o cumpre e o OpenAPI é gerado dele.
+> **IMPLEMENTADO — API que existe hoje no código (ObjectOS).** Não descreve a Conta Certa. Os contratos **propostos** da Conta Certa estão em [contracts.md](contracts.md). Os endpoints `/api/state`, `/api/rules`, `/api/off`, `/api/simulate` e o `HomeState` pertencem ao motor antigo e saem na fase M4 de [migration.md](migration.md); `/healthz`, `/api/me`, `/api/status`, `/api/mcp/tools` e o protocolo WebSocket são reutilizados. `/api/video` está desativado por PRIV-02. Por isso este documento **não foi arquivado**: o código ainda o cumpre e o OpenAPI é gerado dele.
 
 Substitui as propostas v1–v3 do contrato frontend↔backend e as extensões do frontend (removidas; ficam no histórico Git). Qualquer mudança faz-se primeiro aqui e nos modelos Pydantic, com acordo da equipa.
 
@@ -96,18 +96,33 @@ Prefixo `/api`. JSON UTF-8, `snake_case`, horas ISO 8601 UTC. Todas as rotas `/a
 | `PATCH` | `/api/rules/{id}` | corpo `{ "enabled": bool }` → `Rule` · `404 rule_not_found` |
 | `DELETE` | `/api/rules/{id}` | `204` · `404 rule_not_found` |
 | `POST` | `/api/rules/parse` | corpo `{ "text": "…" }` (3–300) → `ParseResponse` |
-| `GET` | `/api/video` | MJPEG (`multipart/x-mixed-replace`); `503` sem `VIDEO_SOURCE`. Query opcional `anotacoes` (omissão `true`) e `esqueleto` (omissão `true`): `anotacoes=false` → imagem limpa; `esqueleto=false` → só caixas |
+| `GET` | `/api/presence/camera/status` | `CameraStatus` (PRES-01): só papel `operator` (`403` aos restantes); sem imagem nem URL; fonte em falha ⇒ `camera_ok=false` |
+| `GET` | `/api/video` | **Só papel `operator`** (`403` aos restantes; sem `household_id`, decisão de demo P-28). MJPEG (`multipart/x-mixed-replace`) **desligado por omissão**: `404` salvo clip sintético allowlisted com `PROFILE=demo`, `HOME_BACKEND=fake` e `ENABLE_DEV_VIDEO_PREVIEW=true` (PRIV-02). Query opcional `anotacoes` e `esqueleto` (omissão `true`) |
 | `GET` | `/api/mcp/tools` | `tools/list` do MCP (diagnóstico); `502` se indisponível |
 | `GET` | `/api/me/context` | `MeContext`: o residente ligado ao `sub` e as suas memberships ativas (**Conta Certa, F0**) |
 | `GET` | `/api/households/{id}` | `HouseholdView` · `404 household_not_found` (não-membro ou casa inexistente) · `403 forbidden_role` |
 | `GET` | `/api/households/{id}/rooms` | `[RoomView]` |
 | `GET` | `/api/households/{id}/members` | `[MemberView]`: senhorio vê todos os estados, inquilino só ativos; operador `403`; nunca `presence_opt_in` nem `sub` |
 | `PATCH` | `/api/households/{id}/memberships/{mid}` | corpo `{ "presence_opt_in": bool }` (`extra=forbid`) → `MembershipSelfView`; só a própria membership de um inquilino (`403` a de outro, `404` se não é desta casa) |
+| `GET` | `/api/presence?household_id=` | `PersonPresence` **só do próprio** (**PRES-04**); sem pistas: `uncertain/no_recent_cues`; senhorio/operador `403`, não-membro `404` |
+| `GET` | `/api/presence/devices?household_id=` | `[PresenceDeviceView]` dos telemóveis do próprio (nunca o hash nem o MAC) |
+| `POST` | `/api/presence/devices?household_id=` | corpo `{label, wifi_address, consent: true}` → `201 PresenceDeviceView` · `400 invalid_request` · `409 device_already_registered \| device_limit` · `503 wifi_unconfigured` |
+| `DELETE` | `/api/presence/devices/{id}?household_id=` | opt-out imediato → `204` · `404 device_not_found` (inexistente ou de outro) |
+| `POST` | `/api/presence/wifi/observations` | **fora do OpenAPI**; só `PRESENCE_WIFI_COLLECTION_ENABLED=true` e `PRESENCE_WIFI_MODE=ingest`; `X-Presence-Token` (token de máquina, não JWT); `204`/`401`/`404` |
+| `POST` | `/api/households/{id}/agent/messages` | corpo `{ "text": "…" }` → `AgentResponse` (`proposed_actions` vazio); só inquilino (`403 forbidden_role` ao senhorio e ao operador) · `404 household_not_found` (não-membro). Dados **SIMULADOS** (casa demo); LLM desligado por omissão (`AGENT_LLM_ENABLED`), sem escritas (**Conta Certa, P3**) |
+| `GET` | `/api/households/{id}/notifications?status&scope&limit` | `[NotificationView]` (`limit` 1..100); só pessoais do próprio e da casa; o senhorio só recebe os tipos da allow-list (hoje `info`); operador `403 forbidden_role` · `404 household_not_found` (não-membro) (**Conta Certa, P3**) |
+| `POST` | `/api/households/{id}/notifications/{nid}/read` | `NotificationView`; recibo por residente · `404 notification_not_found` · `403 forbidden_role` |
+| `POST` | `/api/households/{id}/notifications/{nid}/respond` | corpo `NotificationRespondIn` `{ "action_id": "mine"\|"other"\|"everyone"\|"unknown", "target_resident_id"?: uuid }` → `NotificationView` (com `voting`, votos anónimos); só inquilino elegível; **votação D-32**: um voto por pessoa, fecha quando a regra decide · `404 notification_not_found` · `403 forbidden_role` · `409 already_responded` (já votou ou votação fechada) · `409 notification_expired` · `400 invalid_request` (ação ou alvo inválido) |
+| `GET` | `/api/households/{id}/notification-preferences` | `NotificationPreferences` do próprio (por pessoa) · `403 forbidden_role` · `404 household_not_found` |
+| `PUT` | `/api/households/{id}/notification-preferences` | por casa; corpo `{ quiet_hours, disabled_kinds }` → `NotificationPreferences` · `400 invalid_request` (ex.: desligar `security_alert`) · `403` · `404` |
+| `POST` | `/api/households/{id}/bills/preview` | corpo `BillIn` → `BillPreview` (preço médio derivado, dias, parcela de energia); **não grava**: é a validação humana antes de confirmar. Só senhorio (`403` inquilino/operador) · `422 bill_inconsistent` com a razão (Conta Certa, P4, BILL-01) |
+| `POST` | `/api/households/{id}/bills` | corpo `BillIn` → `201 BillView` em `draft`; grava e emite `billing.bill_created` na mesma transação. Recusa (`422 bill_inconsistent`): período por terminar ou > 62 dias, fixa ≥ total, preço médio fora de 0,01–1,00 €/kWh, tarifa declarada que não fecha (folga 1 %, mín. 5 cêntimos), período sobreposto, fatura simulada numa casa real. Campos extra/em falta: `400` |
+| `GET` | `/api/households/{id}/bills` · `/api/households/{id}/bills/{bill_id}` | `[BillView]` / `BillView`; senhorio vê todas, inquilino só `finalized` (rascunho → `404 bill_not_found`); operador `403`; sem autor nem ids de terceiros |
 
 ### `HomeState`
 
 ```json
-{ "mode": "leitura", "mode_name": "Modo leitura", "state": "em_espera", "presence": false,
+{ "mode": "leitura", "mode_name": "Modo leitura", "state": "em_espera", "presence": null,
   "camera_ok": true, "mcp_ok": false, "backend": "fake",
   "waiting_remaining_seconds": 7.5, "energy_saved_wh": 12.5, "energy_saved_eur": 0.002,
   "updated_at": "2026-11-17T15:20:00Z", "casa": { "…": "EstadoCasa" } }

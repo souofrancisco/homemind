@@ -115,7 +115,7 @@ flowchart TD
 
 Notas:
 
-- **Arredondamento:** método do maior resto sobre `valor_i` em cêntimos; o resto distribui-se, um cêntimo de cada vez, pelas maiores partes fracionárias; empates resolvem-se por `resident_id` (determinístico). `Σ amount_cents = total_cents` é invariante testada.
+- **Arredondamento:** método do maior resto sobre `valor_i` em cêntimos; o resto distribui-se, um cêntimo de cada vez, pelas maiores partes fracionárias; empates resolvem-se por sorteio reproduzível (D-34: hash da casa, do mês da fatura e do morador; o mesmo mês dá sempre o mesmo resultado). `Σ amount_cents = total_cents` é invariante testada.
 - **Plafond solidário** (prioridade P1): os primeiros `N` kWh de aquecimento básico de cada quarto saem de `individual_kwh` e entram no resíduo.
 - **Bi-horário** (P2): o preço passa a depender da hora de cada `ConsumptionEvent`.
 - Exemplos numéricos de teste (ambos de 120 €) em [modules/billing.md](../modules/billing.md).

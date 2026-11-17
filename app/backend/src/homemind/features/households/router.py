@@ -4,12 +4,14 @@ IMPLEMENTADO: leituras e `presence_opt_in` próprio. PLANEADO: criar casas/quart
 fim de contrato (a escrita existe em `repo.py`, sem rota ainda).
 """
 
+import sqlite3
+from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from homemind.contracts.common import ContractModel
 from homemind.contracts.household import (
@@ -20,6 +22,7 @@ from homemind.contracts.household import (
     MembershipSelfView,
     MemberView,
     ResidentView,
+    RoomKind,
     RoomView,
     SourceKind,
 )
@@ -29,9 +32,11 @@ from homemind.core.access import (
     HouseholdAccess,
     Operation,
     Resource,
+    find_membership,
     require_access,
 )
 from homemind.features.auth.service import CurrentUser
+from homemind.features.households import membership_flow as flow
 
 router = APIRouter(prefix="/api", tags=["households"])
 
@@ -113,21 +118,33 @@ async def list_rooms(access: RoomAccess, db: DbDep) -> list[RoomView]:
 
 
 @router.get("/households/{household_id}/members")
-async def list_members(access: MemberAccess, db: DbDep) -> list[MemberView]:
-    """Moradores e contratos. Nunca `presence_opt_in`, `sub` nem contactos de terceiros.
-    O senhorio vê todos os estados; um inquilino só vê quem está ativo."""
-    only_active = access.role is MembershipRole.tenant
-    rows = await db.run(
-        lambda c: c.execute(
+async def list_members(access: MemberAccess, db: DbDep, clock: ClockDep) -> list[MemberView]:
+    """O senhorio vê contratos; o inquilino só membros ativos na data local."""
+    now = clock()
+
+    def query(conn):
+        zone = conn.execute(
+            "SELECT timezone FROM household WHERE id=?", (str(access.household_id),)
+        ).fetchone()["timezone"]
+        day = now.astimezone(ZoneInfo(zone)).date().isoformat()
+        only_active = access.role is MembershipRole.tenant
+        sql = (
             "SELECT m.id AS membership_id, m.resident_id, r.display_name, m.role, m.room_id,"
             " m.starts_on, m.ends_on, m.status FROM membership m"
-            " JOIN resident r ON r.id = m.resident_id WHERE m.household_id = ?"
-            + (" AND m.status = 'active'" if only_active else "")
-            + " ORDER BY m.starts_on, r.display_name",
-            (str(access.household_id),),
-        ).fetchall()
-    )
-    return [MemberView(**dict(r)) for r in rows]
+            " JOIN resident r ON r.id=m.resident_id WHERE m.household_id=?"
+        )
+        if only_active:
+            sql += (
+                " AND m.status='active' AND m.starts_on <= ?"
+                " AND (m.ends_on IS NULL OR m.ends_on >= ?)"
+            )
+        sql += " ORDER BY m.starts_on, r.display_name"
+        params = (
+            (str(access.household_id), day, day) if only_active else (str(access.household_id),)
+        )
+        return conn.execute(sql, params).fetchall()
+
+    return [MemberView(**dict(row)) for row in await db.run(query)]
 
 
 class MembershipPatch(ContractModel):
@@ -138,22 +155,31 @@ class MembershipPatch(ContractModel):
 
 @router.patch("/households/{household_id}/memberships/{membership_id}")
 async def patch_membership(
-    membership_id: UUID, body: MembershipPatch, access: MemberWriteAccess, db: DbDep
+    membership_id: UUID,
+    body: MembershipPatch,
+    access: MemberWriteAccess,
+    user: CurrentUser,
+    db: DbDep,
+    clock: ClockDep,
 ) -> MembershipSelfView:
-    if access.role is not MembershipRole.tenant:  # o senhorio não decide o consentimento alheio
-        raise HTTPException(403, {"code": "forbidden_role", "message": "Sem permissão"})
-
     def update(conn):
+        # A guarda FastAPI corre antes do handler e não partilha a transação com esta escrita.
+        # Revalidar a identidade, o papel e a vigência aqui evita usar um grant revogado entretanto.
+        current = find_membership(conn, user.sub, access.household_id, clock())
+        if current is None:
+            return "missing"
+        if current["role"] != MembershipRole.tenant.value:
+            return "forbidden"
         row = conn.execute(
             "SELECT id, resident_id FROM membership WHERE id = ? AND household_id = ?",
             (str(membership_id), str(access.household_id)),
         ).fetchone()
         if row is None:
             return "missing"
-        if row["id"] != str(access.membership_id):  # nunca a membership de outro
+        if row["id"] != str(current["id"]):  # nunca a membership de outro
             return "forbidden"
         conn.execute(
-            "UPDATE membership SET presence_opt_in = ? WHERE id = ?",
+            "UPDATE membership SET presence_opt_in = ? WHERE id = ? AND status = 'active'",
             (int(body.presence_opt_in), row["id"]),
         )
         return conn.execute(
@@ -169,4 +195,104 @@ async def patch_membership(
         raise HTTPException(403, {"code": "forbidden_role", "message": "Sem permissão"})
     return MembershipSelfView(
         **{**dict(result), "presence_opt_in": bool(result["presence_opt_in"])}
+    )
+
+
+# HOUSE-02: comandos restritos, sem alterar a matriz/permissões F0.
+RoomWriteAccess = Annotated[
+    HouseholdAccess, Depends(require_access(Resource.room, Operation.write))
+]
+
+
+class CreateRoom(ContractModel):
+    name: Annotated[str, Field(min_length=1, max_length=80)]
+    kind: RoomKind
+    included_wh: Annotated[int, Field(strict=True, ge=0)] | None = None
+
+
+class CreateInvitation(ContractModel):
+    display_name: Annotated[str, Field(min_length=1, max_length=80)]
+    email: Annotated[
+        str, Field(min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    ]
+    room_id: UUID
+    starts_on: date
+    ends_on: date | None = None
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.ends_on is not None and self.ends_on < self.starts_on:
+            raise ValueError("ends_on anterior a starts_on")
+        return self
+
+
+class InvitationIssued(ContractModel):
+    invitation_id: UUID
+    code: str
+    expires_at: datetime
+
+
+class RedeemInvitation(ContractModel):
+    code: Annotated[str, Field(min_length=32, max_length=128)]
+
+
+async def _execute(db: DbDep, action):
+    try:
+        return await db.run(action)
+    except flow.FlowError as error:
+        raise HTTPException(error.status, {"code": error.code, "message": error.message}) from None
+    except sqlite3.IntegrityError:
+        raise HTTPException(
+            409, {"code": "membership_conflict", "message": "Estado em conflito"}
+        ) from None
+
+
+@router.post("/households/{household_id}/rooms", status_code=201)
+async def create_house_room(
+    body: CreateRoom, access: RoomWriteAccess, user: CurrentUser, db: DbDep, clock: ClockDep
+) -> RoomView:
+    return await _execute(
+        db, lambda conn: flow.create_room(conn, user, access.household_id, body, clock())
+    )
+
+
+@router.post("/households/{household_id}/invitations", status_code=201)
+async def create_house_invitation(
+    body: CreateInvitation,
+    access: MemberWriteAccess,
+    user: CurrentUser,
+    db: DbDep,
+    clock: ClockDep,
+) -> InvitationIssued:
+    # MemberWriteAccess permite ao inquilino editar o seu consentimento.
+    if access.role is not MembershipRole.landlord:
+        raise HTTPException(403, {"code": "forbidden_role", "message": "Sem permissão"})
+    result = await _execute(
+        db, lambda conn: flow.issue_invitation(conn, user, access.household_id, body, clock())
+    )
+    return InvitationIssued(**result)
+
+
+@router.post("/invitations/accept")
+async def redeem_house_invitation(
+    body: RedeemInvitation, user: CurrentUser, db: DbDep, clock: ClockDep
+) -> MembershipSelfView:
+    return await _execute(db, lambda conn: flow.accept_invitation(conn, user, body.code, clock()))
+
+
+@router.post("/households/{household_id}/memberships/{membership_id}/revoke")
+async def revoke_house_membership(
+    membership_id: UUID,
+    access: MemberWriteAccess,
+    user: CurrentUser,
+    db: DbDep,
+    clock: ClockDep,
+) -> MemberView:
+    if access.role is not MembershipRole.landlord:
+        raise HTTPException(403, {"code": "forbidden_role", "message": "Sem permissão"})
+    return await _execute(
+        db,
+        lambda conn: flow.revoke_membership(
+            conn, user, access.household_id, membership_id, clock()
+        ),
     )
