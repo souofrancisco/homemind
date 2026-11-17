@@ -52,8 +52,9 @@ mas o container fica a correr e `healthy` (o healthcheck é interno). O frontend
 porta com `BACKEND_PORT=<outra> make mcp-demo`. Um `401` em `/api/*` sem token é normal (a API respondeu).
 
 Com `ENABLE_PHYSICAL_WRITES=false` (omissão) nenhuma escrita é feita; leituras a cada 5 s.
-`POST /api/simulate` responde 403 com `HOME_BACKEND=mcp`. Para a demo completa a câmara usa
-`VIDEO_SOURCE` e `VISAO_DETETOR` do `.env`, como em `make dev`.
+`POST /api/simulate` responde 403 com `HOME_BACKEND=mcp`. PRIV-02 desativa câmaras e fontes RTSP
+nesta configuração. Clips sintéticos locais só podem alimentar a visão com `PROFILE=demo` e
+`HOME_BACKEND=fake`; não executar visão sobre dispositivos MCP.
 
 ## 4. Autorizar escritas físicas (temporário)
 

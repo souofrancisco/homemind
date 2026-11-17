@@ -387,7 +387,12 @@ def confirmation_request() -> notification.ConfirmationRequest:
 def confirmation_notification() -> notification.Notification:
     """«De quem é esta conta?» para a casa; qualquer inquilino ativo pode responder."""
     req = confirmation_request()
-    labels = {"mine": "É minha", "everyone": "É de todos", "unknown": "Não sei"}
+    labels = {
+        "mine": "É minha",
+        "everyone": "É de todos",
+        "unknown": "Não sei",
+        "other": "É de outra pessoa",
+    }
     return notification.Notification(
         id=NOTIFICATION,
         household_id=HOUSEHOLD,
@@ -499,9 +504,10 @@ def bill_b() -> tuple[billing.ElectricityBill, list[billing.BillAllocation]]:
 
 
 def bill_c() -> tuple[billing.ElectricityBill, list[billing.BillAllocation]]:
-    """Arredondamento: 100 € por 3 moradores iguais → 33,34 / 33,33 / 33,33 €."""
+    """Arredondamento: 100 € por 3 moradores iguais → 33,34 / 33,33 / 33,33 €. O cêntimo extra
+    vai a sorteio reproduzível (D-34, `billing.allocation.draw_order`): nesta fatura, a Carla."""
     bill = _bill(BILL_C, total=10_000, fixed=2_500, total_wh=468_750)
-    rows = [(ANA, 0, 834, 2500), (BRUNO, 0, 833, 2500), (CARLA, 0, 833, 2500)]
+    rows = [(ANA, 0, 833, 2500), (BRUNO, 0, 833, 2500), (CARLA, 0, 834, 2500)]
     return bill, _allocations(BILL_C, rows)
 
 

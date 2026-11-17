@@ -1,6 +1,6 @@
 # Contratos ObjectOS (documento canónico)
 
-> **IMPLEMENTADO — API que existe hoje no código (ObjectOS).** Não descreve a Conta Certa. Os contratos **propostos** da Conta Certa estão em [contracts.md](contracts.md). Os endpoints `/api/state`, `/api/rules`, `/api/off`, `/api/simulate` e o `HomeState` pertencem ao motor antigo e saem na fase M4 de [migration.md](migration.md); `/healthz`, `/api/me`, `/api/status`, `/api/mcp/tools`, `/api/video` e o protocolo WebSocket são reutilizados. Por isso este documento **não foi arquivado**: o código ainda o cumpre e o OpenAPI é gerado dele.
+> **IMPLEMENTADO — API que existe hoje no código (ObjectOS).** Não descreve a Conta Certa. Os contratos **propostos** da Conta Certa estão em [contracts.md](contracts.md). Os endpoints `/api/state`, `/api/rules`, `/api/off`, `/api/simulate` e o `HomeState` pertencem ao motor antigo e saem na fase M4 de [migration.md](migration.md); `/healthz`, `/api/me`, `/api/status`, `/api/mcp/tools` e o protocolo WebSocket são reutilizados. `/api/video` está desativado por PRIV-02. Por isso este documento **não foi arquivado**: o código ainda o cumpre e o OpenAPI é gerado dele.
 
 Substitui as propostas v1–v3 do contrato frontend↔backend e as extensões do frontend (removidas; ficam no histórico Git). Qualquer mudança faz-se primeiro aqui e nos modelos Pydantic, com acordo da equipa.
 
@@ -96,19 +96,20 @@ Prefixo `/api`. JSON UTF-8, `snake_case`, horas ISO 8601 UTC. Todas as rotas `/a
 | `PATCH` | `/api/rules/{id}` | corpo `{ "enabled": bool }` → `Rule` · `404 rule_not_found` |
 | `DELETE` | `/api/rules/{id}` | `204` · `404 rule_not_found` |
 | `POST` | `/api/rules/parse` | corpo `{ "text": "…" }` (3–300) → `ParseResponse` |
-| `GET` | `/api/video` | MJPEG (`multipart/x-mixed-replace`); `503` sem `VIDEO_SOURCE`. Query opcional `anotacoes` (omissão `true`) e `esqueleto` (omissão `true`): `anotacoes=false` → imagem limpa; `esqueleto=false` → só caixas |
 | `GET` | `/api/presence/camera/status` | `CameraStatus` (PRES-01): só papel `operator` (`403` aos restantes); sem imagem nem URL; fonte em falha ⇒ `camera_ok=false` |
+| `GET` | `/api/video` | Endpoint legado desativado: autenticado recebe sempre `404`; sem dependência de fonte MJPEG. Não iniciar captura por esta rota. |
 | `GET` | `/api/mcp/tools` | `tools/list` do MCP (diagnóstico); `502` se indisponível |
 | `GET` | `/api/me/context` | `MeContext`: o residente ligado ao `sub` e as suas memberships ativas (**Conta Certa, F0**) |
 | `GET` | `/api/households/{id}` | `HouseholdView` · `404 household_not_found` (não-membro ou casa inexistente) · `403 forbidden_role` |
 | `GET` | `/api/households/{id}/rooms` | `[RoomView]` |
 | `GET` | `/api/households/{id}/members` | `[MemberView]`: senhorio vê todos os estados, inquilino só ativos; operador `403`; nunca `presence_opt_in` nem `sub` |
 | `PATCH` | `/api/households/{id}/memberships/{mid}` | corpo `{ "presence_opt_in": bool }` (`extra=forbid`) → `MembershipSelfView`; só a própria membership de um inquilino (`403` a de outro, `404` se não é desta casa) |
+| `POST` | `/api/households/{id}/agent/messages` | corpo `{ "text": "…" }` → `AgentResponse` (`proposed_actions` vazio); só inquilino (`403 forbidden_role` ao senhorio e ao operador) · `404 household_not_found` (não-membro). Dados **SIMULADOS** (casa demo); LLM desligado por omissão (`AGENT_LLM_ENABLED`), sem escritas (**Conta Certa, P3**) |
 
 ### `HomeState`
 
 ```json
-{ "mode": "leitura", "mode_name": "Modo leitura", "state": "em_espera", "presence": false,
+{ "mode": "leitura", "mode_name": "Modo leitura", "state": "em_espera", "presence": null,
   "camera_ok": true, "mcp_ok": false, "backend": "fake",
   "waiting_remaining_seconds": 7.5, "energy_saved_wh": 12.5, "energy_saved_eur": 0.002,
   "updated_at": "2026-11-17T15:20:00Z", "casa": { "…": "EstadoCasa" } }
