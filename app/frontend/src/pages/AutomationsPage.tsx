@@ -1,42 +1,13 @@
 import { Alert, Badge, Button, Card, Group, Loader, SimpleGrid, Stack, Switch, Text, Title } from "@mantine/core";
 import { IconArrowRight, IconPlus } from "@tabler/icons-react";
-import { notifications } from "@mantine/notifications";
-import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { demoSuggestionDecisions, demoSuggestions } from "../mocks/suggestions";
-import { homeService as service } from "../services/home";
-import type { HomeRule } from "../types/home";
-import { useHome } from "../hooks/useHome";
-
+import { useRules } from "../hooks/useRules";
+import { useSuggestions } from "../hooks/useSuggestions";
 
 export default function AutomationsPage() {
   const navigate = useNavigate();
-  const { source } = useHome();
-  const [rules, setRules] = useState<HomeRule[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-  const [, setDecisionVersion] = useState(0);
-  const suggestions = source === "mock" ? demoSuggestions.filter((item) => !demoSuggestionDecisions.has(item.id)) : [];
-
-  useEffect(() => {
-    let mounted = true;
-    void service.getRules().then((items) => { if (mounted) setRules(items); }).catch(() => { if (mounted) setFailed(true); }).finally(() => { if (mounted) setLoading(false); });
-    return () => { mounted = false; };
-  }, []);
-
-  const toggle = async (rule: HomeRule, enabled: boolean) => {
-    try {
-      const updated = await service.setRuleEnabled(rule.id, enabled);
-      setRules((items) => items.map((item) => item.id === rule.id ? updated : item));
-    } catch (error) {
-      notifications.show({ color: "red", title: "Não foi possível atualizar", message: error instanceof Error ? error.message : "Tenta novamente mais tarde." });
-    }
-  };
-
-  const ignoreSuggestion = (id: string) => {
-    demoSuggestionDecisions.add(id);
-    setDecisionVersion((version) => version + 1);
-  };
+  const { rules, loading, failed, toggle } = useRules();
+  const { available, suggestions, ignore } = useSuggestions();
 
   return <Stack gap="xl">
     <Group justify="space-between" align="flex-start">
@@ -65,13 +36,13 @@ export default function AutomationsPage() {
 
     <section>
       <Group justify="space-between" mb="sm" align="baseline"><Title order={4}>Sugestões</Title><Text size="sm" c="dimmed">Ideias para as tuas rotinas</Text></Group>
-      {source !== "mock" ? <Text size="sm" c="dimmed">Ainda não há sugestões disponíveis.</Text> : suggestions.length ? <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
+      {!available ? <Text size="sm" c="dimmed">Ainda não há sugestões disponíveis.</Text> : suggestions.length ? <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
         {suggestions.map((suggestion) => <Card key={suggestion.id} withBorder radius="md" padding="md">
           <Text fw={600}>{suggestion.title}</Text>
           <Text size="sm" c="dimmed" mt={4}>{suggestion.statement}</Text>
           <Group mt="md" justify="space-between">
             <Button variant="subtle" px={0} onClick={() => navigate(`/automations/suggestions/${encodeURIComponent(suggestion.id)}`)}>Ver sugestão</Button>
-            <Button variant="subtle" color="gray" onClick={() => ignoreSuggestion(suggestion.id)}>Ignorar</Button>
+            <Button variant="subtle" color="gray" onClick={() => ignore(suggestion.id)}>Ignorar</Button>
           </Group>
         </Card>)}
       </SimpleGrid> : <Text size="sm" c="dimmed">Não há sugestões pendentes nesta sessão.</Text>}

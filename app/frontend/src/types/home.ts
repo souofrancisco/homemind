@@ -83,3 +83,6 @@ export interface HomeRule { id: string; objeto: string; nome: string; enabled: b
 export type RuleDraft = Omit<HomeRule, "enabled">;
 export interface RuleProposal { proposal: RuleDraft; summary: string }
 export interface OffResult { success: boolean; state: HomeStatus; backend: DataSource; message: string }
+
+/** Eventos da mesma operação (correlation_id) agrupados; `newest` = timestamp do mais recente. */
+export interface EventGroup { events: EventLogItem[]; newest: number }

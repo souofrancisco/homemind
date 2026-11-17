@@ -1,20 +1,11 @@
 import { Accordion, Badge, Card, Group, Stack, Text } from "@mantine/core";
-import type { EventCategory, EventLogItem } from "../../types/home";
+import type { EventGroup } from "../../types/home";
+import { categoryLabels, categoryOf, resultColor, resultLabels } from "../../utils/events";
+import { formatHM } from "../../utils/format";
 
-export interface EventGroup {
-  events: EventLogItem[];
-  newest: number;
-}
-
-const categoryLabels: Record<EventCategory, string> = {
-  presence: "Presença", object: "Objeto", gesture: "Gesto", mode: "Modo",
-  rule: "Regra", device: "Dispositivo", energy: "Energia", system: "Outros",
-};
 const levelLabels = { info: "Informação", warning: "Aviso", error: "Erro" };
 const levelColors = { info: "blue", warning: "yellow", error: "red" };
-const resultLabels = { verified: "Confirmado", failed: "Falhou", unverified: "Sem confirmação", unsupported: "Não disponível" };
-const categoryOf = (event: EventLogItem) => event.category ?? "system";
-const timeLabel = (timestamp: string) => new Intl.DateTimeFormat("pt-PT", { timeStyle: "short" }).format(new Date(timestamp));
+
 export function EventItem({ group }: { group: EventGroup }) {
   const ordered = group.events;
 
@@ -23,7 +14,7 @@ export function EventItem({ group }: { group: EventGroup }) {
       {ordered.map((event) => <div key={event.id}>
         <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
           <Text size="sm" fw={500} style={{ minWidth: 0, overflowWrap: "anywhere" }}>{event.message}</Text>
-          <Group gap="xs" wrap="nowrap"><Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>{timeLabel(event.timestamp)}</Text>{event.result ? <Badge size="xs" color={resultColor(event.result)}>{resultLabels[event.result]}</Badge> : event.level !== "info" ? <Badge size="xs" color={levelColors[event.level]} variant="light">{levelLabels[event.level]}</Badge> : null}</Group>
+          <Group gap="xs" wrap="nowrap"><Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>{formatHM(event.timestamp)}</Text>{event.result ? <Badge size="xs" color={resultColor(event.result)}>{resultLabels[event.result]}</Badge> : event.level !== "info" ? <Badge size="xs" color={levelColors[event.level]} variant="light">{levelLabels[event.level]}</Badge> : null}</Group>
         </Group>
         <Accordion variant="contained" radius="sm" mt="xs">
           <Accordion.Item value={event.id}>
@@ -42,11 +33,4 @@ export function EventItem({ group }: { group: EventGroup }) {
       </div>)}
     </Stack>
   </Card>;
-}
-
-function resultColor(result: NonNullable<EventLogItem["result"]>) {
-  if (result === "verified") return "teal";
-  if (result === "failed") return "red";
-  if (result === "unsupported") return "gray";
-  return "yellow";
 }
