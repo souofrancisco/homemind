@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost,https://localhost"
     # Vídeo: URL RTSP ou caminho de clip. Nunca logar nem devolver (pode conter credenciais).
     video_source: str = ""
-    video_sem_frame_s: float = 3.0  # sem frame há mais do que isto -> camara_ok False
+    video_sem_frame_s: float = 3.0  # sem frame há mais do que isto -> camara_ok False e reabre
+    video_reconexao_s: tuple[float, ...] = (1, 2, 4, 8, 10)  # esperas entre reaberturas
+    video_timeout_abrir_ms: int = 5000
     video_fps_max: float = 15.0  # cadência máxima do MJPEG de GET /api/video
     video_jpeg_qualidade: int = 80
 

@@ -10,6 +10,8 @@ credentials*.json
 *.sqlite
 *.sqlite3
 data/
+# clips de demo (podem conter pessoas): nunca versionar
+app/clips/
 # python
 __pycache__/
 .venv/

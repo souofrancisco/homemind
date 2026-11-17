@@ -7,11 +7,11 @@ from fastapi import Depends, HTTPException
 
 from homemind.contracts.video import FonteVideo
 from homemind.core.config import get_settings
-from homemind.features.video.fonte import FonteRtsp
+from homemind.features.video.fonte import FonteClip, FonteRtsp, criar_fonte
 
 LIMITE = "frame"
 
-_fonte: FonteRtsp | None = None
+_fonte: FonteRtsp | FonteClip | None = None
 _fonte_lock = threading.Lock()
 
 
@@ -23,9 +23,14 @@ def get_fonte() -> FonteVideo:
         raise HTTPException(503, "Fonte de vídeo não configurada")
     with _fonte_lock:
         if _fonte is None:
-            _fonte = FonteRtsp(settings.video_source, sem_frame_s=settings.video_sem_frame_s)
+            _fonte = criar_fonte(settings)
             _fonte.iniciar()
         return _fonte
+
+
+def camara_ok() -> bool:
+    """Sinal de vida para `GET /status`. False se a fonte não está configurada ou iniciada."""
+    return _fonte is not None and _fonte.camara_ok
 
 
 Fonte = Annotated[FonteVideo, Depends(get_fonte)]
