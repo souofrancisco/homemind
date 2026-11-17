@@ -109,6 +109,9 @@ Prefixo `/api`. JSON UTF-8, `snake_case`, horas ISO 8601 UTC. Todas as rotas `/a
 | `POST` | `/api/households/{id}/notifications/{nid}/respond` | corpo `NotificationRespondIn` `{ "action_id": "mine"\|"other"\|"everyone"\|"unknown", "target_resident_id"?: uuid }` → `NotificationView` (com `voting`, votos anónimos); só inquilino elegível; **votação D-32**: um voto por pessoa, fecha quando a regra decide · `404 notification_not_found` · `403 forbidden_role` · `409 already_responded` (já votou ou votação fechada) · `409 notification_expired` · `400 invalid_request` (ação ou alvo inválido) |
 | `GET` | `/api/households/{id}/notification-preferences` | `NotificationPreferences` do próprio (por pessoa) · `403 forbidden_role` · `404 household_not_found` |
 | `PUT` | `/api/households/{id}/notification-preferences` | por casa; corpo `{ quiet_hours, disabled_kinds }` → `NotificationPreferences` · `400 invalid_request` (ex.: desligar `security_alert`) · `403` · `404` |
+| `POST` | `/api/households/{id}/bills/preview` | corpo `BillIn` → `BillPreview` (preço médio derivado, dias, parcela de energia); **não grava**: é a validação humana antes de confirmar. Só senhorio (`403` inquilino/operador) · `422 bill_inconsistent` com a razão (Conta Certa, P4, BILL-01) |
+| `POST` | `/api/households/{id}/bills` | corpo `BillIn` → `201 BillView` em `draft`; grava e emite `billing.bill_created` na mesma transação. Recusa (`422 bill_inconsistent`): período por terminar ou > 62 dias, fixa ≥ total, preço médio fora de 0,01–1,00 €/kWh, tarifa declarada que não fecha (folga 1 %, mín. 5 cêntimos), período sobreposto, fatura simulada numa casa real. Campos extra/em falta: `400` |
+| `GET` | `/api/households/{id}/bills` · `/api/households/{id}/bills/{bill_id}` | `[BillView]` / `BillView`; senhorio vê todas, inquilino só `finalized` (rascunho → `404 bill_not_found`); operador `403`; sem autor nem ids de terceiros |
 
 ### `HomeState`
 

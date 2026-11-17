@@ -94,7 +94,10 @@ Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `
 | `features/billing/attribution.py`: primeira decisão (quarto → morador; comum → perguntar/igual) | IMPLEMENTADO (puro, sem persistência) |
 | `features/billing/allocation.py`: repartição + arredondamento + recibo por linhas | IMPLEMENTADO (puro, sem persistência) |
 | Votação da regra B (D-32) | IMPLEMENTADO no contrato (`confirmation_outcome`); consumo do `outcome` em billing: PLANEADO |
-| Entrada da fatura (BILL-01), fecho e persistência (BILL-04), orçamentos, alertas | PLANEADO |
+| Entrada da fatura (BILL-01): `BillIn` → pré-visualização → rascunho em `billing_bill` (migração `0100`), `billing.bill_created`, leitura por papel | IMPLEMENTADO (`features/billing/{bills,router}.py`) |
+| Fecho e persistência das alocações (BILL-04), orçamentos, alertas | PLANEADO |
+
+Validação da fatura (PROPOSTA de limiares, ajustáveis em `bills.py`): preço médio 0,01–1,00 €/kWh (apanha erros de unidades), período ≤ 62 dias e já terminado, tarifa declarada opcional que tem de fechar com `total − fixa` (folga de 1 %, mínimo 5 cêntimos). Foto/PDF lido por LLM fica para depois e passará pela mesma pré-visualização.
 
 ## Ficheiros novos previstos
 

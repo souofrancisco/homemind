@@ -155,7 +155,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | Método | Rota | Papéis | Notas |
 |---|---|---|---|
 | `GET` | `/api/households/{id}/attributions?event_id` | T | |
-| `GET` `POST` | `/api/households/{id}/bills` | L (criar), T (ler própria parte) | Entrada manual no MVP |
+| `GET` `POST` | `/api/households/{id}/bills` (+ `POST …/bills/preview`, `GET …/bills/{bill_id}`) | L (criar, ver todas), T (só finalizadas) | **IMPLEMENTADO (BILL-01):** `BillIn` → `BillPreview` / `BillView`; ver [api-implementada.md](api-implementada.md) |
 | `POST` | `/api/bills/{id}/finalize` | L | Calcula e fixa; `409 bill_finalized` se repetido |
 | `GET` | `/api/bills/{id}/allocations` | L (totais por quarto), T (a sua) | |
 | `GET` | `/api/bills/{id}/receipt/me` | T | Recibo explicado |
