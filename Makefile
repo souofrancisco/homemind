@@ -35,7 +35,7 @@ smoke:  ## sobe a stack, valida backend/frontend/proxy, desliga
 	export BACKEND_PORT=$${BACKEND_PORT:-18000} FRONTEND_PORT=$${FRONTEND_PORT:-15173}; \
 	docker compose -f app/compose.yaml up --build -d --wait --wait-timeout 180 && \
 	curl -fsS localhost:$$BACKEND_PORT/healthz | grep -q '"status":"ok"' && \
-	curl -fsS localhost:$$FRONTEND_PORT/ | grep -q 'HomeMind Spaces' && \
+	curl -fsS localhost:$$FRONTEND_PORT/ | grep -q 'ObjectOS' && \
 	curl -fsS localhost:$$FRONTEND_PORT/healthz | grep -q '"status":"ok"' && echo "smoke OK"
 
 check: lint build  ## tudo o que o CI exige (sem Docker, sem testes)

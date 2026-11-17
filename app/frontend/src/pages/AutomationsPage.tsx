@@ -1,5 +1,6 @@
-import { Alert, Badge, Button, Card, Group, Loader, SimpleGrid, Stack, Switch, Text, Title } from "@mantine/core";
+import { Alert, Badge, Button, Card, Group, Loader, SegmentedControl, SimpleGrid, Stack, Switch, Text, TextInput, Title } from "@mantine/core";
 import { IconArrowRight, IconPlus } from "@tabler/icons-react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRules } from "../hooks/useRules";
 import { useSuggestions } from "../hooks/useSuggestions";
@@ -8,6 +9,11 @@ export default function AutomationsPage() {
   const navigate = useNavigate();
   const { rules, loading, failed, toggle } = useRules();
   const { available, suggestions, ignore } = useSuggestions();
+  // Pesquisa e filtro por estado (de feat/issue-24-objectos-dashboard-automations).
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("all");
+  const needle = query.trim().toLocaleLowerCase("pt-PT");
+  const visible = rules.filter((rule) => (status === "all" || (status === "on") === rule.enabled) && (!needle || `${rule.nome} ${rule.objeto}`.toLocaleLowerCase("pt-PT").includes(needle)));
 
   return <Stack gap="xl">
     <Group justify="space-between" align="flex-start">
@@ -17,8 +23,10 @@ export default function AutomationsPage() {
 
     <section>
       <Title order={4} mb="sm">As tuas automações</Title>
+      {rules.length > 1 ? <Group mb="sm" align="flex-end"><TextInput aria-label="Pesquisar regras" placeholder="Pesquisar regras" value={query} onChange={(event) => setQuery(event.currentTarget.value)} style={{ flex: 1, minWidth: 180 }} /><SegmentedControl aria-label="Filtrar estado das regras" value={status} onChange={setStatus} data={[{ label: "Todas", value: "all" }, { label: "Ativas", value: "on" }, { label: "Inativas", value: "off" }]} /></Group> : null}
       {failed ? <Alert color="red" title="Não foi possível carregar as automações">Tenta novamente mais tarde.</Alert> : loading ? <Group><Loader size="sm" /><Text size="sm" c="dimmed">A carregar…</Text></Group> : rules.length ? <Stack gap="sm">
-        {rules.map((rule) => <Card key={rule.id} withBorder radius="md" padding="md">
+        {!visible.length ? <Text c="dimmed">Nenhuma regra corresponde ao filtro.</Text> : null}
+        {visible.map((rule) => <Card key={rule.id} withBorder radius="md" padding="md">
           <Group justify="space-between" wrap="nowrap" align="center">
             <div style={{ minWidth: 0 }}>
               <Text fw={600}>{rule.nome}</Text>

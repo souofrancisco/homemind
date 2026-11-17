@@ -22,8 +22,9 @@ export function useRules() {
   const toggle = async (rule: HomeRule, enabled: boolean) => {
     setBusy(true);
     try {
-      const updated = await homeService.setRuleEnabled(rule.id, enabled);
-      setRules((items) => items.map((item) => item.id === rule.id ? updated : item));
+      await homeService.setRuleEnabled(rule.id, enabled);
+      // Ativar uma regra desativa as outras do mesmo objeto no backend: recarregar a lista.
+      setRules(await homeService.getRules());
     } catch (error) { fail("Não foi possível atualizar", error); }
     finally { setBusy(false); }
   };
@@ -54,9 +55,9 @@ export function useNewRule() {
     try {
       const result = await homeService.proposeRule(text.trim());
       setProposal({ draft: result.proposal, summary: result.summary });
-    } catch {
+    } catch (error) {
       setProposal(null);
-      setProposalError("Não foi possível criar a proposta. Podes escolher um exemplo para começar.");
+      setProposalError(`${message(error)} Podes escolher um exemplo para começar.`);
     } finally { setBusy(false); }
   };
 
