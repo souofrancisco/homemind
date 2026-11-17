@@ -8,8 +8,8 @@ Código em `app/backend/src/homemind/contracts/`. Só dados e interfaces: nenhum
 FonteVideo ──FrameVideo──▶ visão (P1) ──FrameDeteccoes──▶ gestos/presença (P2) ──Evento──▶ motor (P4)
 (video.py)                              (visao.py)                              (eventos.py)
 
-motor (P4) ──Home──▶ FakeHome | McpHome (P3)        motor (P4) ──Status/MensagemWS/Regra──▶ UI (P5)
-           (home.py)                                           (painel.py, regras.py)
+motor (P4) ──Home──▶ FakeHome | McpHome (P3)        motor (P4) ──REST + WS /api/ws──▶ UI (P5)
+           (home.py)                                    (regras.py; HomeState etc. em features/engine)
 ```
 
 ## `video.py` — fonte de vídeo (P1)
@@ -60,32 +60,13 @@ for frame in sequencia_simulada(20, fps=10, classe="caneca", levantado=True):
     ...  # P2: alimentar o detetor de gestos
 ```
 
-## `home.py` — interface Home (P3 implementa, P4 usa)
+## `home.py`, `regras.py` e API do motor → ver [frontend-api-contract.md](frontend-api-contract.md) (v3)
 
-```python
-class Home(Protocol):
-    async def definir_lampada(self, ligada: bool, cor: str | None, brilho: int | None) -> bool: ...
-    async def definir_tomada(self, ligada: bool) -> bool: ...
-    async def ler_consumo(self) -> float: ...   # W
-    async def estado(self) -> EstadoCasa: ...
-```
+Definidos pelos donos (P3: `Home`/`EstadoCasa`; P4: regras e API; P5: consumo no frontend) e já usados pelo frontend da P5.
 
-- `definir_*` devolve `True` só se a ação foi aplicada **e confirmada**; `cor`/`brilho` a `None` = não alterar.
-- `EstadoCasa`: `lampada` (`ligada`, `cor`, `brilho` 0–100), `tomada` (`ligada`), `consumo_w` (ou `None`), `simulado` (`True` em FakeHome).
-- `cor` é texto livre (ex.: `branco_quente`) até P3 documentar as capacidades reais em `docs/mcp-capabilities.md`.
-
-## `regras.py` — regras (P4, editadas pela UI de P5)
-
-`Regra`: `id` (minúsculas, dígitos, `_`/`-`), `objeto`, `nome`, `acoes` (≥1), `ativa` (por omissão `true`). Cada ação é `AcaoLampada` (`ligada`, `cor`, `brilho`) ou `AcaoTomada` (`ligada`), distinguidas por `dispositivo`. Qualquer outro dispositivo é rejeitado. O JSON de exemplo do plano §3 valida tal como está.
-
-`PedidoRegra` (`texto`) e `PropostaRegra` (`regra`, `descricao`) são o corpo e a resposta de `POST /rules/parse`.
-
-## `painel.py` — backend → frontend (P4 → P5)
-
-- `Status` (`GET /status`): `camara_ok`, `mcp_ok`, `home_backend` (`fake` = SIMULADO, `mcp` = REAL).
-- `WS /ws` envia mensagens discriminadas por `tipo`:
-  - `MensagemEstado` (`tipo="estado"`): fotografia completa, ao ligar e a cada mudança — `estado` (`inativo`/`ativo`/`em_espera`/`suspenso`), `modo` (id da regra), `modo_nome`, `ha_alguem`, `segundos_para_suspender`, `status`, `casa`, `poupanca_wh`, `poupanca_eur`.
-  - `MensagemRegisto` (`tipo="registo"`): uma `LinhaRegisto` (`hora`, `texto` em PT-PT). É também o formato de cada linha de `events.jsonl`.
+- `home.py` (P3): `Home` com os 4 métodos (`ler_consumo() -> float | None`; `None` = indisponível). `EstadoCasa` com `backend` (`fake` = SIMULADO), `mcp_ok`, `lampada` (`ligada`/`cor`/`rgb`/`brilho`, `None` = desconhecido), `tomada` (`ligada`, `consumo_w`, `consumo_lido_em`), `atualizado_em`, `aviso`. Cores: lista fechada `Cor` + `CORES` (RGB).
+- `regras.py` (P4): `Rule` (`id`, `objeto`, `nome`, `enabled`, `acoes`), com `AcaoLampada` | `AcaoTomada` discriminadas por `dispositivo` (proposta da P1, mantida); sem campos extra; no máximo uma ação por dispositivo.
+- Modelos só do frontend (`HomeState`, `EventLogItem`, `OffResult`, mensagens WS `{type, data}`) vivem em `features/engine/` e chegam ao TS por `make contracts`.
 
 ## Gestos, presença e fila (P2) — semântica acordada na proposta
 
@@ -96,7 +77,7 @@ Detetor.detetar(FrameVideo) ─▶ FrameDeteccoes ─▶ ProcessadorEventos.proc
 ```
 
 - **Thread de visão (P1)** chama `detetar` e `processar` em série e entrega cada evento a `publicar`. O afinador offline usa as mesmas interfaces sobre o clip, sem fila.
-- **Fila (P4)**: P4 cria a `asyncio.Queue[Evento]` (e o loop) no arranque e entrega-a a P2, que implementa `PublicadorEventos` com `loop.call_soon_threadsafe(fila.put_nowait, evento)`. Ordem preservada, sem bloquear. No encerramento P4 pára o consumo e P1 pára a thread; eventos já na fila podem ser descartados.
+- **Fila (P4)**: P4 cria a `asyncio.Queue[Evento]` (e o loop) no arranque (`app.state.engine.fila`, `app.state.engine.loop`; atalho `engine.publicar_de_thread(evento)`) e entrega-a a P2, que implementa `PublicadorEventos` com `loop.call_soon_threadsafe(fila.put_nowait, evento)`. Ordem preservada, sem bloquear. No encerramento P4 pára o consumo e P1 pára a thread; eventos já na fila podem ser descartados.
 - **Só frames reais**: P1 só emite `FrameDeteccoes` para frames novos (`FrameVideo.indice` mudou). Com `camara_ok=False` não emite nada; P2 não infere ausência de pessoas sem frames, só `pessoas == ()` em frames reais durante 3 s.
 - **Tempo**: janelas, cooldown (3 s por classe) e ausência (3 s) usam `t` monotónico; funcionam com fps variável. `hora` dos eventos = `frame.hora` do frame que confirmou o gesto/transição (UTC, com fuso).
 - **Gesto**: um `ObjetoLevantado` por gesto confirmado, mesmo que o modo já esteja ativo (o motor ignora e regista «já ativo»). Várias pessoas: serve o pulso de qualquer uma, sem as identificar nem contar.
@@ -104,26 +85,15 @@ Detetor.detetar(FrameVideo) ─▶ FrameDeteccoes ─▶ ProcessadorEventos.proc
 - **Formato de repetição offline**: um `FrameDeteccoes` por linha em JSON (`model_dump_json()`, sem imagens) permite afinar sem GPU nem câmara.
 - **Limiares** em `core/config.py` (P2 acrescenta os campos: 0,6×ombros, confiança 0,5, 80 %/1 s, cooldown 3 s, ausência 3 s, 2 frames).
 
-## Rotas e modelos (proposta; prefixos por confirmar)
+## Rotas
 
-| Rota | Entrada | Saída | Dono |
-|---|---|---|---|
-| `GET /video` | — | MJPEG `multipart/x-mixed-replace` | P1 |
-| `WS /ws` | — | `MensagemEstado` \| `MensagemRegisto` | P4 |
-| `GET /status` | — | `Status` | P4 |
-| `GET /rules` | — | `list[Regra]` | P4 |
-| `POST /rules` | `Regra` | `Regra` | P4 |
-| `DELETE /rules/{id}` | — | 204 | P4 |
-| `POST /rules/parse` | `PedidoRegra` | `PropostaRegra` | P4 |
-| `POST /off` | — | `MensagemEstado` | P4 |
-
-Nenhuma destas rotas existe ainda; este PR só define os modelos.
+Prefixo `/api` (exceto `/healthz`). Lista completa, formatos e erros em [frontend-api-contract.md](frontend-api-contract.md). `GET /video` (MJPEG) é da P1.
 
 ## Por decidir com a equipa
 
 - ~~P2: `t` + `hora`; coordenadas em píxeis~~ — P2: servem ambos.
-- P4: confirmar a ponte da fila e a presença inicial `False` descritas acima.
-- P3: `cor` como texto livre ou lista fechada, depois da descoberta MCP? `ler_consumo()` sem leitura devolve `0.0` ou lança erro?
-- P4: uma regra por objeto, ou várias com `ativa`? Ativar/desativar faz-se com `POST /rules` (substitui pelo `id`)?
-- P4/P5: `MensagemEstado` completa a cada mudança chega para o temporizador, ou a UI precisa de ticks por segundo?
-- P5: `POST /off` devolve o estado novo ou só 204?
+- ~~P4: ponte da fila e presença inicial `False`~~ — confirmado (motor aceita `Presenca(True)` no arranque).
+- ~~P3: `cor` livre ou lista; `ler_consumo()` sem leitura~~ — lista fechada `Cor`; `None` = indisponível.
+- ~~P4: uma regra por objeto?~~ — várias regras por objeto, no máximo uma `enabled`; `PATCH /api/rules/{id}` ativa/desativa.
+- ~~P4/P5: temporizador~~ — `waiting_remaining_seconds` no `home_state`; a UI conta localmente.
+- ~~P5: `POST /off`~~ — `200 OffResult` (`success`, `devices` off/unknown).
