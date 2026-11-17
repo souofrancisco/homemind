@@ -13,6 +13,12 @@ dependencies = [
   "openai==3.52.0",
 ]
 
+[project.optional-dependencies]
+# Visão local (YOLO11 + pose + ByteTrack). Pesado (torch): fora do CI e do Docker por omissão.
+# Instalar: uv sync --extra visao   (ultralytics é AGPL-3.0; ver features/visao/README.md)
+# `lap`: associação do ByteTrack (o ultralytics tentaria instalá-lo com pip em runtime).
+visao = ["ultralytics==8.4.215", "lap==0.5.14"]
+
 [dependency-groups]
 dev = ["pytest==8.3.4", "httpx==0.28.1", "ruff==0.8.6"]
 
@@ -34,3 +40,8 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+
+[tool.uv]
+# ultralytics depende de `opencv-python` (com GUI), que escreve no mesmo pacote `cv2` que o
+# `opencv-python-headless` usado aqui. Anula-se aquele: só fica o headless (servidor sem GUI).
+override-dependencies = ["opencv-python; sys_platform == 'never'"]
