@@ -5,7 +5,7 @@ A leitura para autorização está em `core/access.py`.
 """
 
 import sqlite3
-from datetime import date
+from datetime import UTC, date, datetime
 
 from homemind.contracts import fixtures
 from homemind.contracts.household import (
@@ -38,10 +38,12 @@ def insert_room(conn: sqlite3.Connection, r: Room) -> None:
     )
 
 
-def insert_resident(conn: sqlite3.Connection, r: Resident) -> None:
+def insert_resident(
+    conn: sqlite3.Connection, r: Resident, *, created_at: datetime | None = None
+) -> None:
     conn.execute(
         "INSERT INTO resident (id, display_name, auth_subject, created_at) VALUES (?,?,?,?)",
-        (str(r.id), r.display_name, r.auth_subject, fixtures.T0.isoformat()),
+        (str(r.id), r.display_name, r.auth_subject, (created_at or datetime.now(UTC)).isoformat()),
     )
 
 
@@ -85,7 +87,7 @@ def seed_demo(conn: sqlite3.Connection) -> bool:
     for room in fixtures.rooms():
         insert_room(conn, room)
     for resident in fixtures.residents():
-        insert_resident(conn, resident)
+        insert_resident(conn, resident, created_at=fixtures.T0)
     for m in fixtures.memberships():
         insert_membership(conn, m)
     return True

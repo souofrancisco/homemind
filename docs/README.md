@@ -33,6 +33,7 @@ Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home).
 | [event-flow.md](architecture/event-flow.md) | Fluxo de eventos, confirmação de consumo, cálculo da fatura (Mermaid) | PLANEADO |
 | [migration.md](architecture/migration.md) | Matriz KEEP / ADAPT / REPLACE / REMOVE e plano de migração | PLANEADO |
 | [api-implementada.md](architecture/api-implementada.md) | API REST/WebSocket que **existe hoje** no código (ObjectOS) | IMPLEMENTADO |
+| [house-02-memberships.md](architecture/house-02-memberships.md) | HOUSE-02: convites, identidade Authentik, memberships e gate real de email verificado | IMPLEMENTADO na branch do PR #143; integração Authentik pendente |
 
 ### Módulos (`modules/`)
 

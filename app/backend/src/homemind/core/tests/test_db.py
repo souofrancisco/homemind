@@ -24,7 +24,11 @@ def test_migrate_creates_schema_and_is_idempotent(db):
     names = {
         r["name"] for r in db.run_sync(lambda c: c.execute("SELECT name FROM schema_migration"))
     }
-    assert {"0001_core_households.sql", "0002_core_events.sql"} <= names
+    assert {
+        "0001_core_households.sql",
+        "0002_core_events.sql",
+        "0003_core_membership_invitations.sql",
+    } <= names
     assert migrate(db) == []  # repetir não faz nada
     tables = {
         r["name"]
