@@ -14,7 +14,7 @@ from typing import Annotated
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 
 from homemind.contracts.billing import (
     BillAllocation,
@@ -23,6 +23,8 @@ from homemind.contracts.billing import (
     BillPreview,
     BillStatus,
     BillView,
+    BudgetIn,
+    BudgetStatus,
     LandlordBillView,
 )
 from homemind.contracts.common import new_id, stable_id
@@ -39,17 +41,18 @@ from homemind.core.access import (
 )
 from homemind.core.db import Database
 from homemind.core.events import EventBus, append_event
-from homemind.features.billing import attributor, bills, closing
+from homemind.features.billing import attributor, bills, budgets, closing
 
 log = logging.getLogger(__name__)
 EXPIRY_INTERVAL_S = 60.0
 
 
 async def run_expiry(db: Database, bus: EventBus, now: datetime) -> int:
-    """Fecha os pedidos «De quem é esta conta?» sem decisão no prazo (→ por todos)."""
+    """Tarefa periódica: fecha os pedidos «De quem é esta conta?» sem decisão no prazo (→ por
+    todos) e reavalia os orçamentos do mês (a base estimada cresce com os dias)."""
 
     def work(conn):
-        events = attributor.expire_pending(conn, now)
+        events = attributor.expire_pending(conn, now) + budgets.evaluate_all(conn, now)
         for e in events:
             append_event(conn, e)  # mesma transação do efeito
         return events
@@ -64,6 +67,7 @@ async def run_expiry(db: Database, bus: EventBus, now: datetime) -> int:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     clock = app.dependency_overrides.get(get_clock, get_clock)()
     app.state.bus.subscribe(attributor.CONSUMER, attributor.handle, attributor.EVENT_TYPES)
+    app.state.bus.subscribe(budgets.CONSUMER, budgets.handle, budgets.EVENT_TYPES)
 
     async def expiry_loop() -> None:
         while True:
@@ -276,3 +280,56 @@ async def my_receipt(bill_id: UUID, access: ReceiptAccess, db: DbDep) -> BillAll
         return await db.run(read)
     except LookupError:
         raise _not_found() from None
+
+
+# --- orçamento pessoal (ALERT-01) --------------------------------------------------------------
+
+BudgetRead = Annotated[HouseholdAccess, Depends(require_access(Resource.budget))]
+BudgetWrite = Annotated[HouseholdAccess, Depends(require_access(Resource.budget, Operation.write))]
+
+
+def _period_or_current(conn, access: HouseholdAccess, period: str | None, now) -> str:
+    current = budgets.current_period(conn, access.household_id, now)
+    if period is not None and period < current:
+        raise ValueError("não se definem orçamentos de meses passados")
+    return period or current
+
+
+@router.get("/households/{household_id}/budgets/me")
+async def my_budget(
+    access: BudgetRead,
+    db: DbDep,
+    clock: ClockDep,
+    period: Annotated[str | None, Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")] = None,
+) -> BudgetStatus:
+    """O meu objetivo do mês e quanto já gastei (todos os custos, D-31). Sem dados de custo:
+    `spent_cents=null` (desconhecido), nunca 0 €."""
+    now = clock()
+
+    def read(conn):
+        p = period or budgets.current_period(conn, access.household_id, now)
+        return budgets.status(conn, access.household_id, access.resident_id, p, now)
+
+    return await db.run(read)
+
+
+@router.put("/households/{household_id}/budgets/me")
+async def set_my_budget(
+    body: BudgetIn, access: BudgetWrite, db: DbDep, clock: ClockDep, request: Request
+) -> BudgetStatus:
+    """Definir ou redefinir (reset explícito dos avisos). Avalia já: se o gasto atual passa um
+    limiar, o aviso sai logo."""
+    now = clock()
+
+    def work(conn):
+        p = _period_or_current(conn, access, body.period, now)
+        budgets.set_personal(
+            conn, access.household_id, access.resident_id, p, body.limit_cents, body.thresholds, now
+        )
+        events = budgets.evaluate(conn, access.household_id, p, now)
+        return events, budgets.status(conn, access.household_id, access.resident_id, p, now)
+
+    try:
+        return await _commit(request, db, work)
+    except ValueError as e:
+        raise HTTPException(400, {"code": "invalid_request", "message": str(e)}) from None

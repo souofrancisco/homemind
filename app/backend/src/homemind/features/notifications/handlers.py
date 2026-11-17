@@ -33,6 +33,9 @@ ATTRIBUTION_EVENT_TYPES = ("billing.attribution_changed",)
 ALLOCATION_CONSUMER = "notifications.allocation_published"
 ALLOCATION_EVENT_TYPES = ("billing.allocation_published",)
 
+BUDGET_CONSUMER = "notifications.budget_threshold"
+BUDGET_EVENT_TYPES = ("alerts.threshold_crossed",)
+
 Handler = Callable[[sqlite3.Connection, StoredEvent], list[de.DomainEvent]]
 
 
@@ -123,12 +126,38 @@ def make_allocation_handler(clock: Callable[[], datetime]) -> Handler:
     return handler
 
 
-# Todos os consumidores da feature: (nome, fábrica, tipos). `alerts.*` NÃO está aqui de propósito
-# (BudgetThreshold e AlertRaisedData ainda não chegam para escrever o aviso).
+def make_budget_handler(clock: Callable[[], datetime]) -> Handler:
+    """`alerts.threshold_crossed` (ALERT-01) -> aviso pessoal ao dono do orçamento."""
+
+    def handler(conn: sqlite3.Connection, stored: StoredEvent) -> list[de.DomainEvent]:
+        ev = stored.event
+        if not isinstance(ev, de.AlertsThresholdCrossed):
+            return []
+        d = ev.data
+        out = _service(conn, clock).on_budget_threshold(
+            source_event_id=ev.id,
+            household_id=ev.household_id,
+            resident_id=d.resident_id,
+            budget_id=d.budget_id,
+            pct=d.pct,
+            spent_cents=d.spent_cents,
+            limit_cents=d.limit_cents,
+            forecast_cents=d.forecast_cents,
+            correlation_id=ev.correlation_id,
+            provenance=ev.provenance,
+        )
+        return list(out.events)
+
+    return handler
+
+
+# Todos os consumidores da feature: (nome, fábrica, tipos). `alerts.alert_raised` ainda NÃO está
+# aqui de propósito (AlertRaisedData ainda não chega para escrever o aviso).
 CONSUMERS: tuple[tuple[str, Callable[[Callable[[], datetime]], Handler], tuple[str, ...]], ...] = (
     (CONFIRMATION_CONSUMER, make_confirmation_handler, CONFIRMATION_EVENT_TYPES),
     (PRESENCE_CHECK_CONSUMER, make_presence_check_handler, PRESENCE_CHECK_EVENT_TYPES),
     (SAFETY_ALERT_CONSUMER, make_safety_alert_handler, SAFETY_ALERT_EVENT_TYPES),
     (ATTRIBUTION_CONSUMER, make_attribution_handler, ATTRIBUTION_EVENT_TYPES),
     (ALLOCATION_CONSUMER, make_allocation_handler, ALLOCATION_EVENT_TYPES),
+    (BUDGET_CONSUMER, make_budget_handler, BUDGET_EVENT_TYPES),
 )
