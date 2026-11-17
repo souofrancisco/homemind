@@ -201,3 +201,24 @@ O servidor só envia notificações do utilizador autenticado (pessoais) e da su
 ## 9. Pontos para revisão da equipa (DECISÃO PENDENTE)
 
 Prioridade para aprovar antes de implementar os módulos: ver [decisions.md](../decisions.md) D-23…D-30 e P-16…P-21. Resumo: (1) `Provenance` em duas dimensões; (2) Wh inteiros + milicêntimos; (3) semântica do barramento; (4) 404 vs 403 e membership por datas; (5) `None` em energia/custo; (6) regras de resposta das notificações; (7) OpenAPI por `OPENAPI_MODELS`; (8) nenhuma alteração ao código ObjectOS de domínio; (9) **sem dependências novas**; (10) quem aprova cada pendência.
+## 10. HOUSE-04 — extensão de contratos (branch `feat/house-04-policies`)
+
+**Implementado no PR de revisão, não integrado com P1/P3/P4 na aplicação:**
+
+- `contracts/policy.py`: `PolicyVersion` (versão, `valid_from`, regra
+  A/B/C, limiar, timeout, fallback `equal`), `PolicyDecision` (estado,
+  motivo, alvo, método, prazo, `ConfirmationRequest` opcional).
+- Enum de P4 `AttributionMethod` acrescenta `equal_rule` como valor
+  adicional compatível; `equal_fallback` mantém semântica de fallback.
+- `confirmation_intent` constrói `billing.confirmation_needed` existente,
+  com id determinístico; P4 é o produtor efetivo no barramento.
+  `NotificationResponse` e `notification.responded` não foram alterados.
+- `as_attribution` devolve apenas o DTO `Attribution`, sem persistência
+  nem cálculo: P4 controla a constraint `UNIQUE(active)` e os eventos
+  `billing.attribution_changed`.
+- **Sem novos eventos/rotas de domínio e sem alterações aos eventos F0.**
+  P-03 (quem pode responder/limiar/timeout) continua sujeito a acordo da equipa;
+  a implementação segue os defaults tipados de F0 (50 cêntimos / 24 h).
+
+Ver [households.md](../modules/households.md) para estados, transições,
+exemplos de integração e garantias de idempotência.
