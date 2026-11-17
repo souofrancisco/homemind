@@ -83,9 +83,10 @@ Na resposta real da tomada (`get_device_details`), foram observadas as capabilit
 `additionalEnergyConsumption`, `instantCurrent`, `instantPower`, `instantVoltage`, `multiPower`,
 `power`, `todayConsumption` e `yesterdayConsumption`. `power` usa `availableValues: ["on",
 "off"]`. `instantPower` inclui um valor numérico e min/max, mas a resposta e o schema MCP não
-declaram unidade. Por isso o estado ObjectOS mantém `consumo_w: null` até a unidade ser confirmada;
-não converte nem apresenta o valor bruto como watts. A leitura é consultada em polling de 5 s e
-`ler_consumo()` apenas devolve o cache.
+declaram unidade. A unidade foi **confirmada em W** por medição (ver «Consumo (`instantPower`, #12)»
+abaixo), mas o estado ObjectOS só converte o valor se `MCP_INSTANTPOWER_UNIT` estiver definida:
+sem ela `consumo_w` mantém-se `null` e o valor bruto não é apresentado como watts. A leitura é
+consultada em polling de 5 s e `ler_consumo()` apenas devolve o cache.
 
 Na resposta real da lâmpada (`get_device_details`), foram observadas:
 
@@ -97,26 +98,62 @@ Na resposta real da lâmpada (`get_device_details`), foram observadas:
 | `workMode` | valores disponíveis incluem `colour`, `music`, `white`, `scene` |
 | `temperature` | número, min 0 e max 100; não é usado como brilho nem controlado |
 
-## Consumo (`instantPower`, #12) — evidência e bloqueio
+## Consumo (`instantPower`, #12) — unidade confirmada em W (2026-11-17)
 
-Evidência recolhida em leitura (2026-11-17), incluindo `get_device_details` com `techInfo: true`:
+**Resultado: CONFIRMADO — `instantPower` em W, `instantVoltage` em V, `instantCurrent` em mA.**
+A confirmação é por medição com carga de referência; **não** foi confirmada pelos mentores da
+Altice nem por documentação do fabricante (a capability continua sem campo de unidade).
 
-- A capability traz `value`, `min: 0`, `max: 50000` e nenhum campo de unidade; `techInfo` não
-  devolve fabricante/modelo/unidade.
-- `instantVoltage` = 234 (max 50000) e `instantCurrent` = 0 (max 30000): as escalas dos máximos não
-  são coerentes com V/A/W inteiros; com 50000 em W seriam 50 kW, implausível para uma tomada.
-  Compatível com décimas de W, mW ou W — não distinguível.
-- Com a tomada em vazio `instantPower` = 0, logo não dá para comparar `V × I` com a potência.
+Evidência anterior, em leitura, incluindo `get_device_details` com `techInfo: true`: a capability
+traz `value`, `min: 0`, `max: 50000` e nenhum campo de unidade; `techInfo` não devolve
+fabricante/modelo/unidade. Os máximos (50000 em W seriam 50 kW) não permitiam concluir a unidade, e
+com a tomada em vazio (`instantPower` = 0) não havia como comparar com `V × I`.
 
-**Não confirmado:** a unidade de `instantPower`. `consumo_w` mantém-se `null` por omissão. Perguntar aos
-mentores da Altice: (1) a unidade de `instantPower` (W, 0,1 W ou mW) e das capabilities
-`instantVoltage`/`instantCurrent`; (2) se `todayConsumption` é kWh. Alternativa interna: ligar uma
-carga conhecida (ex.: 60 W) e comparar `instantPower` com `instantVoltage × instantCurrent`.
-Confirmada a unidade, define-se `MCP_INSTANTPOWER_UNIT` em `app/.env` (`W`, `dW` = 0,1 W ou `mW`)
-e reinicia-se o backend: o `McpHome` converte para W e `consumo_w` deixa de ser `null`. Se o MCP
-passar a declarar a unidade na capability (`unit`/`unitOfMeasure`), essa tem prioridade sobre a
-variável. Vazia (por omissão) = comportamento anterior (`null`, com aviso). O polling, timestamp
-e limpeza em falha já estão implementados.
+### Procedimento (só leitura; sem escritas físicas)
+
+Amostragem da tomada com `get_home_devices` (uma sessão MCP por amostra, a cada 3–4 s) e registo de
+`instantPower`, `instantVoltage` e `instantCurrent`. Cada carga foi ligada pelo operador; nenhuma
+foi comandada via MCP. O fator de potência aparente é `P / (V × I)` com `I` em mA.
+
+### Valores de referência observados
+
+| Carga | `instantPower` | `instantVoltage` | `instantCurrent` | V × I (VA) | P / (V × I) |
+|---|---:|---:|---:|---:|---:|
+| Portátil a 100 % com carregador de 45 W | 9–11 | 237 | 78–109 | 18,5–25,8 | 0,39–0,50 |
+| Extensão com vários carregadores | 77 | 239 | 602 | 143,9 | 0,54 |
+|  | 88 | 239 | 539 | 128,8 | 0,68 |
+|  | 141 | 238 | 777 | 184,9 | 0,76 |
+| **Cafeteira** (etiqueta 1850–2200 W, 220–240 V) | **2171** | **231** | **9334** | **2156** | **1,01** |
+
+- **Carga de referência:** a cafeteira, uma resistência, deu 2171 no `instantPower`, dentro do
+  intervalo da etiqueta (1850–2200 W). Em 0,1 W seriam 217 W (fora da etiqueta) e em mW seriam
+  2,17 W (absurdo).
+- **Coerência com V × I:** com a cafeteira `P / (V × I)` = 1,01 (carga resistiva, ~1; o desvio é
+  arredondamento de inteiros). Com cargas eletrónicas fica entre 0,39 e 0,76, normal para
+  carregadores; em 0,1 W seria ~0,05.
+- **Limitações:** a referência de potência da cafeteira é a etiqueta (nominal), não um segundo
+  medidor; o portátil e a extensão não têm potência nominal conhecida e só servem de coerência.
+
+### Cadência e frescura (observado; amostra pequena)
+
+- Os valores mudam quando a carga muda e depois ficam parados, tipicamente **~30 s** (transições
+  observadas aos ~30,7 s e ~30,3 s de intervalo, e 28–32 s noutras séries; houve duas mudanças com
+  ~4 s de intervalo). Não é um período fixo confirmado.
+- Consequência: a deteção de degraus (ENERGY-02) tem resolução da ordem de 30 s, não do polling de 3–5 s.
+- `lastCommunicationTime` tem resolução de minutos: não serve para medir frescura abaixo disso.
+- Latência por chamada com sessão nova: ~1,4–1,7 s (uma série) e 2,4–4,8 s (outra); varia com a rede.
+
+### Configuração
+
+Definir `MCP_INSTANTPOWER_UNIT=W` em `app/.env` e reiniciar o backend: o `McpHome` passa a converter
+para W e `consumo_w` deixa de ser `null`. Se o MCP passar a declarar a unidade na capability
+(`unit`/`unitOfMeasure`), essa tem prioridade sobre a variável. Vazia (por omissão) = `null`, com
+aviso. Valores `dW` (0,1 W) e `mW` continuam suportados mas ficam excluídos para este kit.
+
+### Por confirmar
+
+(1) Com os mentores da Altice: a unidade documentada de `instantPower`/`instantVoltage`/
+`instantCurrent`; (2) se `todayConsumption` é kWh (não medido aqui).
 
 ## Verificação física da lâmpada (#10/#11) — 2026-11-17, BLOQUEADA
 
@@ -163,8 +200,9 @@ Para ajudar a distinguir H1, quando uma escrita não é confirmada o `McpHome` a
 
 - Leituras de `get_home_devices` e `get_device_details` foram efetuadas. Escritas: ver a
   verificação física acima (sem efeito físico confirmado); a tomada não foi testada.
-- A unidade de `instantPower` não consta no schema/resposta observados. Consumo em watts não está
-  validado (só se obtém com `MCP_INSTANTPOWER_UNIT`, depois de confirmada a unidade).
+- A unidade de `instantPower` não consta no schema/resposta observados. Foi confirmada em W por
+  medição com carga de referência (ver «Consumo (`instantPower`, #12)»); o consumo em watts só se
+  obtém com `MCP_INSTANTPOWER_UNIT=W`.
 - `get_home_devices` e `get_device_details` devolvem as mesmas capabilities (comparado em leitura).
   O polling ObjectOS regista separadamente o instante da sua última leitura.
 - Latência observada: 1.ª chamada de cada sessão ~2 s, seguintes ~0,5–0,8 s.

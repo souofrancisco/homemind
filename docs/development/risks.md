@@ -6,7 +6,7 @@ Evidência detalhada em [integrations/mcp-capabilities.md](../integrations/mcp-c
 
 | Limite | Evidência | Impacto na Conta Certa | Mitigação |
 |---|---|---|---|
-| **Unidade de `instantPower` não declarada** (`value`, `min 0`, `max 50000`; sem unidade; `techInfo` não ajuda) | `mcp-capabilities.md` | Sem watts não há `measured` nem deteção de degraus real | Calibrar com carga conhecida; `MCP_INSTANTPOWER_UNIT`; simulador; potência nominal × estado (`estimated`) |
+| **Unidade de `instantPower` não declarada** (`value`, `min 0`, `max 50000`; sem unidade; `techInfo` não ajuda). **Confirmada em W por medição** (MCP-01 #12, 17/11/2026; referência = etiqueta da cafeteira, sem confirmação dos mentores). A tomada reporta de ~30 em ~30 s | `mcp-capabilities.md` | Com `MCP_INSTANTPOWER_UNIT=W` há `measured`; a resolução dos degraus é da ordem de 30 s (ENERGY-02) | `MCP_INSTANTPOWER_UNIT=W`; simulador e potência nominal × estado (`estimated`) como plano B |
 | **Uma só tomada com medição** | PDF §6.1, kit | Sem quartos medidos; identificação só por assinatura | Papel `main_meter`; quartos simulados; nunca prometer identificação perfeita |
 | **Escrita física não comprovada** na lâmpada (resposta «device updated», sem efeito; `lastCommunicationTime` antigo e a crescer) | PR #57, `mcp-capabilities.md` | Feedback por cor e «desligo?» não podem ser REAL | Verificar MCP-04/05; tratar como simulado até PASS |
 | **Tomada nunca testada** para escrita (`multiPower` com `switch_1`) | idem | Corte do aquecedor incerto; corta a extensão inteira | `make mcp-verify what=plug` com carga segura; dizer «em produção cada quarto tem a sua tomada» |
