@@ -28,6 +28,14 @@ Registo das decisões da reorganização (17/11/2026), reconciliadas com o docum
 | D-20 | Os dois conjuntos de valores do PDF mantêm-se como fixtures distintas: **A** = §7.1 (quatro componentes, 45,12/29,76/24,64/20,48 €; MVP) e **B** = «três regras» do §6.2 (46,80/27,60/24,40/21,20 €). Regras e total (120 €) diferentes; ambas ilustrativas | [billing.md](modules/billing.md) |
 | D-21 | A tarefa de preparação usa as issues existentes (#58–#132) e a roadmap #129; os IDs provisórios `C-Px-nn` de versões anteriores ficam substituídos pelos códigos `BASE-01`… ([backlog.md](development/backlog.md)). Hierarquia épico → tarefa por **sub-issues nativas** do GitHub; dependências por referência | Estado real do GitHub |
 | D-22 | **GitHub Project v2** único «Conta Certa — Desenvolvimento» (owner `souofrancisco`): **decidido, PENDENTE de criação** (falta o scope `project` do `gh`); atualizar com o URL quando existir | Gestão |
+| **D-23** | **Proveniência em duas dimensões:** `Provenance{origin: real\|simulated, kind: measured\|estimated\|inferred}`. Aceita as strings antigas por compatibilidade. **Substitui** o enum de 4 valores de D-04 na forma, não no objetivo (REAL vs SIMULADO) | Uma inferência sobre dados simulados não pode perder a origem. **PROPOSTA a rever** |
+| **D-24** | Energia em **Wh inteiros**, preço em **milicêntimos/kWh**, custo por `cost_cents()` (`Decimal`, um arredondamento); potência `float` W; ausência = `None`, nunca 0 | Faturas exatas; `float` acumulava erro. **PROPOSTA** |
+| **D-25** | **Barramento:** entrega pelo menos uma vez, efeito + `processed_event` na mesma transação, handlers síncronos, retries limitados e *dead letter*; `seq` atribuído pela base; sem dependências novas (SQLite da stdlib). Propõe a resolução de P-05 (**a rever**) | Garantias reais sem *exactly-once* nem infraestrutura. IMPLEMENTADA |
+| **D-26** | **Autorização:** papéis em `membership` (**proposta** para P-02), no servidor, por `PERMISSIONS` (recurso × operação × papel). Sem membership ativa e dentro de datas (fuso da casa) ⇒ **404** (não revela a casa); membro sem papel ⇒ 403 `forbidden_role` | Isolamento entre casas; privacidade do senhorio. IMPLEMENTADA, **a rever** |
+| **D-27** | `ConsumptionEvent` só tem ciclo de vida (`ongoing→closed\|discarded`, P1); a atribuição é de `Attribution` (P4) e a confirmação de `Notification` (P3). `cost_estimate` e `energy_wh` são `None` quando faltam dados | Um dono por estado; sem valores inventados. IMPLEMENTADA |
+| **D-28** | OpenAPI: `OPENAPI_MODELS` junta os modelos partilhados sem rotas falsas; `Device`, `Resident`, `Membership`, `PresenceEvent` e eventos de domínio **não** saem. Campos com omissão são obrigatórios nas respostas | O frontend só vê DTOs filtrados. IMPLEMENTADA |
+| **D-29** | Migrações por nome (`NNNN_modulo_desc.sql`), checksum, sem DROP; cada módulo cria as suas; `0001–0099` core, `0100…` módulos | Ramos paralelos sem colisão |
+| **D-30** | Estado de presença com valores `in`/`out`/`uncertain`; `PresenceEvent` só de Wi-Fi/manual (a câmara é anónima: `DoorCrossed`); Wi-Fi nunca produz `out`; `uncertain` exige `reason` | CLAUDE.md §Presença |
 
 ### Telegram → aplicação (D-01), mapeamento completo
 
@@ -68,10 +76,10 @@ Os PDFs continuam a mencionar Telegram; essa parte **não faz parte da arquitetu
 | ID | Questão | Quem decide | Antes de |
 |---|---|---|---|
 | P-01 | Estender o MCP a **leitura** de sensores de contacto/clima e/ou a segurança/cenários? (hoje proibido) | Equipa + mentores | Qualquer automação por sensores |
-| P-02 | Papéis (`landlord/tenant/operator`) na base de dados ou em grupos do Authentik? Recomendação: base de dados | P5 | C-P5-04 |
+| P-02 | **Proposta implementada (D-26), aguarda aprovação:** papéis na base de dados (`membership.role`) | Equipa | Antes de P1–P4 usarem as guardas |
 | P-03 | Quem pode responder a um pedido de confirmação e como se contesta (primeira resposta vence?); omissão da regra da casa (`ask`), limiar (0,50 €) e prazo (24 h) | Equipa | C-P3-02, C-P4-01 |
 | P-04 | O que vê um inquilino dos outros (totais da casa/quartos vs mais)? | Equipa | UI de consumo |
-| P-05 | Biblioteca de acesso a SQLite (stdlib `sqlite3` vs SQLAlchemy/aiosqlite) e política de migrações; nova dependência exige acordo | P5 | C-P5-02 |
+| P-05 | **Proposta implementada (D-25, D-29), aguarda aprovação:** `sqlite3` da stdlib, migrações por nome, sem dependências novas | Equipa | Antes de P1–P4 criarem tabelas |
 | P-06 | Fornecedor de LLM para o assistente e que dados de consumo podem sair; consentimento | Equipa | C-P3-04 |
 | P-07 | O «Desligar tudo» do ObjectOS mantém-se como ação manual? Para quem? | Equipa | C-P5-06 |
 | P-08 | Retenção de leituras e eventos (prazos com DPO) | Equipa | Piloto |
@@ -81,3 +89,9 @@ Os PDFs continuam a mencionar Telegram; essa parte **não faz parte da arquitetu
 | P-13 | Apagar os apontadores nos caminhos antigos (`docs/contratos.md`, …) quando o código, `.env.example` e CODEOWNERS forem atualizados | P5 | Fase M4 |
 | P-14 | Renomear «HomeMind» no Android e no pacote `homemind` (hoje mantido) | Equipa | Depois da demo |
 | P-15 | Validação jurídica (RGPD, câmara, repartição de custos) | Equipa/jurista | Piloto |
+| P-16 | Limiares de `stale` (leitura desatualizada) e de «aparelho identificado» (0,9?) | P1 | Motor de energia |
+| P-17 | Quem aceita o convite e como se liga `resident.auth_subject` ao primeiro login (o contrato prevê `invited`; **não há rota**) | P5 | HOUSE-01 |
+| P-18 | O inquilino pode ver aparelhos e donos de terceiros (`Appliance.ownership`)? Hoje `own` na matriz; «o aquecedor do Bruno» exige mostrar o nome | Equipa | APP-03 |
+| P-19 | Um morador «manual» (declarado) é `measured`? Hoje sim (`origin` real, `kind` measured) | P2 | PRES-03 |
+| P-20 | Retenção de `domain_event` e de `payload_json` (dados de presença/consumo); hoje sem expurgo | Equipa | Piloto (P-08) |
+| P-21 | Quem pode ler `domain_event` por API (hoje ninguém; a app recebe DTOs). Um endpoint de diagnóstico para o operador? | P5 | WS/notificações |

@@ -6,7 +6,7 @@ Fonte de verdade do produto: documento Conta Certa v5.1 ([`docs/references/Conta
 
 ## Estado do repositório (ler primeiro)
 
-- O **código na `main` é ainda o do ObjectOS**; o que está «planeado» nos documentos **não existe**. Ao escrever código, docs, PRs ou respostas, distinguir sempre **IMPLEMENTADO** de **PLANEADO**.
+- O **código de produto na `main` é ainda o do ObjectOS**; a **fundação F0** (contratos Pydantic, SQLite, barramento de eventos, guardas por papel, OpenAPI) está implementada (ver `docs/architecture/contracts.md`; decisões D-23…D-30 em revisão da equipa). O que está «planeado» nos documentos e não consta lá **não existe**. Ao escrever código, docs, PRs ou respostas, distinguir sempre **IMPLEMENTADO** de **PLANEADO**.
 - Antes de tocar no código antigo, ler [`docs/architecture/migration.md`](docs/architecture/migration.md) (KEEP/ADAPT/REPLACE/REMOVE/DEFER). **Não remover código ObjectOS** fora de um PR da BASE-04 (#74).
 - Índice da documentação: [`docs/README.md`](docs/README.md). Divisão por pessoa e ficheiros preferenciais: [`docs/development/team.md`](docs/development/team.md). GitHub Project «Conta Certa — Desenvolvimento»: **PENDENTE** (ainda não criado; ver `docs/decisions.md` D-22).
 
@@ -43,8 +43,8 @@ MCP Altice / FakeHome → collector (energia) → eventos persistentes (SQLite, 
 
 | Onde | O quê |
 |---|---|
-| `app/backend/src/homemind/core/` | `config.py` (Settings), `errors.py`, `features.py` (descoberta de routers) |
-| `…/contracts/` | Modelos partilhados |
+| `app/backend/src/homemind/core/` | `config.py`, `errors.py`, `features.py` (routers); F0: `db.py` + `migrations/`, `events.py` (barramento), `access.py` (papéis), `lifespan.py` |
+| `…/contracts/` | Modelos partilhados, eventos de domínio e `fixtures.py` (F0) |
 | `…/connectors/` | `fake_home`, `mcp_home`, `altice_auth` (OAuth), `write_grant`, `mcp_verify` |
 | `…/features/<nome>/` | `router.py`, lógica e `tests/` da feature |
 | `app/frontend/src/` | `app`, `pages`, `components`, `hooks`, `services`, `mocks`, `types` |
