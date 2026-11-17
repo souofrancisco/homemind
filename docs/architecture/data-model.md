@@ -1,6 +1,6 @@
 # Modelo de dados
 
-**Estado.** IMPLEMENTADAS em SQLite: `household`, `room`, `resident`, `membership`, `domain_event`, `processed_event`, `event_failure`, `schema_migration` (`core/migrations/0001`, `0002`). As restantes entidades têm **modelo Pydantic implementado** (`contracts/`) e tabelas **PLANEADAS**, criadas pelo dono de cada módulo (§Persistência). Convenções (IMPLEMENTADAS): IDs UUID (texto); instantes UTC com fuso; **dinheiro em cêntimos inteiros** (`*_cents`); **energia em Wh inteiros** (`energy_wh`); **potência em W** (`float`); preço em **milicêntimos/kWh**; ausência de medição = `NULL`/`None`, nunca 0; nomes em inglês `snake_case`; texto de UI em PT-PT.
+**Estado.** IMPLEMENTADAS em SQLite: `household`, `room`, `resident`, `membership`, `membership_invitation` (HOUSE-02 nesta branch), `domain_event`, `processed_event`, `event_failure`, `schema_migration` (`core/migrations/0001`, `0002`). As restantes entidades têm **modelo Pydantic implementado** (`contracts/`) e tabelas **PLANEADAS**, criadas pelo dono de cada módulo (§Persistência). Convenções (IMPLEMENTADAS): IDs UUID (texto); instantes UTC com fuso; **dinheiro em cêntimos inteiros** (`*_cents`); **energia em Wh inteiros** (`energy_wh`); **potência em W** (`float`); preço em **milicêntimos/kWh**; ausência de medição = `NULL`/`None`, nunca 0; nomes em inglês `snake_case`; texto de UI em PT-PT.
 
 ## Proveniência (transversal) — IMPLEMENTADA
 
@@ -57,6 +57,10 @@ Pessoa. `id`, `display_name`, `auth_subject` (o `sub` do Authentik, distinto de 
 
 ### Membership
 Liga `Resident` ↔ `Household` ↔ `Room` com papel e datas do contrato. `role` (`landlord` \| `tenant` \| `operator`), `room_id` (inquilino), `starts_on`, `ends_on`, `status` (`invited` \| `active` \| `ended`), `presence_opt_in` (bool, omissão `false`). **P5.** Uma saída a meio do mês fecha a membership; o cálculo da fatura usa as datas (PDF §10.3).
+
+### MembershipInvitation (HOUSE-02)
+
+Convite de inquilino emitido por um senhorio efetivo. Tabela aditiva `0003_core_membership_invitations.sql`: id, membership_id (único), token_sha256 (único, não se guarda token em claro), target_email, created_by_membership_id, created_at UTC, expires_at UTC, redeemed_at?, redeemed_by_resident_id?, revoked_at?. A membership começa `invited`, passa a `active` numa transação de aceitação, ou a `ended` na revogação. A casa e o papel derivam da membership, nunca do pedido do utilizador. Nenhuma conta adquire acesso até o token ser apresentado por utilizador autenticado com email verificado correspondente. Consulte [HOUSE-02](house-02-memberships.md).
 
 ### Device
 Dispositivo físico (ou simulado). `id`, `household_id`, `room_id?`, `kind` (`plug` \| `bulb` \| `camera` \| `sensor`), `role` (`main_meter` \| `room_meter` \| `actuator` \| `none`), `external_ref` (id MCP, **nunca** em logs/docs), `source` (`mcp` \| `fake` \| `replay`), `power_unit` (`W` \| `dW` \| `mW` \| `unknown`; `unknown` ⇒ leituras sem `power_w`), `last_seen_at`, `online`. **P1.** `power_unit = unknown` impede `measured` (ver [integrations/mcp-capabilities.md](../integrations/mcp-capabilities.md)).
