@@ -11,6 +11,7 @@ import asyncio
 import hmac
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager
+from datetime import timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -18,7 +19,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request,
 from pydantic import Field
 
 from homemind.contracts.common import ContractModel, Origin, ShortText
-from homemind.contracts.presence import CameraStatus, PresenceDeviceView
+from homemind.contracts.presence import CameraStatus, PersonPresence, PresenceDeviceView
 from homemind.core.access import (
     HouseholdAccess,
     Operation,
@@ -31,6 +32,7 @@ from homemind.core.config import get_settings
 from homemind.core.events import EventBus
 from homemind.features.presence.camera import CameraProbe, origin_of, resolve_kind
 from homemind.features.presence.door import ContadorPorta, Soleira, parse_retangulo
+from homemind.features.presence.fusion import FusionParams
 from homemind.features.presence.runner import (
     ProcessadorPorta,
     ThreadPorta,
@@ -65,6 +67,15 @@ def _scanner_for(mode: str, s) -> WifiScanner | None:
     return None  # off, ou ingest (o varrimento corre no anfitrião)
 
 
+async def _ticker(service: PresenceService, interval_s: float) -> None:
+    while True:
+        await asyncio.sleep(interval_s)
+        try:
+            await service.tick()
+        except Exception as e:  # noqa: BLE001 - o ciclo não pode morrer
+            log.error("reavaliação de presença falhou (%s)", type(e).__name__)
+
+
 def soleira_configurada() -> Soleira | None:
     """Soleira de `PRESENCE_DOOR_ROI`/`_LINE`; None se não houver (ou for inválida)."""
     s = get_settings()
@@ -82,11 +93,28 @@ def soleira_configurada() -> Soleira | None:
 async def _wifi_lifespan(app: FastAPI):
     s = get_settings()
     bus: EventBus = app.state.bus
+    wifi_on = s.presence_wifi_mode != "off" and bool(s.presence_match_salt)
     service = PresenceService(
-        app.state.db, bus, salt=s.presence_match_salt, clock=get_clock(), refresh_s=300.0
+        app.state.db,
+        bus,
+        salt=s.presence_match_salt,
+        clock=get_clock(),
+        fusion=FusionParams(tolerance=timedelta(minutes=s.presence_tolerance_min)),
+        appliance_fresh_s=s.presence_appliance_fresh_s,
+        wifi_enabled=wifi_on,
+        wifi_interval_s=s.presence_wifi_interval_s,
     )
     app.state.presence = service
     bus.subscribe("presence.answers", on_notification_responded, types=["notification.responded"])
+    bus.subscribe(
+        "presence.appliance", service.on_consumption_detected, types=["energy.consumption_detected"]
+    )
+    bus.subscribe(
+        "presence.fusion",
+        service.on_presence_input,
+        types=["presence.cue_recorded", "presence.door_crossed"],
+    )
+    ticker = asyncio.create_task(_ticker(service, s.presence_fusion_tick_s), name="presence-tick")
     poller_task = None
     if not s.presence_wifi_collection_enabled:
         if s.presence_wifi_mode != "off":
@@ -106,9 +134,10 @@ async def _wifi_lifespan(app: FastAPI):
     try:
         yield
     finally:
-        if poller_task is not None:
-            poller_task.cancel()
-            await asyncio.gather(poller_task, return_exceptions=True)
+        tasks = [t for t in (poller_task, ticker) if t is not None]
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @asynccontextmanager
@@ -181,6 +210,12 @@ def _http(e: DeviceError) -> HTTPException:
     }
     status, message = table.get(e.code, (400, "Pedido inválido"))
     return HTTPException(status, {"code": e.code, "message": message})
+
+
+@router.get("")
+async def get_presence(access: Read, service: Service) -> PersonPresence:
+    """O meu estado. Ninguém mais o vê (nem colegas, nem senhorio, nem operador)."""
+    return await service.own_state(access.household_id, access.resident_id)
 
 
 class PresenceDeviceIn(ContractModel):

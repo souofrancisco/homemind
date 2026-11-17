@@ -87,6 +87,7 @@ def client(settings_env, clock):
     with TestClient(app) as c:
         app.state.db.run_sync(seed_with_opt_in)
         c.app_state = app.state
+        c.clock = clock
         app.state.presence.clock = clock  # o serviço lê o relógio no arranque
         yield c
     app.dependency_overrides.clear()
