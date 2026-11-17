@@ -10,6 +10,7 @@ import asyncio
 import hmac
 import logging
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -27,6 +28,7 @@ from homemind.core.access import (
 )
 from homemind.core.config import get_settings
 from homemind.core.events import EventBus
+from homemind.features.presence.fusion import FusionParams
 from homemind.features.presence.service import (
     DeviceError,
     PresenceService,
@@ -55,15 +57,41 @@ def _scanner_for(mode: str, s) -> WifiScanner | None:
     return None  # off, ou ingest (o varrimento corre no anfitrião)
 
 
+async def _ticker(service: PresenceService, interval_s: float) -> None:
+    while True:
+        await asyncio.sleep(interval_s)
+        try:
+            await service.tick()
+        except Exception as e:  # noqa: BLE001 - o ciclo não pode morrer
+            log.error("reavaliação de presença falhou (%s)", type(e).__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     s = get_settings()
     bus: EventBus = app.state.bus
+    wifi_on = s.presence_wifi_mode != "off" and bool(s.presence_match_salt)
     service = PresenceService(
-        app.state.db, bus, salt=s.presence_match_salt, clock=get_clock(), refresh_s=300.0
+        app.state.db,
+        bus,
+        salt=s.presence_match_salt,
+        clock=get_clock(),
+        fusion=FusionParams(tolerance=timedelta(minutes=s.presence_tolerance_min)),
+        appliance_fresh_s=s.presence_appliance_fresh_s,
+        wifi_enabled=wifi_on,
+        wifi_interval_s=s.presence_wifi_interval_s,
     )
     app.state.presence = service
     bus.subscribe("presence.answers", on_notification_responded, types=["notification.responded"])
+    bus.subscribe(
+        "presence.appliance", service.on_consumption_detected, types=["energy.consumption_detected"]
+    )
+    bus.subscribe(
+        "presence.fusion",
+        service.on_presence_input,
+        types=["presence.cue_recorded", "presence.door_crossed"],
+    )
+    ticker = asyncio.create_task(_ticker(service, s.presence_fusion_tick_s), name="presence-tick")
     poller_task = None
     if not s.presence_wifi_collection_enabled:
         if s.presence_wifi_mode != "off":
@@ -83,9 +111,10 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        if poller_task is not None:
-            poller_task.cancel()
-            await asyncio.gather(poller_task, return_exceptions=True)
+        tasks = [t for t in (poller_task, ticker) if t is not None]
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 router = APIRouter(prefix="/api/presence", tags=["presence"], lifespan=lifespan)
@@ -110,9 +139,16 @@ def _http(e: DeviceError) -> HTTPException:
     return HTTPException(status, {"code": e.code, "message": message})
 
 
+@router.get("")
+async def get_presence(access: Read, service: Service) -> list[PersonPresence]:
+    """O meu estado (primeiro) e o dos colegas que partilham o deles (`presence_opt_in`)."""
+    return await service.states_visible_to(access.household_id, access.resident_id)
+
+
 @router.put("/me")
 async def put_me(body: PresenceMeIn, access: Write, service: Service) -> PersonPresence:
-    """«Cheguei / saí». A pessoa é a da sessão; o corpo só diz `in` ou `out`."""
+    """«Cheguei / saí». A pessoa é a da sessão; o corpo só diz `in` ou `out`. Devolve o estado
+    fundido depois da declaração."""
     try:
         return await service.record_manual(access.household_id, access.resident_id, body.state)
     except DeviceError as e:

@@ -24,7 +24,7 @@ Roteiro dos testes a executar à mão. Os testes automáticos (`make check`, `ma
 | [F. Vídeo e visão](#f-vídeo-e-visão) | VID-01, VID-02, VID-03, YOLO-01, YOLO-02, POSE-01, TRK-01 |
 | [G. Gestos e presença](#g-gestos-e-presença) | GES-01, GES-02, PRE-01 |
 | [H. Demo](#h-demo) | LAT-01, LAT-02, DEMO-01, PB-01, PRIV-01 |
-| [I. Presença (Conta Certa)](#i-presença-conta-certa) | PRW-01 … PRW-04 |
+| [I. Presença (Conta Certa)](#i-presença-conta-certa) | PRW-01 … PRW-04, PRF-01 … PRF-04 |
 | [Folha de resultados](#folha-de-resultados) | tabela para preencher |
 
 ## Preparação comum
@@ -362,6 +362,30 @@ Pistas por pessoa (PRES-03, **IMPLEMENTADO**). Pré-requisitos: backend no **anf
 - **Esperado:** `200` com `PersonPresence` do próprio; cada declaração gera `presence.cue_recorded` (`source=manual`); senhorio e operador recebem `403 forbidden_role` em todas as rotas.
 - **PASS** se as duas observações coincidirem.
 
+### PRF-01 — Telemóvel a dormir mantém «em casa»
+- **Tipo:** REAL (Wi-Fi do hub) com porta SIMULADA · **Issue:** #108
+- **Passos:** com o telemóvel registado e visto (`GET /api/presence` → `in`), pô-lo em modo de poupança/sem Wi-Fi 10 min.
+- **Esperado:** continua `in` (sem `presence.changed`); nunca `out`.
+- **PASS** se o estado não mudar durante os 10 min.
+
+### PRF-02 — Saída pela porta + tolerância
+- **Tipo:** SIMULADO (a porta ainda não tem produtor real: PRES-02; publicar `presence.door_crossed` direção `out` por script/fixture) · **Issue:** #108
+- **Passos:** declarar `in`; publicar a saída; esperar `PRESENCE_TOLERANCE_MIN` minutos (usar 20 para encurtar) sem pistas.
+- **Esperado:** antes do fim da tolerância `in` (confiança 0,5); depois `out` com `sources=["camera_door"]` e um `presence.changed`.
+- **PASS** se as duas fases coincidirem.
+
+### PRF-03 — Contradição gera pergunta, não acusação
+- **Tipo:** REAL (declaração) + SIMULADO (aparelho) · **Issue:** #108
+- **Passos:** declarar `out`; ligar um aparelho pessoal do morador (ou publicar `energy.consumption_detected` simulado com `appliance_owner_resident_id`) sem passar a porta.
+- **Esperado:** `uncertain` com `reason=conflicting_cues` e um `presence.confirmation_needed` (só `id`, `resident_id`, `reason`, `expires_at`); responder «in» resolve.
+- **PASS** se houver exatamente um pedido e a resposta resolver a dúvida.
+
+### PRF-04 — Falha do Wi-Fi nunca vira «fora»
+- **Tipo:** REAL · **Issue:** #108
+- **Passos:** com o telemóvel registado, parar `make presence-wifi-scan`; esperar 3 intervalos; publicar uma saída pela porta; esperar a tolerância.
+- **Esperado:** `uncertain` com `reason=no_recent_cues` e um pedido de confirmação; **nunca** `out`.
+- **PASS** se não houver `out`.
+
 ---
 
 ## Folha de resultados
@@ -410,5 +434,9 @@ Data: ________ · Testador(es): ________ · Hardware (GPU/CPU): ________ · Comm
 | PRW-02 | Opt-out imediato | | | | #107 |
 | PRW-03 | Wi-Fi desligado não é saída | | | | #107 |
 | PRW-04 | Declaração manual; senhorio 403 | | | | #107 |
+| PRF-01 | Telemóvel a dormir mantém «em casa» | | | | #108 |
+| PRF-02 | Saída pela porta + tolerância | | | | #108 |
+| PRF-03 | Contradição → pergunta | | | | #108 |
+| PRF-04 | Falha do Wi-Fi não vira «fora» | | | | #108 |
 
 **Pronto para a demo** quando: INS-01, AUTH-01, MOT-01, MOT-02, OFF-01, PB-01 e PRIV-01 têm PASS; DEMO-01 tem 10/10; e o guião (`demo-script.md`) só apresenta como REAL os testes REAL com PASS.

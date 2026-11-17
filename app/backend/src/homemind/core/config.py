@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     presence_wifi_sim_addresses: str = ""  # modo simulated: MACs fictícios «vistos», por vírgulas
     # Token do varrimento no anfitrião (modo ingest). Vazio = rota desligada.
     presence_ingest_token: str = ""
+    # Fusão (PRES-04): minutos sem pistas, depois de uma saída pela porta, até «fora» (20–30).
+    presence_tolerance_min: float = Field(default=25.0, ge=20.0, le=30.0)
+    # Um aparelho pessoal só prova presença se LIGOU há menos de isto (s); já ligado não prova.
+    presence_appliance_fresh_s: float = Field(default=300.0, ge=0.0)
+    presence_fusion_tick_s: float = Field(default=30.0, ge=1.0)
     # --- fim P2 — presença ---
 
     # --- P1 — visão (YOLO objetos + pose + ByteTrack; extra opcional `visao`) ---

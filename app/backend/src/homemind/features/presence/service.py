@@ -1,4 +1,4 @@
-"""Pistas de presença por pessoa (PRES-03): Wi-Fi opt-in e declaração manual.
+"""Pistas de presença por pessoa (PRES-03) e fusão no estado do morador (PRES-04).
 
 Regras (contrato `PresenceEvent`, decisão D-30/D-31):
 - o Wi-Fi só produz `in`, e só quando um telemóvel registado COM opt-in aparece; a sua ausência
@@ -6,38 +6,50 @@ Regras (contrato `PresenceEvent`, decisão D-30/D-31):
 - só a declaração manual diz `out`;
 - uma pista só se grava se o morador tem membership de inquilino ativa; a verificação e a gravação
   do evento acontecem na MESMA transação, por isso uma revogação tem efeito imediato.
+
+Fusão (`fusion.py`, pura): dois consumidores do barramento recalculam o estado do morador quando
+chega uma pista (`presence.cue_recorded`) ou uma passagem na porta (`presence.door_crossed`); um
+*ticker* reavalia periodicamente (a tolerância passa sem eventos). Mudanças saem em
+`presence.changed`; contradições em `presence.confirmation_needed` (pergunta, nunca acusação).
 """
 
 import asyncio
 import logging
 import sqlite3
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from homemind.contracts.common import Origin, Provenance, ValueKind, new_id, stable_id
 from homemind.contracts.domain_events import (
     DomainEvent,
+    EnergyConsumptionDetected,
     NotificationResponded,
+    PresenceChanged,
+    PresenceConfirmationNeeded,
     PresenceCueRecorded,
     StoredEvent,
 )
 from homemind.contracts.notification import RefType
 from homemind.contracts.presence import (
     PersonPresence,
+    PresenceConfirmationRequest,
     PresenceDevice,
     PresenceEvent,
     PresenceSource,
     PresenceState,
+    UncertainReason,
 )
 from homemind.core.db import Database
 from homemind.core.events import EventBus, EventStoreError, append_event
 from homemind.features.presence import repo
+from homemind.features.presence.fusion import CUE_WINDOW, FusionParams, Signals, fuse
 from homemind.features.presence.wifi import WifiScanner, match_key, normalize_mac
 
 log = logging.getLogger(__name__)
 
 WIFI_CONFIDENCE = 0.8  # «conta muito a favor»
+APPLIANCE_CONFIDENCE = 0.6
 MIN_CUE_GAP_S = 60.0  # um telemóvel que oscila não enche o registo de pistas
 CONFIRMATION_ACTIONS = {s.value: s for s in (PresenceState.home, PresenceState.away)}
 
@@ -77,18 +89,6 @@ def _cue(
         correlation_id=correlation_id or new_id(),
         provenance=provenance,
         data=data,
-    )
-
-
-def person_presence_of(cue: PresenceEvent) -> PersonPresence:
-    """Estado provisório a partir de UMA pista (a fusão com várias pistas é a PRES-04)."""
-    return PersonPresence(
-        resident_id=cue.resident_id,
-        state=cue.state,
-        since=cue.ts,
-        confidence=cue.confidence,
-        provenance=cue.provenance,
-        sources=[cue.source],
     )
 
 
@@ -147,9 +147,17 @@ class PresenceService:
         salt: str,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         refresh_s: float = 300.0,
+        fusion: FusionParams | None = None,
+        appliance_fresh_s: float = 300.0,
+        wifi_enabled: bool = False,
+        wifi_interval_s: float = 30.0,
     ) -> None:
         self.db, self.bus, self.salt, self.clock = db, bus, salt, clock
         self.refresh_s = refresh_s
+        self.fusion = fusion or FusionParams()
+        self.appliance_fresh = timedelta(seconds=appliance_fresh_s)
+        self.wifi_enabled, self.wifi_interval_s = wifi_enabled, wifi_interval_s
+        self._wifi_last_ok: datetime | None = None
         self._last_cue: dict[tuple[UUID, UUID], datetime] = {}
         self._prev_seen: set[tuple[UUID, UUID]] = set()
 
@@ -169,10 +177,17 @@ class PresenceService:
             confidence=1.0,
             provenance=Provenance(origin=Origin.real, kind=ValueKind.measured),
         )
-        if not await self.db.run(lambda c: append_cue(c, ev)):
+
+        def tx(conn: sqlite3.Connection) -> PersonPresence | None:
+            if not append_cue(conn, ev):
+                return None
+            return self.current_state(conn, household_id, resident_id, ev.ts)
+
+        state = await self.db.run(tx)
+        if state is None:
             raise DeviceError("not_a_resident")
         await self.bus.publish(ev)  # idempotente: só acorda os consumidores
-        return person_presence_of(ev.data)
+        return state
 
     # --- telemóveis -------------------------------------------------------------------------
 
@@ -220,12 +235,181 @@ class PresenceService:
             lambda c: repo.revoke_device(c, household_id, resident_id, device_id, now)
         )
 
+    # --- fusão (PRES-04) --------------------------------------------------------------------
+
+    def wifi_ok(self, now: datetime) -> bool:
+        """O varrimento está vivo: houve um varrimento bem-sucedido há pouco. Desligado ou
+        parado = não está vivo (o silêncio do Wi-Fi deixa de ser informação)."""
+        if not self.wifi_enabled or self._wifi_last_ok is None:
+            return False
+        return now - self._wifi_last_ok <= timedelta(seconds=max(3 * self.wifi_interval_s, 120))
+
+    def _signals(self, conn: sqlite3.Connection, hid: UUID, rid: UUID, now: datetime) -> Signals:
+        return Signals(
+            wifi_expected=repo.count_active_devices(conn, hid, rid) > 0,
+            wifi_ok=self.wifi_ok(now),
+            sole_candidate=repo.others_in(conn, hid, rid) == 0,
+        )
+
+    def compute(
+        self, conn: sqlite3.Connection, hid: UUID, rid: UUID, now: datetime
+    ) -> tuple[PersonPresence | None, bool]:
+        """Estado fundido em `now` (sem gravar). `None`: nunca houve pistas deste morador."""
+        since = now - CUE_WINDOW
+        verdict = fuse(
+            rid,
+            repo.load_cues(conn, hid, rid, since),
+            repo.load_doors(conn, hid, since),
+            now,
+            self.fusion,
+            repo.get_state(conn, hid, rid),
+            self._signals(conn, hid, rid, now),
+        )
+        return verdict.presence, verdict.ask
+
+    def current_state(
+        self, conn: sqlite3.Connection, hid: UUID, rid: UUID, now: datetime
+    ) -> PersonPresence:
+        """Para a API: o estado, ou «incerto: sem pistas» se ainda não houve nenhuma."""
+        presence, _ = self.compute(conn, hid, rid, now)
+        if presence is not None:
+            return presence
+        since = min(repo.membership_start(conn, hid, rid), now)
+        return PersonPresence(
+            resident_id=rid,
+            state=PresenceState.uncertain,
+            since=since,
+            confidence=0.0,
+            provenance=Provenance(origin=Origin.real, kind=ValueKind.inferred),
+            sources=[],
+            reason=UncertainReason.no_recent_cues,
+        )
+
+    def apply_fusion(
+        self, conn: sqlite3.Connection, hid: UUID, rid: UUID, now: datetime
+    ) -> list[DomainEvent]:
+        """Recalcula, grava o estado e devolve os eventos a publicar (não os grava)."""
+        if not repo.is_active_tenant(conn, hid, rid, now):
+            return []
+        prev = repo.get_state(conn, hid, rid)
+        new, ask = self.compute(conn, hid, rid, now)
+        if new is None:  # sem pistas na janela: mantém o que havia, nunca inventa «fora»
+            return []
+        repo.upsert_state(conn, hid, new, now)
+        events: list[DomainEvent] = []
+        if prev is None or (prev.state, prev.reason) != (new.state, new.reason):
+            events.append(
+                PresenceChanged(ts=now, household_id=hid, provenance=new.provenance, data=new)
+            )
+        last = repo.last_confirmation_at(conn, hid, rid)
+        if (
+            ask
+            and new.reason is not None
+            and (last is None or now - last >= self.fusion.confirmation_cooldown)
+        ):
+            req = PresenceConfirmationRequest(
+                id=new_id(),
+                resident_id=rid,
+                reason=new.reason,
+                expires_at=now + self.fusion.confirmation_ttl,
+            )
+            repo.insert_confirmation(conn, hid, req, now)
+            events.append(
+                PresenceConfirmationNeeded(
+                    ts=now, household_id=hid, provenance=new.provenance, data=req
+                )
+            )
+        return events
+
+    def on_presence_input(self, conn: sqlite3.Connection, stored: StoredEvent) -> list[DomainEvent]:
+        """Consumidor: uma pista (é de uma pessoa) ou uma passagem na porta (anónima: reavalia
+        todos os moradores da casa)."""
+        ev = stored.event
+        now = max(self.clock(), ev.ts)
+        if isinstance(ev, PresenceCueRecorded):
+            residents = [ev.data.resident_id]
+        else:
+            residents = repo.active_tenants(conn, ev.household_id, now)
+        out: list[DomainEvent] = []
+        for rid in residents:
+            out += self.apply_fusion(conn, ev.household_id, rid, now)
+        return out
+
+    def on_consumption_detected(
+        self, conn: sqlite3.Connection, stored: StoredEvent
+    ) -> list[DomainEvent]:
+        """Um aparelho pessoal que ACABOU de ligar é uma pista `in` do dono. Um que já estava
+        ligado (consumo começado há mais do que `appliance_fresh`) não prova nada: ignora-se."""
+        ev = stored.event
+        if not isinstance(ev, EnergyConsumptionDetected):
+            return []
+        d = ev.data
+        owner = d.appliance_owner_resident_id
+        if owner is None or ev.ts - d.started_at > self.appliance_fresh:
+            return []
+        cue_id = stable_id("appliance-cue", str(d.id))
+        if repo.cue_exists(conn, cue_id) or not repo.is_active_tenant(
+            conn, ev.household_id, owner, ev.ts
+        ):
+            return []
+        prov = Provenance(origin=d.provenance.origin, kind=ValueKind.inferred)
+        return [
+            PresenceCueRecorded(
+                id=cue_id,
+                ts=d.started_at,
+                household_id=ev.household_id,
+                correlation_id=d.id,
+                provenance=prov,
+                data=PresenceEvent(
+                    id=stable_id("appliance-cue-data", str(d.id)),
+                    household_id=ev.household_id,
+                    resident_id=owner,
+                    ts=d.started_at,
+                    state=PresenceState.home,
+                    source=PresenceSource.appliance,
+                    confidence=APPLIANCE_CONFIDENCE,
+                    provenance=prov,
+                    consumption_event_id=d.id,
+                ),
+            )
+        ]
+
+    async def tick(self) -> int:
+        """Reavalia quem já tem estado: a tolerância passa sem que chegue nenhum evento."""
+        now = self.clock()
+
+        def run(conn: sqlite3.Connection) -> list[DomainEvent]:
+            out: list[DomainEvent] = []
+            for hid, rid in repo.tracked_residents(conn):
+                for ev in self.apply_fusion(conn, hid, rid, now):
+                    out.append(append_event(conn, ev).event)
+            return out
+
+        events = await self.db.run(run)
+        for ev in events:
+            await self.bus.publish(ev)  # idempotente: só acorda os consumidores
+        return len(events)
+
+    async def states_visible_to(
+        self, household_id: UUID, resident_id: UUID
+    ) -> list[PersonPresence]:
+        """O próprio, mais os colegas que partilham o seu estado (`Membership.presence_opt_in`)."""
+        now = self.clock()
+
+        def run(conn: sqlite3.Connection) -> list[PersonPresence]:
+            visible = repo.sharing_tenants(conn, household_id, now) - {resident_id}
+            ordered = [resident_id, *sorted(visible, key=str)]
+            return [self.current_state(conn, household_id, r, now) for r in ordered]
+
+        return await self.db.run(run)
+
     # --- observações Wi-Fi ------------------------------------------------------------------
 
     async def observe(self, keys: set[str], origin: Origin) -> int:
         """`keys`: hashes dos aparelhos vistos agora. Só os de telemóveis registados com opt-in
         geram pista `in`; os outros são descartados sem rasto. Devolve quantas pistas gravou."""
         now = self.clock()
+        self._wifi_last_ok = now  # chegar aqui = o varrimento correu (mesmo sem aparelhos)
         prov = Provenance(origin=origin, kind=ValueKind.inferred)
 
         def tx(conn: sqlite3.Connection) -> tuple[list[PresenceCueRecorded], set]:
