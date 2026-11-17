@@ -218,12 +218,12 @@ class CreateInvitation(ContractModel):
 
 class InvitationIssued(ContractModel):
     invitation_id: UUID
-    token: str
+    code: str
     expires_at: datetime
 
 
 class RedeemInvitation(ContractModel):
-    token: Annotated[str, Field(min_length=32, max_length=128)]
+    code: Annotated[str, Field(min_length=32, max_length=128)]
 
 
 async def _execute(db: DbDep, action):
@@ -267,7 +267,7 @@ async def create_house_invitation(
 async def redeem_house_invitation(
     body: RedeemInvitation, user: CurrentUser, db: DbDep, clock: ClockDep
 ) -> MembershipSelfView:
-    return await _execute(db, lambda conn: flow.accept_invitation(conn, user, body.token, clock()))
+    return await _execute(db, lambda conn: flow.accept_invitation(conn, user, body.code, clock()))
 
 
 @router.post("/households/{household_id}/memberships/{membership_id}/revoke")
