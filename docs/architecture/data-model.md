@@ -133,3 +133,12 @@ Persistência dos contratos (PLANEADO, estratégia): uma tabela por entidade com
 Limitações de SQLite assumidas: um escritor de cada vez (todos os acessos serializam no lock; suficiente para um processo FastAPI numa hackathon); **um só processo** (vários *workers* exigiriam outra solução); leituras sem lock extra não existem (a mesma ligação).
 
 Dados de demonstração: `features/households/repo.seed_demo` (casa Ana/Bruno/Carla/Diogo + senhorio e operador, `source_kind=demo`, idempotente) e `contracts/fixtures.py` (todos os contratos e uma amostra de cada evento). Privacidade: sem frames, sem imagens, sem identificação biométrica, `external_ref` nunca exposto.
+## HOUSE-04 — tabelas de política (branch de revisão)
+
+A migração `0150_house_policies.sql` acrescenta
+`household_policy_version` (PK casa+versão, intervalo temporal sem overlap
+pela operação transacional de append), `household_policy_decision`
+(PK casa+consumo; revisão otimista; um único estado atual) e
+`household_policy_audit` (PK casa+consumo+revisão; source_event_id único;
+triggers de imutabilidade). Nenhuma destas tabelas é uma fatura ou
+`Attribution` de P4. Os valores monetários reais continuam fora de HOUSE-04.
