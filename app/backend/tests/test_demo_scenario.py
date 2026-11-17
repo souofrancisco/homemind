@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -134,7 +135,37 @@ def test_prepare_applies_all_current_main_migrations(store):
         applied = {row[0] for row in conn.execute("SELECT name FROM schema_migration")}
     assert applied == expected
     assert {"0003_core_membership_invitations.sql", "0100_billing_bills.sql"} <= applied
+    assert {
+        "0101_house_appliance_catalog.sql",
+        "0102_house_appliance_temporal_guards.sql",
+    } <= applied
     assert {"0200_presence_tables.sql", "0300_notifications_core.sql"} <= applied
+
+
+def test_prepare_upgrades_existing_demo_to_new_migrations(store, tmp_path, monkeypatch):
+    from homemind.core import db as core_db
+
+    current_migrations = core_db.MIGRATIONS_DIR
+    old_migrations = tmp_path / "older-migrations"
+    old_migrations.mkdir()
+    for name in (
+        "0001_core_households.sql",
+        "0002_core_events.sql",
+        "0003_core_membership_invitations.sql",
+        "0100_billing_bills.sql",
+    ):
+        shutil.copyfile(current_migrations / name, old_migrations / name)
+    monkeypatch.setattr(core_db, "MIGRATIONS_DIR", old_migrations)
+    store.prepare()
+    with sqlite3.connect(store.path) as conn:
+        old_applied = {row[0] for row in conn.execute("SELECT name FROM schema_migration")}
+    assert old_applied == {path.name for path in old_migrations.glob("*.sql")}
+
+    monkeypatch.setattr(core_db, "MIGRATIONS_DIR", current_migrations)
+    store.prepare()
+    with sqlite3.connect(store.path) as conn:
+        upgraded = {row[0] for row in conn.execute("SELECT name FROM schema_migration")}
+    assert upgraded == {path.name for path in current_migrations.glob("*.sql")}
 
 
 def test_replay_crash_rolls_back_and_can_be_retried(store, monkeypatch):

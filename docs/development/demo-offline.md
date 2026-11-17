@@ -14,6 +14,8 @@ Referência: issue [#121](https://github.com/souofrancisco/homemind/issues/121),
 **Escolha: A com persistência SQLite do F0.** Não há DSL nova nem dependências
 adicionais. O cenário define eventos Pydantic, persiste através de
 `append_event` (idempotente), e usa `Database/migrate/seed_demo`.
+`demo-prepare` aplica migrações aditivas em falta a uma base de demo existente;
+`demo-reset` constrói diretamente o schema atual.
 Não implementa motor financeiro, classificador, notificações ou autenticação.
 
 ## Executar — sem Docker, rede, câmera, LLM ou MCP
@@ -73,6 +75,13 @@ transação. Nenhum outro ficheiro ou base da aplicação é removido.
   persistidos na tabela `demo_reference` como
   `reference_bill`/`reference_allocation` (e não nos quadros de
   produção, que ainda pertencem a BILL-02 e sucessores).
+
+HOUSE-02 (#143) e HOUSE-03 (#142) estão integrados na `main` atual. O seed usa
+o `seed_demo` de HOUSE-02 para as memberships que o handler P3 consulta. As
+migrações de catálogo `0101`/`0102` são aplicadas e testadas, mas o cenário
+offline não popula o catálogo temporal via `ApplianceCatalog`: ENERGY-02/03
+ainda não está ligado para consumir essas referências roteirizadas. #145
+(HOUSE-04) continua draft e não é dependência da demo.
 
 | Morador | Fixture A | Fixture B |
 |---|---:|---:|

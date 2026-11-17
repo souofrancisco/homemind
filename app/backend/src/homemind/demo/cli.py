@@ -159,9 +159,18 @@ class DemoStore:
             Path(f"{candidate}-wal").unlink(missing_ok=True)
             Path(f"{candidate}-shm").unlink(missing_ok=True)
 
+    def _migrate_existing(self) -> None:
+        db = Database(self.path)
+        try:
+            db.open()
+            migrate(db)
+        finally:
+            db.close()
+
     def prepare(self) -> dict:
         if self.path.exists():
             self._guard(existing=True, allow_wal_recovery=True)
+            self._migrate_existing()
             self.replay()
         else:
             self._build()
