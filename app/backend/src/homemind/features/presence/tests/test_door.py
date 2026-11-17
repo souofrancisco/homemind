@@ -153,3 +153,21 @@ def test_sinal_interior_inverte_os_sentidos():
     for i, ps in enumerate(juntar(trajeto(1, 0.2, 0.8, 8), pausa=15)):
         saida += c.atualizar(i / FPS, ps, LARGURA, ALTURA)
     assert sentidos(saida) == [D.left]
+
+
+def test_settings_le_o_sinal_interior_do_ambiente(monkeypatch):
+    from pydantic import ValidationError
+
+    from homemind.core.config import Settings
+
+    for texto, esperado in (("1", 1), ("-1", -1)):
+        monkeypatch.setenv("PRESENCE_DOOR_INSIDE_SIGN", texto)
+        assert Settings().presence_door_inside_sign == esperado
+    monkeypatch.setenv("PRESENCE_DOOR_INSIDE_SIGN", "0")
+    with pytest.raises(ValidationError):
+        Settings()
+    monkeypatch.setenv("PRESENCE_DOOR_INSIDE_SIGN", "1")
+    monkeypatch.setenv("PRESENCE_DOOR_COOLDOWN_S", "1.5")
+    monkeypatch.setenv("VIDEO_SOURCE_KIND", "kit")
+    s = Settings()
+    assert (s.presence_door_cooldown_s, s.video_source_kind) == (1.5, "kit")

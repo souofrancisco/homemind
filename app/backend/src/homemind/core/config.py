@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     )
     presence_door_roi: str = ""  # retângulo da soleira; o YOLO só recebe este recorte
     presence_door_line: str = ""  # linha orientada (início -> fim) dentro da soleira
-    presence_door_inside_sign: Literal[1, -1] = 1  # sinal do lado de DENTRO (ver door.py)
+    presence_door_inside_sign: int = 1  # 1 ou -1; sinal do lado de DENTRO (ver door.py)
     presence_door_cooldown_s: float = Field(
         default=1.0, ge=0
     )  # mesmo sentido: 2.ª contagem ignorada
@@ -87,6 +87,13 @@ class Settings(BaseSettings):
     visao_imgsz: int = 640
     visao_tracker: str = "bytetrack.yaml"
     # --- fim P1 — visão ---
+
+    @field_validator("presence_door_inside_sign")
+    @classmethod
+    def _sinal(cls, v: int) -> int:
+        if v not in (1, -1):
+            raise ValueError("PRESENCE_DOOR_INSIDE_SIGN é 1 ou -1")
+        return v
 
 
 @lru_cache
