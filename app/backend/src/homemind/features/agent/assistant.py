@@ -51,6 +51,14 @@ UNAVAILABLE_TEXT = (
 )
 
 
+class _Degrade(Exception):
+    """Sinal interno do ciclo: usar a resposta de recurso com este motivo (fora do prazo)."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 @dataclass(frozen=True)
 class AssistantReply:
     text: str
@@ -153,12 +161,17 @@ class Assistant:
         if self._complete is None:
             return await self._fallback(text, ctx, "llm_unavailable")
 
+        # A resposta de recurso é calculada FORA do prazo total: se fosse calculada lá dentro,
+        # o prazo podia cancelá-la a meio e repeti-la com outro motivo (teste instável).
         try:
             async with asyncio.timeout(self._deadline_s):
                 return await self._cycle(text, ctx, history)
+        except _Degrade as d:
+            reason = d.reason
         except TimeoutError:
             log.warning("Prazo total do assistente esgotado")
-            return await self._fallback(text, ctx, "timeout")
+            reason = "timeout"
+        return await self._fallback(text, ctx, reason)
 
     async def _cycle(
         self, text: str, ctx: ToolContext, history: Sequence[tuple[str, str]]
@@ -181,7 +194,7 @@ class Assistant:
                 raw = await asyncio.wait_for(self._complete(messages), self._timeout_s)
             except Exception as e:  # LLMUnavailable, timeout do passo ou erro inesperado
                 log.warning("LLM indisponível (%s)", type(e).__name__)
-                return await self._fallback(text, ctx, "llm_unavailable")
+                raise _Degrade("llm_unavailable") from None
             echo = {"role": "assistant", "content": raw[:_RAW_ECHO]}
 
             try:
@@ -191,7 +204,7 @@ class Assistant:
                     raise ValueError("faltam 'tool' ou 'answer'")
             except ValueError:
                 if json_corrected:
-                    return await self._fallback(text, ctx, "llm_invalid")
+                    raise _Degrade("llm_invalid") from None
                 json_corrected = True
                 messages += [
                     echo,
@@ -224,7 +237,7 @@ class Assistant:
             bad = invented_numbers(answer, allowed)
             if bad:
                 if numbers_corrected:
-                    return await self._fallback(text, ctx, "numbers_not_grounded")
+                    raise _Degrade("numbers_not_grounded")
                 numbers_corrected = True
                 messages += [
                     echo,
@@ -246,7 +259,7 @@ class Assistant:
                 None,
             )
 
-        return await self._fallback(text, ctx, "max_steps")
+        raise _Degrade("max_steps")
 
     async def _fallback(self, text: str, ctx: ToolContext, reason: str) -> AssistantReply:
         return await asyncio.to_thread(fallback_reply, text, ctx, self._registry, reason)
