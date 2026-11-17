@@ -46,5 +46,20 @@ def test_keypoints_com_confianca_baixa_nao_sao_desenhados():
     com = desenhar(original, _det(0.9))
     sem = desenhar(original, _det(0.3))
     assert (com != sem).any()
-    assert com[10, 10].any()  # keypoint 0 desenhado
-    assert not sem[10, 10].any()
+    assert com[74, 74].any()  # keypoint 16 desenhado (longe das caixas e dos rótulos)
+    assert not sem[74, 74].any()
+
+
+def test_sem_esqueleto_mantem_caixas_e_remove_pontos():
+    original = np.zeros((100, 100, 3), dtype=np.uint8)
+    com = desenhar(original, _det(0.9))
+    sem = desenhar(original, _det(0.9), esqueleto=False)
+    assert not sem[74, 74].any()
+    assert sem[60, 70].any()  # aresta superior da caixa do objeto continua
+    assert (com != sem).any()
+
+
+def test_rotulo_branco_legivel_dentro_da_imagem():
+    original = np.zeros((100, 100, 3), dtype=np.uint8)
+    saida = desenhar(original, _det(0.9), esqueleto=False)
+    assert (saida == 255).all(axis=2).any()  # texto branco sobre fundo colorido

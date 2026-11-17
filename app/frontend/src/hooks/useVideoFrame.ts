@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { streamVideo } from "../services/home/video";
+import { streamVideo, type VideoOptions } from "../services/home/video";
 
 /** URL (blob) do frame mais recente de GET /api/video; `error` se o stream falhar. Reabre com pausa enquanto `enabled`. */
-export function useVideoFrame(enabled: boolean) {
+export function useVideoFrame(enabled: boolean, { annotations, skeleton }: VideoOptions = { annotations: true, skeleton: true }) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -17,12 +17,12 @@ export function useVideoFrame(enabled: boolean) {
     };
     void (async () => {
       while (!abort.signal.aborted) {
-        try { setError(null); await streamVideo(show, abort.signal); }
+        try { setError(null); await streamVideo(show, abort.signal, { annotations, skeleton }); }
         catch (e) { if (abort.signal.aborted) return; setError(e instanceof Error ? e.message : "Stream indisponível"); }
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     })();
     return () => { abort.abort(); if (current) URL.revokeObjectURL(current); setUrl(null); };
-  }, [enabled]);
+  }, [enabled, annotations, skeleton]);
   return { url: enabled ? url : null, error: enabled ? error : null };
 }

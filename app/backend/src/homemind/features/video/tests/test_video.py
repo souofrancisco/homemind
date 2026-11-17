@@ -121,3 +121,19 @@ def test_lifespan_inicia_captura_sem_detetor(monkeypatch):
     finally:
         service.parar_fonte()
         get_settings.cache_clear()
+
+
+def test_rota_video_respeita_anotacoes_e_esqueleto(monkeypatch):
+    from homemind.features.video.router import video
+
+    chamadas = []
+    monkeypatch.setattr(service, "anotador", lambda img, esq: chamadas.append(esq) or img)
+
+    async def corpo(**opcoes):
+        resposta = await video(FonteFalsa(), **opcoes)
+        await anext(resposta.body_iterator)
+
+    asyncio.run(corpo())
+    asyncio.run(corpo(esqueleto=False))
+    asyncio.run(corpo(anotacoes=False))
+    assert chamadas == [True, False]  # sem anotações o anotador nem é chamado

@@ -26,15 +26,21 @@ router = APIRouter(prefix="/api", tags=["video"], lifespan=lifespan)
 
 # Bearer obrigatório: o frontend usa fetch (um <img> não envia cabeçalhos; token nunca no URL).
 @router.get("/video", response_class=StreamingResponse, dependencies=[Depends(current_user)])
-async def video(fonte: Fonte) -> StreamingResponse:
-    """MJPEG do frame mais recente, para `<img src="/api/video">`. Local, sem gravação."""
+async def video(fonte: Fonte, anotacoes: bool = True, esqueleto: bool = True) -> StreamingResponse:
+    """MJPEG do frame mais recente, para `<img src="/api/video">`. Local, sem gravação.
+
+    `anotacoes=false` → imagem limpa; `esqueleto=false` → só caixas. A inferência é única (thread
+    de visão); cada espectador só desenha sobre o frame que lê.
+    """
     settings = get_settings()
+    anotador = service.anotador
+    anotar = (lambda img: anotador(img, esqueleto)) if anotacoes and anotador else None
     return StreamingResponse(
         partes_mjpeg(
             fonte,
             fps_max=settings.video_fps_max,
             qualidade=settings.video_jpeg_qualidade,
-            anotar=service.anotador,
+            anotar=anotar,
         ),
         media_type=f"multipart/x-mixed-replace; boundary={LIMITE}",
         headers={"Cache-Control": "no-store"},

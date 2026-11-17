@@ -48,9 +48,9 @@ async def lifespan(app: FastAPI):
     )
     thread.iniciar()
 
-    def anotar(imagem):
+    def anotar(imagem, esqueleto=True):
         det = thread.ultima_deteccao()
-        return imagem if det is None else desenhar(imagem, det)
+        return imagem if det is None else desenhar(imagem, det, esqueleto=esqueleto)
 
     video.anotador = anotar
     log.info("visão ligada ao motor (%s)", especificacao)

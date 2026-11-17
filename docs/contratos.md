@@ -94,7 +94,7 @@ Prefixo `/api`. JSON UTF-8, `snake_case`, horas ISO 8601 UTC. Todas as rotas `/a
 | `PATCH` | `/api/rules/{id}` | corpo `{ "enabled": bool }` → `Rule` · `404 rule_not_found` |
 | `DELETE` | `/api/rules/{id}` | `204` · `404 rule_not_found` |
 | `POST` | `/api/rules/parse` | corpo `{ "text": "…" }` (3–300) → `ParseResponse` |
-| `GET` | `/api/video` | MJPEG (`multipart/x-mixed-replace`); `503` sem `VIDEO_SOURCE` |
+| `GET` | `/api/video` | MJPEG (`multipart/x-mixed-replace`); `503` sem `VIDEO_SOURCE`. Query opcional `anotacoes` (omissão `true`) e `esqueleto` (omissão `true`): `anotacoes=false` → imagem limpa; `esqueleto=false` → só caixas |
 | `GET` | `/api/mcp/tools` | `tools/list` do MCP (diagnóstico); `502` se indisponível |
 
 ### `HomeState`

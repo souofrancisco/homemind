@@ -12,10 +12,12 @@ function indexOfHeaderEnd(buf: Uint8Array): number {
  * Lê GET /api/video (MJPEG multipart) com Bearer e entrega cada frame JPEG como Blob.
  * Um <img src> não envia cabeçalhos e o token nunca vai no URL. Resolve quando o stream acaba; lança em erro HTTP.
  */
-export async function streamVideo(onFrame: (jpeg: Blob) => void, signal: AbortSignal): Promise<void> {
+export type VideoOptions = { annotations: boolean; skeleton: boolean };
+
+export async function streamVideo(onFrame: (jpeg: Blob) => void, signal: AbortSignal, options: VideoOptions = { annotations: true, skeleton: true }): Promise<void> {
   const token = await accessToken();
   if (!token) throw new Error("Sem sessão");
-  const response = await fetch(`${apiBase}/api/video`, { headers: { Authorization: `Bearer ${token}` }, signal });
+  const response = await fetch(`${apiBase}/api/video?anotacoes=${options.annotations}&esqueleto=${options.skeleton}`, { headers: { Authorization: `Bearer ${token}` }, signal });
   if (!response.ok || !response.body) throw new Error(response.status === 503 ? "Sem fonte de vídeo configurada" : `Erro ${response.status}`);
   const reader = response.body.getReader();
   let buf = new Uint8Array(0);

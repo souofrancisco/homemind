@@ -17,8 +17,8 @@ _fonte: FonteRtsp | FonteClip | None = None
 _fonte_lock = threading.Lock()
 log = logging.getLogger(__name__)
 
-# Opcional: a visão regista aqui uma função que desenha as deteções sobre o frame.
-anotador: Callable[[np.ndarray], np.ndarray] | None = None
+# Opcional: a visão regista aqui (imagem, esqueleto) -> imagem, que desenha as deteções no frame.
+anotador: Callable[[np.ndarray, bool], np.ndarray] | None = None
 
 
 def get_fonte() -> FonteVideo:

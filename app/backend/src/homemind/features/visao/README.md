@@ -66,3 +66,8 @@ fixado no extra para o ultralytics não o tentar instalar com `pip` em runtime.
 ## Testes
 
 `uv run pytest` (sem o extra): fakes de resultados e modelos; sem pesos, torch, rede ou hardware.
+
+## Anotações na página Câmara
+
+- `GET /api/video` desenha sobre o frame (caixa, nome PT, confiança, esqueleto) com a última deteção (≤ 1 s; senão vídeo cru). Inferência única na thread de visão; cada espectador só desenha. Se o detetor falhar, o vídeo continua sem anotações.
+- **YOLO só corre com o backend no host** (`make auth` + `uv sync --extra visao` + `uvicorn`, ver `docs/estado-para-amanha.md`). A imagem Docker (`make dev`) não inclui `ultralytics`: aí o vídeo aparece sem anotações (log: `visão desligada`).
