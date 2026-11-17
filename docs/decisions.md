@@ -1,6 +1,6 @@
 # Decisões, pressupostos e pontos por resolver
 
-Registo das decisões desta reorganização (17/11/2026). Onde os PDFs originais ([references/](references/README.md)) divergem deste ficheiro, **prevalece este ficheiro**.
+Registo das decisões da reorganização (17/11/2026), reconciliadas com o documento Conta Certa v5.1 ([references/](references/README.md)) e com a roadmap #129. Hierarquia: decisões da equipa > v5.1 > evidência técnica verificada > documentação na `main` > código ObjectOS. Onde os PDFs originais ([references/](references/README.md)) divergem deste ficheiro, **prevalece este ficheiro**.
 
 ## Decisões tomadas
 
@@ -18,6 +18,16 @@ Registo das decisões desta reorganização (17/11/2026). Onde os PDFs originais
 | D-10 | Módulos novos em inglês (`households`, `energy`, `billing`…); o pacote `homemind`, o cliente OIDC e o projeto Compose mantêm o nome herdado | Compatibilidade (CLAUDE.md anterior) |
 | D-11 | Dinheiro em cêntimos inteiros; arredondamento pelo maior resto; `Σ` das partes = total da fatura | Recibos exatos |
 | D-12 | Fixtures de fatura do PDF: o modelo §7.1 (45,12 / 29,76 / 24,64 / 20,48 €) é o do MVP; as «três regras» do sumário (46,80 / 27,60 / 24,40 / 21,20 €) são a versão mínima. Ambas são testes. Valores ilustrativos, não resultados nossos | O PDF usa dois conjuntos |
+| D-13 | O documento **v5.1** é a fonte de produto, incorporado em `docs/references/` sem alterações. Onde menciona Telegram/Streamlit (§3, §6.9, §12, §16–17, §19) prevalece D-01 | Decisão da equipa > v5.1 |
+| D-14 | **MVP = Justa + Atenta + M1 (visão/contagem na porta) + M2 (assinaturas) + M3 (presença, atribuição, orçamentos, anomalias em código) + M4 (assistente LLM com ferramentas internas e MCP)**. Fase 2 (F3): segurança AWAY, casa vazia e aparelho esquecido ao sair (SAFE-02, ALERT-04, PRES-06). Nenhum item de fase 2 bloqueia o MVP | v5.1 §9, §19.2 |
+| D-15 | A regra «janela aberta + aquecedor ligado» (SAFE-01) pode integrar o MVP **em simulação**; execução física só com dispositivos compatíveis, condições seguras, grant, autorização e releitura | v5.1 §19.1 + política MCP (D-07) |
+| D-16 | **Sem HAN nem contador geral em tempo real** como dependência (v5.1 §26.11). No MVP a tomada da extensão faz de `main_meter`; em produção há tomadas por quarto e a fatura mensal. Contador geral/MEO Energia só como opção (PILOT-02, #126) | v5.1 |
+| D-17 | Cinco pessoas (P1–P5). O **backend de notificações é de P3**; a **interface visual (centro de notificações, páginas) é de P5**, em colaboração; P3 é responsável pelas confirmações do utilizador (APP-02 #95, APP-03 #96) | Decisão da equipa |
+| D-18 | Nomes da demo: casa Ana, Bruno, Carla, Diogo (tabela §7.1). O «João» do §22 que chega a casa e reclama o aquecedor do Bruno é **a Carla** em toda a documentação, guião e fixtures. Não existe um quinto morador | Uniformização explícita |
+| D-19 | Idempotência de eventos: cada consumidor regista **todos** os `event.id` processados e o efeito na **mesma transação** (`processed_event`); nunca «só o último id recebido» | [event-flow.md](architecture/event-flow.md) |
+| D-20 | Os dois conjuntos de valores do PDF mantêm-se como fixtures distintas: **A** = §7.1 (quatro componentes, 45,12/29,76/24,64/20,48 €; MVP) e **B** = «três regras» do §6.2 (46,80/27,60/24,40/21,20 €). Regras e total (120 €) diferentes; ambas ilustrativas | [billing.md](modules/billing.md) |
+| D-21 | A tarefa de preparação usa as issues existentes (#58–#132) e a roadmap #129; os IDs provisórios `C-Px-nn` de versões anteriores ficam substituídos pelos códigos `BASE-01`… ([backlog.md](development/backlog.md)). Hierarquia épico → tarefa por **sub-issues nativas** do GitHub; dependências por referência | Estado real do GitHub |
+| D-22 | **GitHub Project v2** único «Conta Certa — Desenvolvimento» (owner `souofrancisco`): ver [roadmap.md](development/roadmap.md) | Gestão |
 
 ### Telegram → aplicação (D-01), mapeamento completo
 
@@ -50,7 +60,7 @@ Os PDFs continuam a mencionar Telegram; essa parte **não faz parte da arquitetu
 | A-03 | `lastCommunicationTime` é o último contacto do dispositivo com a cloud | Mentores ([integrations/mentor-questions.md](integrations/mentor-questions.md)) |
 | A-04 | A tomada do kit mede a carga que passa pela extensão e faz de «contador da casa» no MVP | MCP-06 |
 | A-05 | Autenticação continua no Authentik (OIDC + PKCE); o `sub` identifica o utilizador | Já em uso |
-| A-06 | Não foi reexecutada nenhuma verificação (`make check`, MCP, câmara) nesta tarefa documental | — |
+| A-06 | Validação do ambiente (`make check`, Compose) registada em [development/testing.md](development/testing.md) (secção «Estado do ambiente»). MCP e câmara **não** foram reexecutados | Guia de validação manual |
 | A-07 | O utilizador GitHub de P1 é `brunovieira88` (o pedido escrevia `brunoviera88`) | Confirmar com P1 |
 
 ## Pontos por resolver
@@ -65,7 +75,6 @@ Os PDFs continuam a mencionar Telegram; essa parte **não faz parte da arquitetu
 | P-06 | Fornecedor de LLM para o assistente e que dados de consumo podem sair; consentimento | Equipa | C-P3-04 |
 | P-07 | O «Desligar tudo» do ObjectOS mantém-se como ação manual? Para quem? | Equipa | C-P5-06 |
 | P-08 | Retenção de leituras e eventos (prazos com DPO) | Equipa | Piloto |
-| P-09 | `docs/altice-mcp-guia-ligacao.pdf` aparece **apagado** na árvore de trabalho (alteração anterior a esta tarefa, não commitada). É o guia oficial do MCP. Restaurar para `docs/references/`? | Utilizador | Já |
 | P-10 | O orçamento pessoal conta só consumo individual ou também a base fixa? (proposta: só o individual) | P4 + equipa | C-P4-04 |
 | P-11 | Prazos reais (resumo PDF e apresentação): os documentos antigos diziam 18/11 19h00 e 20/11 17h30 | P5 com a organização | Hoje |
 | P-12 | Testes automáticos de frontend (componentes) para as notificações interativas? | P5 | C-P3-01 |

@@ -1,4 +1,4 @@
-# Ficheiros partilhados: mudanças só com revisão do dono (ver docs/parallel-work.md).
+# Ficheiros partilhados: mudanças só com revisão do dono (ver CLAUDE.md e docs/development/team.md).
 /.github/                  @souofrancisco
 /Makefile                  @souofrancisco
 /app/compose.yaml              @souofrancisco
@@ -8,3 +8,20 @@
 /app/frontend/package-lock.json @souofrancisco
 /app/backend/src/homemind/core/ @souofrancisco
 /AGENTS.md                 @souofrancisco
+/CLAUDE.md                 @souofrancisco
+/app/backend/src/homemind/contracts/ @souofrancisco
+/docs/architecture/contracts.md @souofrancisco
+
+# Revisão por área (docs/development/team.md). Pastas planeadas ainda podem não existir.
+/app/backend/src/homemind/connectors/ @brunovieira88
+/app/backend/src/homemind/features/mcp/ @brunovieira88
+/app/backend/src/homemind/features/devices/ @brunovieira88
+/app/backend/src/homemind/features/energy/ @brunovieira88
+/app/backend/src/homemind/features/video/ @1Mii
+/app/backend/src/homemind/features/visao/ @1Mii
+/app/backend/src/homemind/features/presence/ @1Mii
+/app/backend/src/homemind/features/notifications/ @RafaelMat0s-Dev
+/app/backend/src/homemind/features/agent/ @RafaelMat0s-Dev
+/app/backend/src/homemind/features/billing/ @Amorim3000
+/app/backend/src/homemind/features/budgets/ @Amorim3000
+/app/backend/src/homemind/features/alerts/ @Amorim3000

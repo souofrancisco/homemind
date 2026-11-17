@@ -1,99 +1,33 @@
-# Proposta de backlog
+# Backlog: mapa de issues e destino das antigas
 
-**Só proposta.** Nenhuma issue foi criada, alterada ou fechada nesta tarefa. A criação e o encerramento fazem-se numa fase posterior, depois de os contratos estarem acordados ([roadmap.md](roadmap.md)). Estado das issues lido a 17/11/2026 (só leitura).
+**IMPLEMENTADO no GitHub** (lido a 17/11/2026): 13 épicos (#58–#70), 68 issues de implementação `[CC · CÓDIGO]` e a roadmap mestre #129. Os IDs provisórios `C-Px-nn` das versões anteriores deste ficheiro **ficam substituídos** por estes códigos. Prioridades, fases e dependências: [roadmap.md](roadmap.md); responsabilidades: [team.md](team.md). Cada épico agrupa as suas tarefas como **sub-issues nativas** (ver [roadmap.md](roadmap.md) e a issue do épico).
 
-## Destino das issues antigas
+## Épicos e tarefas
 
-| Issue | Título (ObjectOS) | Estado | Proposta | Porquê |
-|---|---|---|---|---|
-| #1–#3, #6, #7, #9–#11, #13, #14, #22–#27 | Contratos, RTSP, presença, Home/FakeHome, MCP, motor, NVIDIA, painel | Fechadas | **Manter fechadas** | Histórico do ObjectOS. Os resultados reaproveitáveis estão em [migration.md](../architecture/migration.md) |
-| #4 | YOLO objetos, pose e tracking | Aberta | **Substituir** por C-P2-02 e fechar | O produto deixa de usar objetos e pose; fica a deteção de pessoa |
-| #5 | Deteção do gesto «objeto levantado» | Aberta | **Encerrar** («não será feito») | Funcionalidade descontinuada |
-| #8 | Afinador offline de gestos | Aberta | **Encerrar** | Idem |
-| #12 | Consumo da tomada e observabilidade MCP | Aberta | **Reaproveitar**: renomear e ligar a C-P1-01 | É o bloqueio central da Conta Certa (unidade de `instantPower`) |
-| #28 | Integração completa e benchmark | Aberta | **Substituir** por C-P5-08 | Âmbito e métricas diferentes |
-| #29 | README, resumo PDF e apresentação | Aberta | **Reaproveitar** como entregáveis (C-P5-09) | Entregáveis da organização mantêm-se; conteúdo novo |
-| #30, #31 | Extras (sugestões de rotinas, extras pós-MVP) | Abertas | **Encerrar** | Fora de âmbito |
-| #51 | Ideia: Memory | Aberta | **Encerrar** | Fora de âmbito |
-| #52 | Ideia: «Porque aconteceu?» (explicabilidade) | Aberta | **Reaproveitar** como C-P3-05 | Alinha com recibos e assistente explicáveis |
-| #53 | Ideia: Laboratório de regras (pré-visualizar) | Aberta | **Reaproveitar** como C-P3-07 | Alinha com automações com pré-visualização |
-| #54 | Ideia: Calibração de gestos | Aberta | **Encerrar** | Gestos descontinuados |
-| #55 | Ideia: Energy Insights | Aberta | **Reaproveitar** como C-P4-06 | Recomendações explicáveis |
-| #56 | Ideia: Controlo inclusivo | Aberta | **Reaproveitar** como requisito de acessibilidade do frontend (C-P5-07) | Acessibilidade mantém-se |
-
-## Épicos propostos
-
-| Épico | Âmbito |
-|---|---|
-| E0 Contratos e base | Contratos, db, barramento, papéis |
-| E1 Energia e MCP | Leituras, assinaturas, hardware |
-| E2 Atribuição e fatura | Regras, fatura, recibos |
-| E3 Notificações e IA | Centro de notificações, assistente |
-| E4 Presença | Porta, fusão |
-| E5 Aplicação e demo | UI por papel, plano B, entregáveis |
-
-## Issues propostas (IDs provisórios `C-…`)
-
-Formato: `C-<pessoa>-<n>` · prioridade · pré-requisitos · critério de aceitação resumido (completo no módulo).
-
-### P5 — arquitetura, integração, frontend, demo
-
-| ID | Prio | Título | Aceitação resumida |
+| Épico | # | Responsável | Tarefas (issue #) |
 |---|---|---|---|
-| C-P5-01 | P0 | Contratos acordados e publicados | `contracts/*.py` + `make contracts`; aprovação de P1–P4 |
-| C-P5-02 | P0 | `core/db` (SQLite) e migrações | Migrações do zero; testes em memória |
-| C-P5-03 | P0 | `core/events` (barramento + `domain_event`) | Idempotência; handler falhado isolado |
-| C-P5-04 | P0 | `households`, papéis e DTOs por papel | Matriz papel × rota; senhorio sem presença |
-| C-P5-05 | P0 | Seed da casa de demo + reset | Reset < 1 min |
-| C-P5-06 | P0 | Navegação por papel e páginas base (casa, recibos) | `make check` verde |
-| C-P5-07 | P1 | Acessibilidade e páginas de consumo/orçamento | Estados loading/erro/vazio; contraste |
-| C-P5-08 | P0 | Integração ponta a ponta e ensaio da demo | Cenário 2× seguidas; plano B |
-| C-P5-09 | P0 | Entregáveis (README, resumo, apresentação) | Prazos confirmados (P-11) |
-| C-P5-10 | P2 | Remoção do código ObjectOS (M4) | PRs por módulo; CODEOWNERS limpo |
+| BASE | 58 | P5 | BASE-01 #71 · BASE-02 #72 · BASE-03 #73 · BASE-04 #74 · BASE-05 #130 |
+| MCP | 59 | P1 | MCP-01 #12 · MCP-02 #75 · MCP-03 #76 · MCP-04 #77 · MCP-05 #78 |
+| ENERGY | 60 | P1 | ENERGY-01 #79 · -02 #80 · -03 #81 · -04 #82 · -05 #83 |
+| HOUSE | 61 | P5 | HOUSE-01 #84 · -02 #85 · -03 #86 · -04 #87 · -05 #88 |
+| BILL | 62 | P4 | BILL-01 #89 · -02 #90 · -03 #91 · -04 #92 · -05 #52 · -06 #93 · -07 #132 |
+| APP | 63 | P5 (UI) / P3 (backend e confirmações) | APP-01 #94 · -02 #95 (P3) · -03 #96 (P3) · -04 #56 · -05 #97 · -06 #98 · -07 #99 |
+| ALERT | 64 | P4 | ALERT-01 #100 · -02 #101 · -03 #102 · -04 #103 · -05 #55 · -06 #104 |
+| PRES | 65 | P2 | PRES-01 #105 · -02 #106 · -03 #107 · -04 #108 · -05 #109 · -06 #131 |
+| AGENT | 66 | P3 | AGENT-01 #110 · -02 #111 · -03 #112 · -04 #113 |
+| SAFE | 67 | P2 | SAFE-01 #114 · -02 #115 · -03 #116 · -04 #117 |
+| PRIV | 68 | P5 | PRIV-01 #118 · -02 #119 · -03 #51 · -04 #120 |
+| DEMO | 69 | P5 (DEMO-03: P1) | DEMO-01 #121 · -02 #28 · -03 #122 · -04 #123 · -05 #29 · -06 #124 |
+| PILOT | 70 | P5 (PILOT-02: P1) | PILOT-01 #125 · -02 #126 · -03 #127 · -04 #128 |
 
-### P1 — MCP, dispositivos, energia
+Issues antigas **reaproveitadas** (mantêm número e histórico): #12 → MCP-01, #28 → DEMO-02, #29 → DEMO-05, #51 → PRIV-03, #52 → BILL-05, #55 → ALERT-05, #56 → APP-04.
 
-| ID | Prio | Título | Aceitação resumida |
-|---|---|---|---|
-| C-P1-01 | P0 | Unidade de `instantPower` (reaproveita #12) | Unidade registada e `power_w` com proveniência |
-| C-P1-02 | P0 | Simulador/replay de leituras | Cenário determinístico em CI |
-| C-P1-03 | P0 | Degraus e `ConsumptionEvent` | Testes com FakeHome |
-| C-P1-04 | P0 | Assinaturas e registo de aparelhos | `confidence`; `unknown` sem inventar |
-| C-P1-05 | P1 | Aprendizagem com confirmações | Atualiza assinatura |
-| C-P1-06 | P1 | Verificar escrita da tomada e da lâmpada (MCP-04/05) | Resultado registado no guia |
-| C-P1-07 | P1 | Papel `room_meter` e vários dispositivos | Contratos estáveis |
-| C-P1-08 | P2 | Clustering de desconhecidos; estimativa da lâmpada; automações físicas | — |
+## Issues antigas do ObjectOS
 
-### P2 — visão e presença
+Todas as restantes (#1–#11, #13, #14, #22–#27, #30, #31, #53, #54) estão **fechadas** e **mantêm-se fechadas**: histórico do ObjectOS. Não reabrir tarefas dos gestos descontinuados (objeto levantado, afinador, calibração). Os resultados reaproveitáveis estão em [migration.md](../architecture/migration.md).
 
-| ID | Prio | Título | Aceitação resumida |
-|---|---|---|---|
-| C-P2-01 | P0 | Presença manual na aplicação e eventos de porta simulados | `PUT /api/presence/me`; simulador |
-| C-P2-02 | P1 | Deteção de pessoas e linha na soleira (substitui #4) | N passagens ⇒ N eventos; zero imagens persistidas |
-| C-P2-03 | P1 | Fusão de presença | Tolerância 20–30 min; `uncertain` |
-| C-P2-04 | P2 | Casa vazia e alerta de entrada; Wi-Fi opt-in; provar acesso à câmara do kit | — |
+## Notas de alinhamento v5.1
 
-### P3 — agente, notificações, interação
-
-| ID | Prio | Título | Aceitação resumida |
-|---|---|---|---|
-| C-P3-01 | P0 | Centro de notificações (API + WS + lista) | Reconexão recupera por `GET` |
-| C-P3-02 | P0 | Confirmação «De quem é esta conta?» | Resposta persistida; `409` na repetição |
-| C-P3-03 | P1 | Histórico e preferências | Silêncio noturno |
-| C-P3-04 | P1 | Assistente que explica recibos | Só valores das ferramentas |
-| C-P3-05 | P1 | Explicabilidade («Porque aconteceu?», reaproveita #52) | — |
-| C-P3-06 | P2 | Ações sugeridas com confirmação | Nunca executa sem `confirm` |
-| C-P3-07 | P2 | Automações em português com pré-visualização (reaproveita #53) | Ativação explícita |
-| C-P3-08 | P2 | Push (Capacitor) e leitura de faturas por LLM | — |
-
-### P4 — faturação, orçamentos, alertas
-
-| ID | Prio | Título | Aceitação resumida |
-|---|---|---|---|
-| C-P4-01 | P0 | Atribuição (A, B) com fallback de 24 h | Testes de regra e prazo |
-| C-P4-02 | P0 | Fatura e fixtures A/B/C | Soma ao cêntimo |
-| C-P4-03 | P0 | Recibo explicado com proveniência | Linhas por tipo |
-| C-P4-04 | P0 | Orçamento pessoal 50/80/100 % | Um aviso por limiar |
-| C-P4-05 | P1 | Regra C, limiar de pergunta, previsão, plafond por quarto e solidário, picos, contestação | — |
-| C-P4-06 | P1 | Recomendações de poupança explicáveis (reaproveita #55) | — |
-| C-P4-07 | P2 | Aparelho esquecido, «não bate certo», bi-horário, anomalias | — |
+- #130 (BASE-05) é esta sincronização documental; #131 (PRES-06) e #132 (BILL-07) existem e estão em F3/F2 (opção C **sem** bloquear o MVP).
+- Fase 2 do v5.1 (AWAY, aparelho esquecido ao sair): SAFE-02, PRES-06, ALERT-04, todas F3.
+- Notificações: backend em `features/notifications` (P3, APP-02/03); páginas e componentes em `app/frontend` (P5, APP-01/05/06) sobre o contrato `Notification` ([contracts.md](../architecture/contracts.md)).

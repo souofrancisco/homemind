@@ -1,6 +1,6 @@
 # Migração do ObjectOS para a Conta Certa
 
-> **Esta tarefa é só documental.** Nada do código, das dependências, do Docker, do Makefile, do CI, da base de dados ou das issues foi alterado. A matriz abaixo é um **plano**: os estados «KEEP / ADAPT / REPLACE / REMOVE» descrevem o destino previsto, não migração executada.
+> **Estado:** a preparação (BASE-05 #130, M0) é só documental: o código, as dependências, o Docker, o Makefile e o CI não foram alterados e `make check` continua verde (ver [development/testing.md](../development/testing.md)). A matriz abaixo é o plano que a BASE-04 (#74) executa; os estados descrevem o destino previsto, não migração executada. Nada do ObjectOS se remove fora de um PR da BASE-04.
 
 Fontes analisadas: código em `app/` na `main` (commit `302f0c9`), `README.md`, `CLAUDE.md`, os três `AGENTS.md`, `docs/` anterior (agora em [archive/objectos/](../archive/objectos/README.md) e [integrations/](../integrations/altice-mcp.md)), Makefile, Compose, issues e PRs (só leitura). Não se executou `make check` nesta tarefa.
 
@@ -12,10 +12,26 @@ Fontes analisadas: código em `app/` na `main` (commit `302f0c9`), `README.md`, 
 | **ADAPT** | Reutilizável com alterações (indicadas) |
 | **REPLACE** | A implementação será substituída; o conceito mantém-se |
 | **REMOVE** | Deixa de fazer parte do produto (a remoção real é uma tarefa posterior) |
+| **DEFER** | Mantém-se como está e só se decide depois (ver tabela abaixo) |
 
 ## Matriz de migração
 
 Caminhos relativos a `app/backend/src/homemind/` (backend) e `app/frontend/src/` (frontend), salvo indicação. «Resp.» é a futura responsabilidade (ver [development/team.md](../development/team.md)).
+
+### Resumo por área e DEFER
+
+| Área | Destino global | DEFER / nota |
+|---|---|---|
+| MCP e OAuth (`connectors/*`, `features/mcp`) | KEEP / ADAPT (P1) | Escrita física e unidade de `instantPower`: DEFER até MCP-01 e MCP-04 |
+| FakeHome | ADAPT (perfis de aparelhos, MCP-05) | — |
+| Vídeo e YOLO | KEEP / ADAPT (só «pessoa» + soleira) | `medir_latencia.py` REMOVE |
+| Gestos antigos | REMOVE / REPLACE | `ponte.py` KEEP; `presenca.py` ADAPT |
+| Engine de modos e regras JSON | REMOVE / REPLACE (SQLite + eventos) | Cliente NVIDIA (`llm.py`) ADAPT para o assistente |
+| Eventos e WebSocket | REPLACE / ADAPT | — |
+| Authentik | KEEP | Papéis na base de dados (P-02) |
+| Frontend | KEEP / ADAPT | Rename «HomeMind» no Android: **DEFER** (P-14) |
+| Docker, Makefile, CI | KEEP | `compose.gpu.yaml`, `compose.mcp*.yaml`: **DEFER** (sem alterações previstas) |
+| Testes | KEEP / REMOVE (saem com o motor antigo) | Testes novos por módulo |
 
 ### Backend — núcleo e API
 
@@ -126,4 +142,4 @@ Regra: **enquanto o ObjectOS correr, `make check` tem de continuar verde**; as r
 | `docs/estado-para-amanha.md`, `objectos-plano.md`, `parallel-work.md`, `demo-script.md`, `pitch-outline.md`, `executive-summary-outline.md`, `metrics.md` | [archive/objectos/](../archive/objectos/README.md) |
 | `docs/mcp-demo.md`, `mcp-capabilities.md`, `mentor-questions.md`, `pessoa3-relatorio.md` | [integrations/](../integrations/altice-mcp.md) |
 | `docs/guia-validacao-manual.md` | [development/guia-validacao-manual.md](../development/guia-validacao-manual.md) |
-| `docs/altice-mcp-guia-ligacao.pdf` | **Ver P-09 em [decisions.md](../decisions.md)**: está apagado na árvore de trabalho (alteração anterior a esta tarefa) e não foi restaurado nem commitado |
+| `docs/references/altice-mcp-guia-ligacao.pdf` | **KEEP** (histórico): guia oficial do MCP, movido de `docs/` com histórico Git preservado. Resolve P-09 |

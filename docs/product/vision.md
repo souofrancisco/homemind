@@ -54,15 +54,14 @@ Acrescentados por esta reorganização:
 - Não é um contador certificado: os valores são medições do kit ou estimativas, e cada recibo diz qual é qual.
 - Não é (ainda) um sistema de segurança: o armar de alarmes e os cenários do Connected Home estão **fora do âmbito atual** do MCP do projeto (ver [integrations/altice-mcp.md](../integrations/altice-mcp.md)).
 
-## Três escalas de adoção (PDF §11.2)
+## Duas camadas de adoção (v5.1 §11.2)
 
 | Nível | Equipamento | Entrega |
 |---|---|---|
 | 1 · Base | Tomada, lâmpada e sensores por quarto | Aquecedores medidos, três regras, orçamento e avisos |
-| 2 · Presença | + câmara na porta + telemóveis registados | Conta da sala por presença, aparelhos esquecidos, estado da casa |
-| 3 · Total | + módulo HAN no contador | Assinaturas em tempo real, deteção de batota mais fina |
+| 2 · Presença | + câmara na porta + telemóveis registados | Conta da sala por presença, estado da casa (fase 2: aparelhos esquecidos, AWAY) |
 
-O MVP da hackathon corresponde a uma versão reduzida do nível 1: **uma só tomada com medição** faz de contador da casa ([development/mvp.md](../development/mvp.md)).
+O v5.1 retirou o módulo HAN e o contador geral em tempo real do desenho-base (D-16). O MVP da hackathon corresponde a uma versão reduzida do nível 1: **uma só tomada com medição** faz de medidor da bancada ([development/mvp.md](../development/mvp.md)).
 
 ## Para a Altice
 

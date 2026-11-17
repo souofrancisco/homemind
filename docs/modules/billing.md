@@ -75,7 +75,7 @@ O sumário executivo cita 21,20 €; o corpo do documento (§6.2 e §7.1) cita 4
 
 | Alerta | Gatilho (PDF §6.9) | Prio |
 |---|---|---|
-| Pico em zona comum | > 1,5 kW durante > 30 min, ou conta da sala do dia > 2× a média | P1 |
+| Pico em zona comum | > 1,5 kW durante > 30 min, ou conta da sala do dia > 2× a média | P0 (ALERT-03 #102) |
 | Aparelho esquecido | Aparelho grande ligado com o dono fora há > 1 h (precisa de presença) | P2 |
 | Não bate certo | Assinatura do aparelho de um morador fora do quarto dele; consumo noturno anormal | P2 |
 

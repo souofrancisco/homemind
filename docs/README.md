@@ -1,6 +1,6 @@
 # Documentação — Conta Certa
 
-> **Estado:** o produto passou de ObjectOS para **Conta Certa** (reorganização documental de 17/11/2026). O código ainda é o do ObjectOS; os documentos marcados **PLANEADO** descrevem o que vai ser construído, não o que existe. Ver [architecture/migration.md](architecture/migration.md).
+> **Estado:** o produto passou de ObjectOS para **Conta Certa** (reorganização documental de 17/11/2026, reconciliada com o v5.1). O código ainda é o do ObjectOS; os documentos marcados **PLANEADO** descrevem o que vai ser construído, não o que existe. Ver [architecture/migration.md](architecture/migration.md).
 
 Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home).
 
@@ -50,9 +50,9 @@ Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home).
 | Documento | Conteúdo |
 |---|---|
 | [team.md](development/team.md) | Divisão do trabalho pelas cinco pessoas |
-| [roadmap.md](development/roadmap.md) | Prioridades P0/P1/P2 e fases |
+| [roadmap.md](development/roadmap.md) | Fases F0–F3, prioridades, bloqueios, ordem de trabalho (espelho da issue #129 e do GitHub Project) |
 | [mvp.md](development/mvp.md) | MVP, cenário de demo, real vs simulado, plano B |
-| [backlog.md](development/backlog.md) | Proposta de backlog e destino das issues antigas |
+| [backlog.md](development/backlog.md) | Mapa épico → issues reais (#58–#132) e destino das issues antigas |
 | [risks.md](development/risks.md) | Riscos técnicos e limites do hardware |
 | [testing.md](development/testing.md) | Estratégia de testes e critérios de qualidade |
 | [guia-validacao-manual.md](development/guia-validacao-manual.md) | Roteiro de validação manual (herdado; ver nota no topo) |
@@ -72,7 +72,7 @@ Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home).
 | Documento | Conteúdo |
 |---|---|
 | [decisions.md](decisions.md) | Decisões (incl. Telegram → aplicação), pressupostos e pontos por resolver |
-| [references/](references/README.md) | PDFs originais da proposta (intactos, históricos) |
+| [references/](references/README.md) | PDFs originais, **documento v5.1** (`.md`, fonte de produto) e guia MCP oficial (intactos, históricos) |
 | [archive/objectos/](archive/objectos/README.md) | Documentação do ObjectOS, só para consulta |
 
 ## Convenções dos documentos

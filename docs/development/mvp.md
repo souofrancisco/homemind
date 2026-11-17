@@ -4,21 +4,27 @@
 
 ## Âmbito
 
-| MVP obrigatório (P0) | Posterior (P1/P2) |
+Segue o v5.1 §9 e §19 e [decisions.md](../decisions.md) D-14. O MVP é a **Casa Justa + Casa Atenta** com quatro componentes: **M1** visão e contagem na porta, **M2** assinaturas e classificação de aparelhos, **M3** presença, atribuição, orçamentos e anomalias (código, sem modelo treinado), **M4** assistente LLM com ferramentas internas e MCP.
+
+| MVP (F1, com plano B simulado) | Fase 2 (F3) / fora |
 |---|---|
-| Casa com 4 moradores (seed) | Câmara na porta com contagem real e fusão de presença |
-| Registo de aparelhos pessoais e comuns | Segurança, casa vazia, alertas de entrada |
-| Leituras de consumo (tomada real ou simulador) | Presença por Wi-Fi |
-| Deteção de degraus e identificação provável | Previsões complexas, anomalias |
-| Notificação de confirmação na aplicação | Assistente de IA e ações sugeridas |
-| Atribuição ao morador ou à conta comum | Automações e regras em português |
-| Orçamento e alerta de limite | Push, votações, leitura de faturas por LLM |
-| Fatura, recibos e painel do senhorio | Várias tomadas e quartos medidos |
-| Separação REAL / SIMULADO / ESTIMADO visível | |
+| Casa com 4 moradores (seed) | **Segurança AWAY, casa vazia, entrada com casa vazia** (SAFE-02, PRES-06) |
+| Registo de aparelhos pessoais e comuns | **Aparelho esquecido após uma saída** (ALERT-04) |
+| Leituras de consumo (tomada real ou simulador) | Cenários e regras votadas (SAFE-04, AGENT-04) |
+| M2: degraus e identificação **provável** (`confidence`) | Total da casa em tempo real, HAN, MEO Energia (PILOT-02) |
+| M1 + M3: contagem na porta (clip/RTSP/simulada), Wi-Fi opt-in ou presença manual, fusão em casa/fora/incerto | Várias tomadas de quarto na bancada (só em produção) |
+| Notificação de confirmação na app («É minha / É de todos / Não sei») | Push, leitura de faturas por LLM multimodal |
+| Atribuição ao morador ou à conta comum (A/B; C é F2) | Opção C da sala por presença (BILL-07) |
+| Orçamento 50/80/100 %, pico em zona comum, lâmpada RGB (se MCP-04 PASS) | Previsão avançada e bi-horário (ALERT-02) |
+| M4: assistente na app só com ferramentas read-only (AGENT-01/02) | Ações propostas pela IA (AGENT-03) |
+| Regra «janela aberta + aquecedor» **em simulação** (SAFE-01); física só com PASS | |
+| Fatura, recibos e painel do senhorio; REAL / SIMULADO / ESTIMADO visível | |
+
+**Limitações assumidas:** uma só tomada mede a extensão da bancada (`main_meter`); a identificação por uma tomada é **probabilística** (cargas simultâneas e a sua localização não se inferem com certeza), pelo que cada resultado leva `confidence` e o resíduo divide-se por igual. Isto deve constar nos contratos, testes e no guião.
 
 ## Cenário de demonstração
 
-Casa de 4 moradores: Ana, Bruno, Carla e Diogo (os nomes da tabela de fatura do PDF §7.1; o «João» da demonstração do PDF §22 é aqui a Carla, para a história e a fatura usarem as mesmas quatro pessoas). Fatura do mês: 120 €.
+Casa de 4 moradores: Ana, Bruno, Carla e Diogo (os nomes da tabela de fatura do PDF §7.1; o «João» da demonstração do v5.1 §22 é aqui **a Carla**, para a história e a fatura usarem as mesmas quatro pessoas: decisão D-18). Fatura do mês: 120 €.
 
 | # | Passo | O que se vê na aplicação | Fonte dos dados |
 |---|---|---|---|
@@ -65,7 +71,7 @@ O plano B é parte do produto, não uma desculpa: serve para demonstrar a lógic
 
 ## Guião de 3 minutos (proposta)
 
-Adaptado do PDF §22; o grupo de mensagens passa a ser a aplicação; a câmara fica como «próximo passo» salvo prova de acesso.
+Adaptado do PDF §22; o grupo de mensagens passa a ser a aplicação; a contagem na porta (M1) entra no passo 2 com a fonte disponível (RTSP, clip ou simulada, sempre rotulada); a segurança AWAY e os aparelhos esquecidos ficam para a fase 2.
 
 | Tempo | O que acontece | O que o júri vê | Aviso |
 |---|---|---|---|

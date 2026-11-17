@@ -120,7 +120,7 @@ O modelo já separa **o papel do dispositivo** do aparelho:
 
 | Papel (`Device.role`) | MVP | Depois |
 |---|---|---|
-| `main_meter` | A única tomada com medição, à entrada da extensão: faz de «contador da casa» | Módulo HAN no contador |
+| `main_meter` | A única tomada com medição, à entrada da extensão: faz de «contador da casa» | Sem equivalente em produção (D-16: sem HAN nem contador geral); a fatura mensal fecha o total |
 | `room_meter` | Não existe; consumos de quartos simulados (`simulated`) | Uma tomada por quarto: localização exata |
 | `actuator` | Lâmpada (feedback) e a mesma tomada (corte) | Mais tomadas |
 

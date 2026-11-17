@@ -53,6 +53,18 @@ Não há testes unitários hoje (**IMPLEMENTADO**: `eslint`, `tsc -b`, `vite bui
 - [ ] Permissões por papel testadas em rotas novas
 - [ ] Nenhum valor numérico sem proveniência
 
-## Estado atual dos testes (ObjectOS)
+## Estado do ambiente (validado a 17/11/2026, branch documental sobre `main` 7d931d8)
 
-O PR #57 reportou 216 testes `pytest` verdes e `ruff` limpo (ver [integrations/mcp-p3-relatorio.md](../integrations/mcp-p3-relatorio.md)); **não foram reexecutados nesta tarefa documental**. Os testes de `engine` e `gestos` saem quando esses módulos forem removidos (fase M4 em [migration.md](../architecture/migration.md)).
+| Verificação | Resultado |
+|---|---|
+| `make check` (ruff check + format, ESLint, pytest, OpenAPI→TS, `tsc -b` + build Vite, `docker compose config`) | **PASSOU** (exit 0) |
+| `pytest` backend | **221 passed**, 1 aviso de depreciação (`anyio.abc.BlockingPortal`, Starlette) |
+| Contrato OpenAPI → TypeScript (`make contracts`, dentro do `check`) | Gerado sem diferenças no Git |
+| Compose (`app/compose.yaml`, com `compose.mcp.yaml`) | `config -q` sem erros |
+| `make smoke` (stack completa, Authentik) | **Não executado** nesta tarefa (sem alterações a Docker, arranque ou proxy) |
+| MCP real, câmara, escritas físicas | **Não executados** (fora do âmbito; ver [guia-validacao-manual.md](guia-validacao-manual.md)) |
+| CI (`.github/workflows/ci.yml`) | Corre `make check` em PR e push para `main`; `main` **sem proteção** de branch (a convenção é PR por issue, CLAUDE.md) |
+| `.gitignore` | Cobre `.env*`, `app/.mcp-auth/`, `.venv/`, `node_modules/`, `graphify-out/` |
+| Falhas conhecidas | Nenhuma de teste. Pendente: `docs/` ainda tem apontadores nos caminhos antigos (P-13) |
+
+Os testes de `engine` e `gestos` saem quando esses módulos forem removidos (fase M4 em [migration.md](../architecture/migration.md), BASE-04 #74).

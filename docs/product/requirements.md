@@ -2,6 +2,8 @@
 
 Todos **PLANEADO** (nada disto existe ainda no código, salvo indicação). Origem: **PDF §x** = proposta original; **DECISÃO** = decidido nesta reorganização ([decisions.md](../decisions.md)); **PROPOSTA** = ideia nossa por validar. Prioridades: P0 = MVP obrigatório, P1 = segue o MVP, P2 = posterior. Detalhe de entregas por pessoa em [development/team.md](../development/team.md).
 
+> **Prioridades:** a coluna «Prio» foi sincronizada com as issues GitHub (17/11/2026; ver [development/backlog.md](../development/backlog.md)); onde divergir, vale a issue.
+
 ## Casa Justa
 
 | ID | Requisito | Origem | Prio | Dono |
@@ -34,24 +36,24 @@ Todos **PLANEADO** (nada disto existe ainda no código, salvo indicação). Orig
 | RA-01 | Orçamento pessoal com avisos a 50 %, 80 % e 100 % | PDF §6.9 | P0 | P4 |
 | RA-02 | Previsão do fim do mês (projeção linear simples) | PDF §6.9, §9 (M4) | P1 | P4 |
 | RA-03 | Plafond do senhorio por quarto, com aviso antes e depois | PDF §6.9 | P1 | P4 |
-| RA-04 | Pico em zona comum (ex.: > 1,5 kW durante > 30 min) | PDF §6.9 | P1 | P4 |
-| RA-05 | Aparelho esquecido (dono fora há > 1 h) — depende de presença | PDF §6.9 | P2 | P4 + P2 |
+| RA-04 | Pico em zona comum (ex.: > 1,5 kW durante > 30 min) | PDF §6.9 (ALERT-03 #102) | P0 | P4 |
+| RA-05 | Aparelho esquecido após saída (dono fora há > 1 h) — **fase 2** (ALERT-04 #103, F3) | PDF §6.9, §19.2 | P2 | P4 + P2 |
 | RA-06 | «Não bate certo» (assinatura fora do quarto do dono, consumo noturno anormal) | PDF §6.9, §8 | P2 | P4 |
 | RA-07 | Recomendações e anomalias (desvio ao perfil habitual) | PDF §9 (M5) | P2 | P4 |
-| RA-08 | Lâmpada RGB como feedback (verde/âmbar/vermelho) | PDF §4 | P2 | P1 |
+| RA-08 | Lâmpada RGB como feedback (verde/âmbar/vermelho); real só com MCP-04 PASS (ALERT-06 #104) | PDF §4 | P0 | P1 |
 
 ## Casa Segura
 
 | ID | Requisito | Origem | Prio | Dono |
 |---|---|---|---|---|
-| RS-01 | Contar entradas e saídas na porta (pessoa + linha na soleira), só eventos | PDF §5 | P1 | P2 |
+| RS-01 | Contar entradas e saídas na porta (pessoa + linha na soleira), só eventos (M1; PRES-02 #106) | PDF §5, §9 | P0 | P2 |
 | RS-02 | Máscara de privacidade: só a soleira é analisada; sem gravação | PDF §5.3, CLAUDE.md | P0 (restrição) | P2 |
-| RS-03 | Presença por pessoa «em casa / fora / incerto» por fusão de pistas | PDF §6.8 | P1 | P2 |
+| RS-03 | Presença por pessoa «em casa / fora / incerto» por fusão de pistas (PRES-04 #108) | PDF §6.8 | P0 | P2 |
 | RS-04 | Registo manual «cheguei / saí» na aplicação | PROPOSTA (substitui o botão do bot; PDF §20 #7) | P0 | P2 + P3 |
-| RS-05 | Presença por Wi-Fi com opt-in | PDF §10.2 | P2 | P2 |
-| RS-06 | Estado «casa vazia» | PDF §5.1 | P2 | P2 |
-| RS-07 | Alerta de entrada com a casa vazia | PDF §5.1 | P2 | P2 + P3 |
-| RS-08 | Automação autorizada (ex.: janela aberta + aquecedor → corte da tomada) | PDF §3, §12 | P2 | P1 + P3 |
+| RS-05 | Presença por Wi-Fi com opt-in e confirmação manual (PRES-03 #107) | PDF §10.2 | P0 | P2 |
+| RS-06 | Estado «casa vazia» / AWAY — **fase 2** (PRES-06 #131, F3) | PDF §5.1, §19.2 | P2 | P2 |
+| RS-07 | Alerta de entrada com a casa vazia — **fase 2** (SAFE-02 #115, F3) | PDF §5.1, §19.2 | P2 | P2 + P3 |
+| RS-08 | Janela aberta + aquecedor → corte (SAFE-01 #114): **simulado** no MVP; físico só com dispositivos compatíveis, grant, autorização e releitura | PDF §3, §12, §19.1 | P0 | P1 + P3 |
 | RS-09 | Armar alarme / segurança do Connected Home | PDF §3.1 | **Fora de âmbito** até decisão ([decisions.md](../decisions.md) P-01) | — |
 
 ## Notificações e aplicação
@@ -73,8 +75,8 @@ Todos **PLANEADO** (nada disto existe ainda no código, salvo indicação). Orig
 | ID | Requisito | Origem | Prio | Dono |
 |---|---|---|---|---|
 | RI-01 | Guarda-corpo: nenhum número vem do modelo; tudo de ferramentas; contas em código | PDF §9 | P0 (restrição) | P3 |
-| RI-02 | Assistente integrado na aplicação | DECISÃO | P1 | P3 (UI: P5) |
-| RI-03 | Explicar recibos («porque pago mais?») | PDF §12 | P1 | P3 |
+| RI-02 | Assistente integrado na aplicação, com ferramentas read-only (M4; AGENT-01/02 #110/#111) | DECISÃO, PDF §9 | P0 | P3 (UI: P5) |
+| RI-03 | Explicar recibos («porque pago mais?») | PDF §12 | P0 | P3 |
 | RI-04 | Ações sugeridas, com confirmação antes de executar | DECISÃO | P2 | P3 |
 | RI-05 | Regras escritas em português → automação (reutiliza `features/engine/llm.py`) | PDF §12; código existente | P2 | P3 |
 

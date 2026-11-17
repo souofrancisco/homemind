@@ -1,6 +1,6 @@
 # Equipa e divisão do trabalho
 
-Cinco pessoas, cinco áreas com o mínimo de sobreposição. **PLANEADO.** Prioridades: P0 = MVP obrigatório, P1 = depois do MVP, P2 = posterior ([roadmap.md](roadmap.md)). Requisitos em [product/requirements.md](../product/requirements.md).
+Cinco pessoas, cinco áreas com o mínimo de sobreposição. **PLANEADO.** Prioridades: P0 = essencial, P1 = aprofundamento, P2 = extensão; fases F0–F3 ([roadmap.md](roadmap.md)). As tabelas de entregas por pessoa abaixo são o resumo; a lista autoritativa é o GitHub Project e o [backlog.md](backlog.md). Requisitos em [product/requirements.md](../product/requirements.md).
 
 | Pessoa | GitHub | Área |
 |---|---|---|
@@ -21,6 +21,30 @@ Cinco pessoas, cinco áreas com o mínimo de sobreposição. **PLANEADO.** Prior
 - Ficheiros partilhados (revisão obrigatória de P5): `core/`, `contracts/` (mudanças), `Makefile`, Compose, `pyproject.toml`/lockfiles, `.github/`, `docs/architecture/contracts.md`.
 - Uma issue → um branch → um worktree (`make worktree b=feat/<n>-<nome>`); `make check` verde; PR pequeno; sem push direto para `main`.
 - Escritas físicas no kit: uma pessoa de cada vez, com autorização explícita e `make mcp-writes-off` no fim.
+
+## Issues por pessoa, carga e ficheiros preferenciais
+
+Contagem das issues `[CC · …]` abertas (17/11/2026), por prioridade/fase: ver [backlog.md](backlog.md) para os códigos.
+
+| Pessoa | P0·F0 | P0·F1 | P0·F2 | P1 | P2 | Total |
+|---|---:|---:|---:|---:|---:|---:|
+| P1 `brunovieira88` | 1 | 9 | 0 | 1 | 1 | 12 |
+| P2 `1Mii` | 0 | 5 | 0 | 2 | 3 | 10 |
+| P3 `RafaelMat0s-Dev` | 0 | 4 | 0 | 1 | 1 | 6 |
+| P4 `Amorim3000` | 0 | 7 | 0 | 5 | 1 | 13 |
+| P5 `souofrancisco` | 8 | 9 | 3 | 4 | 3 | 27 |
+
+**Sobrecarga:** P5 concentra 27 issues e é o primeiro bloqueio (BASE/HOUSE/PRIV em F0). **Não se redistribuiu** nesta fase, porque os contratos e a persistência têm de ter um único guardião (D-17). Mitigações: P3 (6 issues) assume o backend de notificações e as confirmações (APP-02/03), tirando-o de P5; se P5 se atrasar em F0, **P3 pode pegar em BASE-02 (barramento/idempotência)** e P4 em PRIV-01 (matriz RBAC dos recibos), por acordo e registo em [decisions.md](../decisions.md). Rever no fim da F0.
+
+| Pessoa | Ficheiros/pastas preferenciais (evitar tocar nos de outros) |
+|---|---|
+| P1 | `connectors/*`, `features/mcp`, `features/devices`, `features/energy`, `contracts/energy.py` |
+| P2 | `features/video`, `features/visao`, `features/presence`, `contracts/presence.py` |
+| P3 | `features/notifications`, `features/agent`, `features/automations`, `contracts/notification.py`, `contracts/agent.py`; UI só em colaboração com P5 |
+| P4 | `features/billing`, `features/budgets`, `features/alerts`, `contracts/billing.py` |
+| P5 | `core/*`, `features/households`, `features/auth`, `app/frontend/*` (páginas e componentes, incl. a UI das notificações), `app/compose*.yaml`, `Makefile`, `.github/`, `docs/architecture/contracts.md` |
+
+**Notificações (D-17):** P3 = backend (API, persistência, WS, ações autorizadas, respostas idempotentes) e confirmações do utilizador; P5 = implementação visual. O contrato `Notification` (BASE-03) é o ponto de encontro: ambos aprovam-no antes de implementar.
 
 ---
 

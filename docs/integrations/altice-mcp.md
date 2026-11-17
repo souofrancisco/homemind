@@ -10,7 +10,7 @@ A integração MCP é **central** para a Conta Certa: é por ela que a casa lê 
 | [mcp-p3-relatorio.md](mcp-p3-relatorio.md) | Relatório de passagem (PR #57): 10 bugs corrigidos, pedido duplicado do SDK `mcp`, `MCP_INSTANTPOWER_UNIT` |
 | [../development/guia-validacao-manual.md](../development/guia-validacao-manual.md) | MCP-01…07: como validar hardware e registar o resultado |
 
-Guia oficial de ligação da organização: **ver [decisions.md](../decisions.md) P-09** (o PDF `altice-mcp-guia-ligacao.pdf` está apagado na árvore de trabalho e por decidir).
+Guia oficial de ligação da organização: [references/altice-mcp-guia-ligacao.pdf](../references/altice-mcp-guia-ligacao.pdf) (preservado; P-09 resolvido).
 
 ## Regras (inalteradas; nenhuma nesta reorganização foi relaxada)
 
