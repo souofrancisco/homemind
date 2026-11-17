@@ -1,4 +1,5 @@
 """HOUSE-02: convites, associação OIDC e revogação na mesma transação SQLite."""
+
 from __future__ import annotations
 
 import hashlib
@@ -48,19 +49,24 @@ def _landlord(conn: sqlite3.Connection, user: User, house: UUID, now: datetime) 
     return str(row["id"])
 
 
-def create_room(conn: sqlite3.Connection, user: User, house: UUID, body: object,
-                now: datetime) -> RoomView:
+def create_room(
+    conn: sqlite3.Connection, user: User, house: UUID, body: object, now: datetime
+) -> RoomView:
     _landlord(conn, user, house, now)
     room = Room(
-        id=uuid4(), household_id=house, name=body.name, kind=body.kind,
+        id=uuid4(),
+        household_id=house,
+        name=body.name,
+        kind=body.kind,
         included_wh=body.included_wh,
     )
     repo.insert_room(conn, room)
     return RoomView(id=room.id, name=room.name, kind=room.kind)
 
 
-def issue_invitation(conn: sqlite3.Connection, user: User, house: UUID, body: object,
-                     now: datetime) -> dict:
+def issue_invitation(
+    conn: sqlite3.Connection, user: User, house: UUID, body: object, now: datetime
+) -> dict:
     inviter = _landlord(conn, user, house, now)
     room = repo.get_room(conn, body.room_id)
     if room is None or room.household_id != house or room.kind is not RoomKind.bedroom:
@@ -76,10 +82,16 @@ def issue_invitation(conn: sqlite3.Connection, user: User, house: UUID, body: ob
         conn, Resident(id=resident_id, display_name=body.display_name), created_at=now
     )
     repo.insert_membership(
-        conn, Membership(
-            id=membership_id, household_id=house, resident_id=resident_id,
-            role=MembershipRole.tenant, room_id=body.room_id, starts_on=body.starts_on,
-            ends_on=body.ends_on, status=MembershipStatus.invited,
+        conn,
+        Membership(
+            id=membership_id,
+            household_id=house,
+            resident_id=resident_id,
+            role=MembershipRole.tenant,
+            room_id=body.room_id,
+            starts_on=body.starts_on,
+            ends_on=body.ends_on,
+            status=MembershipStatus.invited,
         ),
     )
     token = secrets.token_urlsafe(32)
@@ -88,15 +100,23 @@ def issue_invitation(conn: sqlite3.Connection, user: User, house: UUID, body: ob
         "INSERT INTO membership_invitation "
         "(id, membership_id, token_sha256, target_email, created_by_membership_id,"
         " created_at, expires_at) VALUES (?,?,?,?,?,?,?)",
-        (str(invitation_id), str(membership_id), hashlib.sha256(token.encode()).hexdigest(),
-         email, inviter, now.astimezone(UTC).isoformat(), expires_at.isoformat()),
+        (
+            str(invitation_id),
+            str(membership_id),
+            hashlib.sha256(token.encode()).hexdigest(),
+            email,
+            inviter,
+            now.astimezone(UTC).isoformat(),
+            expires_at.isoformat(),
+        ),
     )
     # Apenas a resposta desta criação contém o segredo. Nunca é persistido em claro.
     return {"invitation_id": invitation_id, "token": token, "expires_at": expires_at}
 
 
-def accept_invitation(conn: sqlite3.Connection, user: User, token: str,
-                      now: datetime) -> MembershipSelfView:
+def accept_invitation(
+    conn: sqlite3.Connection, user: User, token: str, now: datetime
+) -> MembershipSelfView:
     if user.email_verified is not True or not user.email:
         _fail(403, "verified_email_required", "Email verificado obrigatório")
     row = conn.execute(
@@ -125,9 +145,7 @@ def accept_invitation(conn: sqlite3.Connection, user: User, token: str,
         _fail(409, "membership_conflict", "Contrato já terminou")
 
     reserved_id = row["resident_id"]
-    existing = conn.execute(
-        "SELECT id FROM resident WHERE auth_subject=?", (user.sub,)
-    ).fetchone()
+    existing = conn.execute("SELECT id FROM resident WHERE auth_subject=?", (user.sub,)).fetchone()
     if existing is not None and existing["id"] != reserved_id:
         resident_id = existing["id"]
         conn.execute(
@@ -162,15 +180,15 @@ def accept_invitation(conn: sqlite3.Connection, user: User, token: str,
         _fail(409, "invitation_used", "Convite já utilizado")
     saved = conn.execute(
         "SELECT id, household_id, role, room_id, starts_on, ends_on, status,"
-        " presence_opt_in FROM membership WHERE id=?", (row["membership_id"],)
+        " presence_opt_in FROM membership WHERE id=?",
+        (row["membership_id"],),
     ).fetchone()
-    return MembershipSelfView(
-        **{**dict(saved), "presence_opt_in": bool(saved["presence_opt_in"])}
-    )
+    return MembershipSelfView(**{**dict(saved), "presence_opt_in": bool(saved["presence_opt_in"])})
 
 
-def revoke_membership(conn: sqlite3.Connection, user: User, house: UUID,
-                      membership_id: UUID, now: datetime) -> MemberView:
+def revoke_membership(
+    conn: sqlite3.Connection, user: User, house: UUID, membership_id: UUID, now: datetime
+) -> MemberView:
     actor = _landlord(conn, user, house, now)
     row = conn.execute(
         "SELECT m.*, r.display_name FROM membership m"
@@ -184,9 +202,9 @@ def revoke_membership(conn: sqlite3.Connection, user: User, house: UUID,
         _fail(403, "forbidden_role", "Sem permissão")
     if row["status"] == MembershipStatus.ended.value:
         _fail(409, "membership_conflict", "Contrato já terminado")
-    timezone = conn.execute(
-        "SELECT timezone FROM household WHERE id=?", (str(house),)
-    ).fetchone()["timezone"]
+    timezone = conn.execute("SELECT timezone FROM household WHERE id=?", (str(house),)).fetchone()[
+        "timezone"
+    ]
     today = now.astimezone(ZoneInfo(timezone)).date().isoformat()
     end = max(row["starts_on"], today)
     if row["ends_on"] is not None:
@@ -200,6 +218,7 @@ def revoke_membership(conn: sqlite3.Connection, user: User, house: UUID,
     saved = conn.execute(
         "SELECT m.id AS membership_id, m.resident_id, r.display_name, m.role,"
         " m.room_id, m.starts_on, m.ends_on, m.status FROM membership m"
-        " JOIN resident r ON r.id=m.resident_id WHERE m.id=?", (str(membership_id),)
+        " JOIN resident r ON r.id=m.resident_id WHERE m.id=?",
+        (str(membership_id),),
     ).fetchone()
     return MemberView(**dict(saved))

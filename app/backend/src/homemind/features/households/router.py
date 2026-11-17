@@ -138,12 +138,13 @@ async def list_members(access: MemberAccess, db: DbDep, clock: ClockDep) -> list
                 " AND (m.ends_on IS NULL OR m.ends_on >= ?)"
             )
         sql += " ORDER BY m.starts_on, r.display_name"
-        params = (str(access.household_id), day, day) if only_active else (
-            str(access.household_id),
+        params = (
+            (str(access.household_id), day, day) if only_active else (str(access.household_id),)
         )
         return conn.execute(sql, params).fetchall()
 
     return [MemberView(**dict(row)) for row in await db.run(query)]
+
 
 class MembershipPatch(ContractModel):
     """Um inquilino só pode alterar o seu consentimento de presença."""
@@ -229,9 +230,7 @@ async def _execute(db: DbDep, action):
     try:
         return await db.run(action)
     except flow.FlowError as error:
-        raise HTTPException(
-            error.status, {"code": error.code, "message": error.message}
-        ) from None
+        raise HTTPException(error.status, {"code": error.code, "message": error.message}) from None
     except sqlite3.IntegrityError:
         raise HTTPException(
             409, {"code": "membership_conflict", "message": "Estado em conflito"}
@@ -249,16 +248,17 @@ async def create_house_room(
 
 @router.post("/households/{household_id}/invitations", status_code=201)
 async def create_house_invitation(
-    body: CreateInvitation, access: MemberWriteAccess, user: CurrentUser,
-    db: DbDep, clock: ClockDep,
+    body: CreateInvitation,
+    access: MemberWriteAccess,
+    user: CurrentUser,
+    db: DbDep,
+    clock: ClockDep,
 ) -> InvitationIssued:
     # MemberWriteAccess permite ao inquilino editar o seu consentimento.
     if access.role is not MembershipRole.landlord:
         raise HTTPException(403, {"code": "forbidden_role", "message": "Sem permissão"})
     result = await _execute(
-        db, lambda conn: flow.issue_invitation(
-            conn, user, access.household_id, body, clock()
-        )
+        db, lambda conn: flow.issue_invitation(conn, user, access.household_id, body, clock())
     )
     return InvitationIssued(**result)
 
@@ -267,20 +267,22 @@ async def create_house_invitation(
 async def redeem_house_invitation(
     body: RedeemInvitation, user: CurrentUser, db: DbDep, clock: ClockDep
 ) -> MembershipSelfView:
-    return await _execute(
-        db, lambda conn: flow.accept_invitation(conn, user, body.token, clock())
-    )
+    return await _execute(db, lambda conn: flow.accept_invitation(conn, user, body.token, clock()))
 
 
 @router.post("/households/{household_id}/memberships/{membership_id}/revoke")
 async def revoke_house_membership(
-    membership_id: UUID, access: MemberWriteAccess, user: CurrentUser,
-    db: DbDep, clock: ClockDep,
+    membership_id: UUID,
+    access: MemberWriteAccess,
+    user: CurrentUser,
+    db: DbDep,
+    clock: ClockDep,
 ) -> MemberView:
     if access.role is not MembershipRole.landlord:
         raise HTTPException(403, {"code": "forbidden_role", "message": "Sem permissão"})
     return await _execute(
-        db, lambda conn: flow.revoke_membership(
+        db,
+        lambda conn: flow.revoke_membership(
             conn, user, access.household_id, membership_id, clock()
-        )
+        ),
     )
