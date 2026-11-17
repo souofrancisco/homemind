@@ -14,7 +14,9 @@ from datetime import datetime
 from enum import IntEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import Field, model_validator
+
+from homemind.contracts.base import Contrato as _Contrato
 
 ClasseObjeto = Literal["caneca", "livro", "comando"]
 
@@ -44,10 +46,6 @@ class KP(IntEnum):
     JOELHO_DIR = 14
     TORNOZELO_ESQ = 15
     TORNOZELO_DIR = 16
-
-
-class _Contrato(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
 
 class Caixa(_Contrato):

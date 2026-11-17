@@ -1,4 +1,4 @@
-# Contratos partilhados — vídeo, visão e eventos (issue #1)
+# Contratos partilhados ObjectOS (issue #1)
 
 **Estado: PROPOSTA.** Só fica fechado depois de validado por P2, P3 e P4. Depois disso, qualquer mudança de assinatura é combinada primeiro.
 
@@ -7,6 +7,9 @@ Código em `app/backend/src/homemind/contracts/`. Só dados e interfaces: nenhum
 ```text
 FonteVideo ──FrameVideo──▶ visão (P1) ──FrameDeteccoes──▶ gestos/presença (P2) ──Evento──▶ motor (P4)
 (video.py)                              (visao.py)                              (eventos.py)
+
+motor (P4) ──Home──▶ FakeHome | McpHome (P3)        motor (P4) ──Status/MensagemWS/Regra──▶ UI (P5)
+           (home.py)                                           (painel.py, regras.py)
 ```
 
 ## `video.py` — fonte de vídeo (P1)
@@ -57,8 +60,53 @@ for frame in sequencia_simulada(20, fps=10, classe="caneca", levantado=True):
     ...  # P2: alimentar o detetor de gestos
 ```
 
+## `home.py` — interface Home (P3 implementa, P4 usa)
+
+```python
+class Home(Protocol):
+    async def definir_lampada(self, ligada: bool, cor: str | None, brilho: int | None) -> bool: ...
+    async def definir_tomada(self, ligada: bool) -> bool: ...
+    async def ler_consumo(self) -> float: ...   # W
+    async def estado(self) -> EstadoCasa: ...
+```
+
+- `definir_*` devolve `True` só se a ação foi aplicada **e confirmada**; `cor`/`brilho` a `None` = não alterar.
+- `EstadoCasa`: `lampada` (`ligada`, `cor`, `brilho` 0–100), `tomada` (`ligada`), `consumo_w` (ou `None`), `simulado` (`True` em FakeHome).
+- `cor` é texto livre (ex.: `branco_quente`) até P3 documentar as capacidades reais em `docs/mcp-capabilities.md`.
+
+## `regras.py` — regras (P4, editadas pela UI de P5)
+
+`Regra`: `id` (minúsculas, dígitos, `_`/`-`), `objeto`, `nome`, `acoes` (≥1), `ativa` (por omissão `true`). Cada ação é `AcaoLampada` (`ligada`, `cor`, `brilho`) ou `AcaoTomada` (`ligada`), distinguidas por `dispositivo`. Qualquer outro dispositivo é rejeitado. O JSON de exemplo do plano §3 valida tal como está.
+
+`PedidoRegra` (`texto`) e `PropostaRegra` (`regra`, `descricao`) são o corpo e a resposta de `POST /rules/parse`.
+
+## `painel.py` — backend → frontend (P4 → P5)
+
+- `Status` (`GET /status`): `camara_ok`, `mcp_ok`, `home_backend` (`fake` = SIMULADO, `mcp` = REAL).
+- `WS /ws` envia mensagens discriminadas por `tipo`:
+  - `MensagemEstado` (`tipo="estado"`): fotografia completa, ao ligar e a cada mudança — `estado` (`inativo`/`ativo`/`em_espera`/`suspenso`), `modo` (id da regra), `modo_nome`, `ha_alguem`, `segundos_para_suspender`, `status`, `casa`, `poupanca_wh`, `poupanca_eur`.
+  - `MensagemRegisto` (`tipo="registo"`): uma `LinhaRegisto` (`hora`, `texto` em PT-PT). É também o formato de cada linha de `events.jsonl`.
+
+## Rotas e modelos (proposta; prefixos por confirmar)
+
+| Rota | Entrada | Saída | Dono |
+|---|---|---|---|
+| `GET /video` | — | MJPEG `multipart/x-mixed-replace` | P1 |
+| `WS /ws` | — | `MensagemEstado` \| `MensagemRegisto` | P4 |
+| `GET /status` | — | `Status` | P4 |
+| `GET /rules` | — | `list[Regra]` | P4 |
+| `POST /rules` | `Regra` | `Regra` | P4 |
+| `DELETE /rules/{id}` | — | 204 | P4 |
+| `POST /rules/parse` | `PedidoRegra` | `PropostaRegra` | P4 |
+| `POST /off` | — | `MensagemEstado` | P4 |
+
+Nenhuma destas rotas existe ainda; este PR só define os modelos.
+
 ## Por decidir com a equipa
 
 - P2: `t` monotónico + `hora` chega, ou preferem só um relógio?
 - P2: coordenadas em píxeis servem (a regra usa a largura dos ombros como escala) ou preferem normalizadas 0–1?
-- P3/P4: a interface `Home` e o modelo de regra (plano §3) ficam em `contracts/` por PR dos respetivos donos.
+- P3: `cor` como texto livre ou lista fechada, depois da descoberta MCP? `ler_consumo()` sem leitura devolve `0.0` ou lança erro?
+- P4: uma regra por objeto, ou várias com `ativa`? Ativar/desativar faz-se com `POST /rules` (substitui pelo `id`)?
+- P4/P5: `MensagemEstado` completa a cada mudança chega para o temporizador, ou a UI precisa de ticks por segundo?
+- P5: `POST /off` devolve o estado novo ou só 204?
