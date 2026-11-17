@@ -17,6 +17,8 @@ Nada de F2/F3 bloqueia o MVP. Em particular **AWAY, casa vazia e aparelho esquec
 
 ## Definição de pronto dos contratos (F0)
 
+> **Estado (17/11/2026):** a fundação técnica está **implementada no PR draft `feat/conta-certa-foundation`** (BASE-02, BASE-03, HOUSE-01 parcial, PRIV-01 parcial: ver [contracts.md](../architecture/contracts.md)); aguarda a revisão da equipa e as decisões D-23…D-30. As issues **não** se fecham com o PR.
+
 Cada pessoa só começa a implementar quando, para o seu módulo:
 
 1. O modelo Pydantic proposto em [architecture/contracts.md](../architecture/contracts.md) foi lido e aceite pelas outras quatro pessoas (comentário no PR de contratos; BASE-03 #73).

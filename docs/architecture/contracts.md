@@ -1,100 +1,111 @@
-# Contratos propostos
+# Contratos
 
-**PLANEADO — propostas sujeitas a implementação e a acordo da equipa.** Não existem ainda nos modelos Pydantic nem no OpenAPI. A API que existe hoje está em [api-implementada.md](api-implementada.md). Entidades e estados: [data-model.md](data-model.md).
+**IMPLEMENTADO (fundação F0, branch `feat/conta-certa-foundation`)**: modelos Pydantic, eventos de domínio, SQLite, barramento persistente, guardas por casa/papel e OpenAPI→TS. **PLANEADO**: os motores e as rotas de cada módulo (P1–P5). **DECISÃO PENDENTE**: marcadas por «(proposta)» e listadas em §9 e em [decisions.md](../decisions.md).
 
-## Como se acordam e mudam
+A API que já existia (ObjectOS) está em [api-implementada.md](api-implementada.md) e **não mudou**. Entidades e estados: [data-model.md](data-model.md); eventos: [event-flow.md](event-flow.md).
 
-1. Estes contratos têm de ser **aceites pelas cinco pessoas antes de cada uma implementar** o seu módulo (ver «Definição de pronto dos contratos» em [development/roadmap.md](../development/roadmap.md)).
-2. Ao implementar: modelos em `app/backend/src/homemind/contracts/` (um ficheiro por domínio: `provenance.py`, `household.py`, `energy.py`, `presence.py`, `billing.py`, `notification.py`, `domain_events.py`), OpenAPI gerado, `make contracts`, e **este documento atualizado no mesmo PR**.
-3. O frontend usa só os tipos gerados; nunca redefine tipos da API.
-4. Contratos mudam por acordo; mudança de campo sem acordo é bloqueada em revisão.
+## 1. Como mudar um contrato
 
-## 1. Contratos internos (Python)
+1. Mudança de um modelo em `app/backend/src/homemind/contracts/`, `make contracts` e **este documento no mesmo PR**.
+2. Só com acordo das pessoas que o produzem ou consomem (matriz em §3). O frontend usa **só** os tipos gerados por `make contracts`; nunca redefine tipos da API.
+3. Compatível: campo opcional novo, valor novo de enum que ninguém interpreta por exclusão. Incompatível: remover/renomear campo, mudar unidade ou significado. Eventos incompatíveis = nova classe com `schema_version` 2 e *upcast* no armazenamento (a 1 não se apaga).
 
-Esboços; os nomes e as validações finais são decididos na implementação.
+## 2. Decisões da revisão crítica
 
-```python
-# contracts/provenance.py
-class Provenance(StrEnum): measured; estimated; inferred; simulated
-
-# contracts/energy.py
-class EnergyReading(BaseModel):          # P1 → energy, billing, notifications
-    device_id: str; ts: datetime; power_w: float | None
-    provenance: Provenance; raw_value: float | None = None; raw_unit: str | None = None
-
-class PowerStep(BaseModel):              # P1 → energy (interno), billing
-    device_id: str; ts: datetime; delta_w: float; direction: Literal["up", "down"]
-    provenance: Provenance
-
-class ApplianceMatch(BaseModel):         # P1 → billing, notifications
-    appliance_id: str | None; confidence: float          # None = desconhecido
-    candidates: list[tuple[str, float]]
-
-class ConsumptionEvent(BaseModel):       # P1 cria, P4 consome
-    id: str; household_id: str; appliance_id: str | None; match: ApplianceMatch
-    started_at: datetime; ended_at: datetime | None
-    peak_w: float; energy_kwh: float | None; location: Literal["room", "common", "unknown"]
-    room_id: str | None; cost_estimate_cents: int; provenance: Provenance; status: str
-
-# contracts/presence.py
-class DoorCrossed(BaseModel):            # P2 → presence (sem identidade)
-    ts: datetime; direction: Literal["in", "out"]; confidence: float; provenance: Provenance
-class PersonPresence(BaseModel):         # P2 → billing (regra C), alerts, UI
-    resident_id: str; state: Literal["in", "out", "uncertain"]; since: datetime; confidence: float
-
-# contracts/billing.py
-class Attribution(BaseModel):            # P4
-    consumption_event_id: str; target_type: Literal["resident", "common"]
-    target_resident_id: str | None; method: str; provenance: Provenance; confidence: float | None
-class BillAllocation(BaseModel):         # P4 → UI, agente
-    bill_id: str; resident_id: str; amount_cents: int; fixed_share_cents: int
-    residual_share_cents: int; individual_cents: int
-    attributed_kwh_by_provenance: dict[Provenance, float]; breakdown: list["BreakdownLine"]
-
-# contracts/notification.py
-class NotificationAction(BaseModel):  id: str; label: str; style: Literal["primary", "neutral", "danger"] = "neutral"
-class Notification(BaseModel):           # P3
-    id: str; household_id: str; scope: Literal["personal", "household"]; recipient_resident_id: str | None
-    kind: str; severity: Literal["info", "warning", "critical"]; title: str; body: str
-    actions: list[NotificationAction]; status: str; expires_at: datetime | None
-    ref_type: str | None; ref_id: str | None; correlation_id: str
-```
-
-`Home` (`contracts/home.py`) mantém-se. Mudança **proposta** (por acordo P1+P5): acrescentar `ler_leituras() -> list[EnergyReading]` e o papel do dispositivo; o `ler_consumo() -> float | None` atual mantém-se até a migração terminar.
-
-## 2. Eventos de domínio
-
-Envelope comum (**PLANEADO**, `contracts/domain_events.py`):
-
-```json
-{ "id": "uuid", "type": "energy.consumption_detected", "ts": "2026-11-18T18:05:10Z",
-  "household_id": "uuid", "provenance": "inferred", "correlation_id": "uuid", "seq": 1042, "data": { } }
-```
-
-| Evento | Produtor | Consumidores | `data` essencial |
+| | Problema na proposta | Decisão (IMPLEMENTADA) | Compromisso |
 |---|---|---|---|
-| `energy.reading_recorded` | P1 | P1, P4 | `device_id`, `power_w` |
-| `energy.step_detected` | P1 | P1 | `delta_w`, `direction` |
-| `energy.consumption_detected` | P1 | P4, P3 | `consumption_event_id`, `appliance_id?`, `confidence`, `location` |
-| `energy.consumption_closed` | P1 | P4 | `consumption_event_id`, `energy_kwh` |
-| `presence.door_crossed` | P2 | P2 | `direction`, `confidence` |
-| `presence.changed` | P2 | P4, P3 | `resident_id`, `state`, `confidence` |
-| `billing.confirmation_needed` | P4 | P3 | `consumption_event_id`, `estimated_cost_cents`, `options` |
-| `notification.created` | P3 | UI (WS) | `notification_id`, `scope` |
-| `notification.responded` | P3 | P4 | `notification_id`, `action_id`, `resident_id`, `ref_id` |
-| `billing.attribution_changed` | P4 | P3, P4 | `consumption_event_id`, `target`, `method` |
-| `alerts.threshold_crossed` | P4 | P3 | `budget_id`, `pct`, `forecast_cents?` |
-| `alerts.alert_raised` | P4 | P3 | `kind` (`peak`, `forgotten_appliance`, `mismatch`), `ref_id` |
-| `billing.bill_created` / `bill_finalized` | P4 | P3, UI | `bill_id` |
-| `billing.allocation_published` | P4 | P3 | `bill_id`, `resident_id` |
-| `automation.proposed` / `executed` | P3 / P1 | P3 | `rule_id`, `result` |
-| `agent.action_proposed` | P3 | P3 | `action_id`, `requires_confirmation` |
+| **A** Proveniência | Um só enum `measured\|estimated\|inferred\|simulated` mistura **origem** (real/simulada) e **natureza** (medida/estimada/inferida); uma assinatura inferida sobre dados simulados perdia a origem | `Provenance{origin: real\|simulated, kind: measured\|estimated\|inferred}`. Agregação: simulada se alguma for, natureza menos fiável (`Provenance.combine`). Aceita as strings antigas (`"simulated"` ⇒ `simulated/measured`) | O JSON deixa de ser uma string simples. «Medida simulada» (FakeHome) é `simulated/measured`: a origem manda na UI |
+| **B** Identificadores | Mistura de ids | UUID interno em todo o domínio (`uuid5` em fixtures). O `sub` do Authentik e o id MCP (`Device.external_ref`) são **externos**: ficam na entidade persistida (`repr=False`), nunca em DTOs, eventos nem logs | `DeviceView` e `MemberView` são DTOs próprios; `Device`/`Resident`/`Membership` não saem no OpenAPI |
+| **C** Unidades | `float` para tudo; `cost_estimate_cents` obrigatório | Tempo UTC com fuso (naïve é erro). Dinheiro `int` cêntimos, `strict`, sem negativos (só `adjustment` pode ser negativo). Potência `float` W em [0, 100 kW], sem NaN/inf. **Ausência = `None`, nunca 0** (0 W é leitura válida). Confiança em [0,1] | `unit_unknown` ⇒ `power_w=None` e nunca `measured` |
+| **D** Precisão financeira | `energy_kwh: float` acumula erro (0,16 €/kWh não é exato) | Energia em **Wh inteiros** (`energy_wh`), preço em **milicêntimos/kWh** (`16000` = 0,16 €), custo por `cost_cents()` em `Decimal` com um só arredondamento (par). Float só em potência instantânea e `confidence` | Arredondado uma vez no fecho do consumo (<1 Wh de erro); sem `Decimal` nos DTOs (geraria schemas `-Input/-Output`) |
+| **E** Estados | Strings livres; `ConsumptionEvent.status` misturava ciclo de vida de P1 com estado de atribuição de P4 | Enums + tabelas de transição (`check_transition`, `InvalidTransitionError`). `ConsumptionStatus = ongoing→closed\|discarded` (P1); o estado de atribuição vive em `Attribution` (P4, `active→superseded`) | `pending_confirmation`/`attributed`/`contested` deixam de ser estados do consumo (ver §2.1) |
+| **F** Fonte de verdade | «Quem altera» difuso | Um dono por entidade (§3); outro módulo só altera por **evento** | Sem repositório genérico: cada módulo escreve as suas tabelas |
+| **G** Maturidade | O mesmo modelo para HTTP, base de dados e resposta | Entidade persistida ≠ DTO ≠ evento ≠ comando. `*View` para respostas; `*In`/`Patch` com `extra=forbid` para entradas | `MeContext`, `NotificationView`, `LandlordBillView`… |
 
-`seq` é atribuído pelo barramento ao gravar (o produtor não o define); `correlation_id` só agrupa um fluxo e **não garante ordem**. Regras: eventos são imutáveis; consumidores são **idempotentes** por `event.id` (registo de ids processados na mesma transação do efeito; ver [event-flow.md](event-flow.md) §4); um consumidor nunca bloqueia o produtor; sem imagens nem identificadores de dispositivos externos no `data`.
+### 2.1 Outros problemas encontrados e resolvidos
 
-## 3. Endpoints REST propostos
+- `ApplianceMatch.candidates: list[tuple]` → `ApplianceCandidate` tipado; vencedor só se houver um claro (`outcome`: `identified|ambiguous|unknown`).
+- `PresenceEvent` e `DoorCrossed` sobrepunham-se → `DoorCrossed` (anónimo), `PresenceEvent` (pista por pessoa: só Wi-Fi/manual; Wi-Fi nunca diz «fora») e `PersonPresence` (estado fundido, `uncertain` exige `reason`).
+- `Device` ≠ `Appliance`; `ApplianceOwnership` (dono ≠ quem usa). Uma tomada mede vários aparelhos; a assinatura sugere, não decide quem paga.
+- Fatura: `total_wh` é da fatura real, **não** a soma da tomada; correções = nova revisão (`supersedes_id`), a finalizada nunca se edita; resíduo comum explícito em `residual_share_cents`.
+- Notificação: `responder_ids` (snapshot de quem pode responder; o senhorio nunca), `Notification.respond` é a regra pura (primeira resposta vence; `409 already_responded`, `409 notification_expired`) e a persistência tem de fazer *compare-and-set*.
+- Execução física: `isError=false` **não** confirma; `ActionExecutionResult(confirmed)` exige `readback_confirmed`; `uncertain` nunca se repete (`may_retry=False`).
+- Um não-membro recebe **404** (não revela que a casa existe); um membro sem papel recebe **403 `forbidden_role`**.
 
-Prefixo `/api`, JSON `snake_case`, `Authorization: Bearer`, formato de erro `{ "error": {"code", "message"} }` (como hoje). Papéis: **L** senhorio, **T** inquilino, **O** operador. As permissões são aplicadas no servidor; respostas de **L** usam DTOs próprios sem presença nem aparelhos.
+## 3. Matriz de contratos
+
+Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), `household.py`, `devices.py`, `energy.py`, `presence.py`, `billing.py`, `notification.py`, `agent.py`, `domain_events.py`, `api.py` (erros e `OPENAPI_MODELS`), `fixtures.py` (determinísticas). Os contratos ObjectOS (`base.py`, `eventos.py`, `home.py`, `regras.py`, `simulacao.py`, `video.py`, `visao.py`) **não foram tocados**.
+
+| Contrato | Produtor (dono) | Consumidores | Persistência | Testes | Pendente |
+|---|---|---|---|---|---|
+| `Household`, `Room`, `Resident`, `Membership` | P5 | todos (via guardas) | **IMPLEMENTADA** (`0001_core_households.sql`) | `tests/test_contracts_foundation`, `households/tests` | Convites e fim de contrato por REST |
+| `HouseholdView`, `MemberView`, `MeContext` | P5 | frontend | — (DTO) | `test_authorization`, `test_openapi_contract` | P-04 (o que um inquilino vê dos outros) |
+| `Device`, `DeviceView`, `Appliance`, `ApplianceSignature` | P1 | P1, P4, P3 | PLANEADA (P1: `0030_energy_*.sql`) | modelos | Capacidades por dispositivo |
+| `EnergyReading`, `PowerStep` | P1 | P1 (P4 só o resumo) | PLANEADA (retenção P-08) | modelos + evento | Limiar de `stale` |
+| `ApplianceMatch`, `ConsumptionEvent` | P1 | P4, P3 | PLANEADA (P1) | modelos + cenário | Limiar de «bate certo» (0,9?) |
+| `DoorCrossed`, `PresenceEvent`, `PersonPresence` | P2 | P4 (regra C), P3 | PLANEADA (P2) | modelos | Tolerância 20–30 min na fusão |
+| `Attribution` (+`supersede`) | P4 | P3, agente | PLANEADA: índice único parcial `(consumption_event_id) WHERE status='active'` | modelos + cenário | — |
+| `ElectricityBill`, `BillAllocation` (+`validate_allocations`) | P4 | UI, agente, P3 | PLANEADA (P4) | fixtures A/B/C exatas | Entrada da fatura (manual vs LLM) |
+| `Budget`, `BudgetThreshold`, `Contestation` | P4 | P3 | PLANEADA (P4) | modelos | P-10 (individual vs fixa) |
+| `Notification`, `NotificationView`, `NotificationAction/Response/Preferences`, `ConfirmationRequest` | P3 (pedido: P4) | UI, P4 | PLANEADA (P3) | modelos + cenário | P-03 (primeira resposta vence?) |
+| `AgentToolRequest/Result`, `ProposedAction`, `ActionConfirmation`, `ActionExecutionResult`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3) | modelos | P-06 (LLM e dados) |
+| `DomainEvent` (18 tipos), `StoredEvent` | cada módulo | cada módulo | **IMPLEMENTADA** (`domain_event`) | `test_events`, cenário | — |
+
+## 4. Eventos de domínio
+
+Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `ts` (UTC), `household_id`, `correlation_id`, `provenance`, `data` (payload **tipado por tipo**, discriminador `type`). `seq` **não** está no envelope do produtor: `StoredEvent{seq, event}` é atribuído pela base de dados ao gravar. O envelope valida que `provenance` e `household_id` coincidem com os do payload.
+
+| Evento | Produtor | `data` | Consumidores | Idempotência (por `event.id`, por consumidor) |
+|---|---|---|---|---|
+| `energy.reading_recorded` | P1 | `EnergyReading` | P1, P4 | `processed_event` |
+| `energy.step_detected` | P1 | `PowerStep` | P1 | idem |
+| `energy.consumption_detected` | P1 | `ConsumptionEvent` (`ongoing`) | P4, P3 | idem |
+| `energy.consumption_closed` | P1 | `ConsumptionEvent` (`closed`/`discarded`) | P4 | idem |
+| `presence.door_crossed` | P2 | `DoorCrossed` (anónimo) | P2 | idem |
+| `presence.changed` | P2 | `PersonPresence` | P4, P3 | idem |
+| `billing.confirmation_needed` | P4 | `ConfirmationRequest` | P3 | idem |
+| `billing.attribution_changed` | P4 | `Attribution` | P3, P4 | idem |
+| `billing.bill_created` / `bill_finalized` | P4 | `BillRef` | P3, UI | idem |
+| `billing.allocation_published` | P4 | `AllocationPublished` | P3 | idem |
+| `notification.created` | P3 | `NotificationCreatedData` | UI (DTO) | idem |
+| `notification.responded` | P3 | `NotificationRespondedData` (resposta + `ref`) | P4 | idem |
+| `alerts.threshold_crossed` | P4 | `BudgetThreshold` | P3 | idem |
+| `alerts.alert_raised` | P4 | `AlertRaisedData` | P3 | idem |
+| `agent.action_proposed` | P3 | `ProposedAction` | P3 | idem |
+| `automation.proposed` | P3 | `AutomationRule` | P3 | idem |
+| `automation.executed` | P1 | `AutomationExecutedData` | P3 | idem |
+
+Garantias e limites: [event-flow.md](event-flow.md) §4. Eventos **não** se expõem à app em bruto (`StoredEvent` não está no OpenAPI: inclui presença de pessoas); chegam como DTOs filtrados por papel.
+
+## 5. Autorização: recurso × papel (IMPLEMENTADA em `core/access.py`)
+
+Única fonte: `PERMISSIONS`. Âmbito: `own` só os seus; `household` dados partilhados da casa; `aggregate` só totais; `diagnostic` estado técnico sem dados pessoais; `—` sem acesso (`403 forbidden_role`). Cada rota nova ⇒ teste papel × rota (`test_matrix_is_enforced…` percorre todas as combinações).
+
+| Recurso | Landlord | Tenant | Operator |
+|---|---|---|---|
+| `household`, `room` (leitura) | household | household | diagnostic |
+| `household`, `room` (escrita) | household | — | — |
+| `member` (leitura) | household (todos os estados) | household (só ativos) | — |
+| `member` (escrita) | household | **own** (só `presence_opt_in`) | — |
+| `device` | — | — | diagnostic (r/w) |
+| `appliance` | — | own (r/w) | diagnostic (r/w) |
+| `energy` (leituras, resumos) | **aggregate** | own | diagnostic |
+| `consumption` | — | household (r), own (contestar) | diagnostic (r) |
+| `presence` | **—** | household (r), own (w) | **—** |
+| `camera_status` | — | — | diagnostic |
+| `attribution` | — | own | — |
+| `bill` | aggregate (r), household (w) | own (r) | — |
+| `receipt` (alocações) | aggregate | own (r, contestar) | — |
+| `budget`, `agent` | — | own | — |
+| `notification` | own | own | — |
+| `automation` | — | household | diagnostic |
+| `simulation` (w) | — | — | diagnostic |
+
+Regras transversais: a identidade é o `sub` do token → `resident` → membership **ativa e dentro de datas no fuso da casa**; nunca um `resident_id` do cliente; sem membership ⇒ `404 household_not_found`; recurso de outra casa ⇒ 404; erros sem detalhes privados.
+
+## 6. Endpoints REST (PLANEADOS, salvo os marcados)
+
+**IMPLEMENTADOS hoje** (HOUSE-01, parcial): `GET /api/me/context`, `GET /api/households/{id}`, `…/rooms`, `…/members`, `PATCH …/memberships/{id}` (só `presence_opt_in` próprio). Tudo o resto desta secção é **PLANEADO**. Prefixo `/api`, JSON `snake_case`, `Authorization: Bearer`, formato de erro `{ "error": {"code", "message"} }` (como hoje). Papéis: **L** senhorio, **T** inquilino, **O** operador. As permissões são aplicadas no servidor; respostas de **L** usam DTOs próprios sem presença nem aparelhos.
 
 ### Casas e moradores (P5)
 
@@ -166,7 +177,7 @@ Prefixo `/api`, JSON `snake_case`, `Authorization: Bearer`, formato de erro `{ "
 
 `GET /healthz`, `GET /api/status`, `GET /api/mcp/tools`, `GET /api/video` continuam (os dois últimos restringem-se a **O**; ver [migration.md](migration.md)).
 
-## 4. WebSocket (extensão proposta)
+## 7. WebSocket (PLANEADO)
 
 O protocolo atual (`auth` na primeira mensagem, snapshot, `event`, `home_state`, `error`; ver [api-implementada.md](api-implementada.md) §3) mantém-se. Mensagens novas:
 
@@ -177,7 +188,7 @@ O protocolo atual (`auth` na primeira mensagem, snapshot, `event`, `home_state`,
 
 O servidor só envia notificações do utilizador autenticado (pessoais) e da sua casa. O cliente que reconecta recupera por `GET /api/notifications`.
 
-## 5. Códigos de erro novos
+## 8. Códigos de erro
 
 | HTTP | `code` | Quando |
 |---|---|---|
@@ -186,3 +197,7 @@ O servidor só envia notificações do utilizador autenticado (pessoais) e da su
 | 409 | `already_responded`, `notification_expired`, `bill_finalized` | |
 | 422 | `bill_inconsistent` | Soma de kWh atribuídos acima do total da fatura |
 | 403 | `simulation_disabled` | Já existe |
+
+## 9. Pontos para revisão da equipa (DECISÃO PENDENTE)
+
+Prioridade para aprovar antes de implementar os módulos: ver [decisions.md](../decisions.md) D-23…D-30 e P-16…P-21. Resumo: (1) `Provenance` em duas dimensões; (2) Wh inteiros + milicêntimos; (3) semântica do barramento; (4) 404 vs 403 e membership por datas; (5) `None` em energia/custo; (6) regras de resposta das notificações; (7) OpenAPI por `OPENAPI_MODELS`; (8) nenhuma alteração ao código ObjectOS de domínio; (9) **sem dependências novas**; (10) quem aprova cada pendência.

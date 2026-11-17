@@ -23,8 +23,9 @@ Regras herdadas do ObjectOS (mantidas) e acrescentos para a Conta Certa. **IMPLE
 
 | Módulo | Obrigatório |
 |---|---|
-| `core` (db, eventos) | Migrações do zero; `publish/subscribe`; handler falhado isolado; idempotência |
-| `households` / auth | **Matriz papel × rota** (L/T/O): senhorio sem presença nem aparelhos; inquilino só o seu; `403 forbidden_role` |
+| `core` (db, eventos) — **IMPLEMENTADO** (`core/tests/`) | Migrações do zero/repetidas/alteradas/falhadas; reabertura; FK, rollback, unicidade, concorrência; lifespan (core antes das features, falha de arranque, shutdown); `publish/subscribe`, persistência antes da entrega, reentrega sem repetir efeito, handler falhado isolado, *dead letter*, reinício, shutdown a meio, 4 produtores, replay |
+| `households` / auth — **IMPLEMENTADO** (`features/households/tests/`) | **Matriz recurso × operação × papel** percorrida por inteiro; duas casas e vários papéis (isolamento, 404 vs 403, membership expirada, token inválido, `presence_opt_in` só o próprio, DTOs sem campos privados) |
+| `contracts` — **IMPLEMENTADO** (`tests/test_contracts_foundation.py`, `test_openapi_contract.py`, `test_foundation_scenario.py`) | Campos extra/UUID/UTC/NaN/dinheiro/Wh inválidos, ida e volta JSON de todos os contratos e dos 18 eventos, transições, fixtures A/B/C exatas, OpenAPI sem `-Input/-Output` nem dados privados, cenário energia→notificação→atribuição→fatura |
 | `energy` | Degraus, histerese, identificação com `confidence`/`unknown`, dois aparelhos simultâneos, ciclos de termóstato, `power_unit=unknown` ⇒ nunca `measured` |
 | `presence` | Detetor falso + relógio: passagens, tolerância 20–30 min, contradição ⇒ `uncertain`; **teste que garante zero imagens persistidas** |
 | `billing` | Fixtures A, B, C ([billing.md](../modules/billing.md)); `Σ = total` por propriedade; regras A/B/C; prazo de 24 h; saída a meio do mês; resíduo negativo ⇒ `422`; `finalize` idempotente |
@@ -35,7 +36,7 @@ Regras herdadas do ObjectOS (mantidas) e acrescentos para a Conta Certa. **IMPLE
 
 ## Integração e demo
 
-- **Teste de cenário** (PLANEADO): o cenário de [mvp.md](mvp.md) corre com `FakeHome` + simulador, sem rede, e termina com a fixture A. Corre em CI.
+- **Teste de cenário da fundação** (IMPLEMENTADO, `tests/test_foundation_scenario.py`): contratos + barramento com *stand-ins* explícitos de P3/P4 (não são os motores). **Teste de cenário do MVP** (PLANEADO): o cenário de [mvp.md](mvp.md) corre com `FakeHome` + simulador, sem rede, e termina com a fixture A. Corre em CI.
 - **Replay determinístico** de `domain_event` para reproduzir bugs da demo.
 - 2 execuções seguidas do cenário sem intervenção antes da demo (critério de aceitação do MVP).
 
@@ -52,6 +53,10 @@ Não há testes unitários hoje (**IMPLEMENTADO**: `eslint`, `tsc -b`, `vite bui
 - [ ] Documento do módulo atualizado se o comportamento mudou
 - [ ] Permissões por papel testadas em rotas novas
 - [ ] Nenhum valor numérico sem proveniência
+
+## Fundação F0 (branch `feat/conta-certa-foundation`)
+
+`make check` e os resultados estão no corpo do PR. Os testes de unidade usam `DB_PATH=:memory:` (`app/backend/conftest.py`); nenhum teste toca em `data/`, rede, MCP, NVIDIA, câmara ou Docker.
 
 ## Estado do ambiente (validado a 17/11/2026, branch documental sobre `main` 7d931d8)
 

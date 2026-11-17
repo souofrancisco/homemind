@@ -3,7 +3,8 @@
 Dois estados, sempre separados:
 
 - **IMPLEMENTADO** — o que está hoje na `main` (herança do ObjectOS).
-- **PLANEADO** — a arquitetura alvo da Conta Certa. Nada daqui existe ainda.
+- **PLANEADO** — a arquitetura alvo da Conta Certa.
+- **IMPLEMENTADO (fundação F0)** — `core/db.py`, `core/events.py`, `core/access.py`, `core/lifespan.py`, os contratos e a matriz de permissões; ver §2 e [contracts.md](contracts.md). Os módulos de produto (P1–P4) **não** existem.
 
 Detalhes: entidades em [data-model.md](data-model.md), contratos em [contracts.md](contracts.md), eventos em [event-flow.md](event-flow.md), caminho do atual ao alvo em [migration.md](migration.md).
 
@@ -98,21 +99,17 @@ Os nomes de módulos novos são em inglês (como as entidades do pedido); as pas
 ### Como os módulos comunicam
 
 1. **Contratos partilhados** em `contracts/` (Pydantic) são a única dependência entre features. Uma feature **não importa** outra feature.
-2. **Barramento de eventos** em processo (`core/events.py`, dono P5): `publish(evento)` e `subscribe(tipo, handler)`. Todos os eventos de domínio são também gravados em SQLite (`domain_event`), o que dá histórico, replay para a demo e testes por módulo com eventos falsos (a ideia do PDF §17.2, sem tabela única de «tudo»).
+2. **Barramento de eventos** persistente em processo (`core/events.py`, dono P5, **IMPLEMENTADO**): `await bus.publish(evento)` e `bus.subscribe(consumidor, handler, tipos)`. O evento é gravado em `domain_event` e só depois entregue (pelo menos uma vez; efeitos idempotentes por `processed_event`); dá histórico, replay numa base isolada e testes por módulo com eventos falsos. Semântica completa: [event-flow.md](event-flow.md) §4.
 3. **Leituras por REST**: a aplicação nunca fala com o MCP nem com o barramento; só com `/api/*` e `WS /api/ws`.
 4. **Escritas físicas** passam sempre pelo contrato `Home` (`FakeHome` | `McpHome`) com a whitelist e o grant já implementados ([integrations/altice-mcp.md](../integrations/altice-mcp.md)).
 
-### Decisão: arranque e dependências entre features
+### Arranque e dependências entre features — IMPLEMENTADO (D-06)
 
-Hoje os `lifespan` das features correm por ordem alfabética (`engine` → `video` → `visao`) e `app/backend/AGENTS.md` usa isso de propósito. As features novas (`agent`, `alerts`, `billing`, `budgets`…) ordenam-se **antes** de `engine`, e várias dependem de recursos partilhados. Por isso (D-06 em [decisions.md](../decisions.md)):
+`FastAPI(lifespan=core_lifespan)` (`core/lifespan.py`, passado em `main.py`): abre SQLite, aplica as migrações, cria o `EventBus` e põe-nos em `app.state.db` / `app.state.bus`; **só depois** correm os `lifespan` dos routers (o FastAPI aninha-os dentro do da app), e o core termina por último (cancela o barramento, fecha a base). Se o arranque do core falhar, nenhuma feature arranca. Os `lifespan` das features (`engine` → `video` → `visao`) continuam como estavam; nenhuma feature nova depende da ordem alfabética para ter a base pronta. Um módulo regista os seus consumidores no seu `lifespan` com `app.state.bus.subscribe(...)`.
 
-- a base de dados e o barramento são criados em `core/` (lifespan central, antes de qualquer feature), não por uma feature;
-- nenhuma feature nova depende da ordem de arranque de outra: comunica por barramento ou base de dados;
-- a regra «`engine` → `video` → `visao`» mantém-se só enquanto essas features existirem.
+### Persistência — IMPLEMENTADA
 
-### Persistência
-
-SQLite (ficheiro no volume de dados do backend), modo WAL, esquema versionado por ficheiros SQL numerados. Pormenores em [data-model.md](data-model.md). Escolha da biblioteca de acesso: decisão pendente P-05. `rules.json` e `events.jsonl` do ObjectOS deixam de ser usados quando o motor antigo for removido.
+SQLite da biblioteca standard (sem SQLAlchemy/aiosqlite/Alembic, **sem dependências novas**): uma ligação, lock, transações explícitas, WAL, `foreign_keys`. Migrações SQL por nome. Pormenores e limitações em [data-model.md](data-model.md#persistência). `rules.json` e `events.jsonl` do ObjectOS continuam até a BASE-04 remover o motor antigo.
 
 ### MVP com uma única tomada, expansível
 
@@ -128,7 +125,7 @@ Com um único medidor, **a identificação do aparelho é provável, não garant
 
 ### Medições, estimativas, inferências e simulações
 
-Todos os contratos de energia, atribuição e fatura carregam `provenance ∈ {measured, estimated, inferred, simulated}` ([data-model.md](data-model.md)). A aplicação mostra a proveniência de cada valor; um recibo com `simulated` nunca se apresenta como real.
+Todos os contratos de energia, atribuição e fatura carregam `provenance = {origin: real|simulated, kind: measured|estimated|inferred}` ([data-model.md](data-model.md)); `simulated/inferred` é uma inferência sobre dados simulados. A aplicação mostra a proveniência de cada valor; um recibo com `simulated` nunca se apresenta como real.
 
 ## 3. Segurança e privacidade (inalteradas)
 

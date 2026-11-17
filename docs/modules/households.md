@@ -1,6 +1,6 @@
 # Módulo `households` — casas, quartos, moradores e persistência
 
-**Dono: P5 (souofrancisco).** **PLANEADO.** Entidades: [data-model.md](../architecture/data-model.md). Contratos: [contracts.md](../architecture/contracts.md).
+**Dono: P5 (souofrancisco).** **IMPLEMENTADO (F0): leituras por REST, persistência, guardas e barramento. PLANEADO: escrita por REST, convites.** Entidades: [data-model.md](../architecture/data-model.md). Contratos: [contracts.md](../architecture/contracts.md).
 
 ## Responsabilidade
 
@@ -18,14 +18,14 @@ Fonte de verdade de **quem vive onde e com que papel**: `Household`, `Room`, `Re
 
 - O vínculo pessoa–quarto vem do contrato de arrendamento e é **introduzido pelo senhorio**; o sistema nunca o adivinha (PDF §10.3).
 - Convite: senhorio cria `Membership(status=invited)`; o inquilino aceita ao iniciar sessão. O QR da porta do PDF §2.1 passa a ser um **link de convite** (**PROPOSTA**).
-- Papéis em `Membership.role`. Autorização: dependência `require_role(...)` que devolve `403 forbidden_role`. Decisão pendente P-02 (papéis na base de dados vs grupos do Authentik); recomendação: base de dados, para não depender da configuração do Authentik.
+- Papéis em `Membership.role`. Autorização: `require_access(Resource, Operation)` em `core/access.py` (matriz `PERMISSIONS`): `403 forbidden_role` para membros sem papel, `404 household_not_found` para não-membros. Decisão pendente P-02 (papéis na base de dados vs grupos do Authentik); recomendação: base de dados, para não depender da configuração do Authentik.
 - DTOs por papel: o senhorio **nunca** recebe presença nem aparelhos individuais (RP-01).
 - `presence_opt_in` é editado só pelo próprio inquilino.
 - Saída a meio do mês: a membership fecha com `ends_on`; a fatura usa as datas.
 
 ## Persistência (SQLite)
 
-Esquema versionado em ficheiros SQL numerados; chaves estrangeiras ligadas; modo WAL. Acesso e testes com base em memória. Biblioteca de acesso por decidir (P-05). Dados de demonstração por *seed* determinístico, sempre `source_kind=demo`.
+Esquema versionado em ficheiros SQL numerados; chaves estrangeiras ligadas; modo WAL. Acesso e testes com base em memória. Biblioteca: `sqlite3` da stdlib (P-05 resolvido, D-25/D-29); `core/db.py`, `core/migrations/`. Dados de demonstração por *seed* determinístico, sempre `source_kind=demo`.
 
 ## Ficheiros previstos
 

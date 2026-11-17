@@ -98,6 +98,11 @@ Prefixo `/api`. JSON UTF-8, `snake_case`, horas ISO 8601 UTC. Todas as rotas `/a
 | `POST` | `/api/rules/parse` | corpo `{ "text": "…" }` (3–300) → `ParseResponse` |
 | `GET` | `/api/video` | MJPEG (`multipart/x-mixed-replace`); `503` sem `VIDEO_SOURCE`. Query opcional `anotacoes` (omissão `true`) e `esqueleto` (omissão `true`): `anotacoes=false` → imagem limpa; `esqueleto=false` → só caixas |
 | `GET` | `/api/mcp/tools` | `tools/list` do MCP (diagnóstico); `502` se indisponível |
+| `GET` | `/api/me/context` | `MeContext`: o residente ligado ao `sub` e as suas memberships ativas (**Conta Certa, F0**) |
+| `GET` | `/api/households/{id}` | `HouseholdView` · `404 household_not_found` (não-membro ou casa inexistente) · `403 forbidden_role` |
+| `GET` | `/api/households/{id}/rooms` | `[RoomView]` |
+| `GET` | `/api/households/{id}/members` | `[MemberView]`: senhorio vê todos os estados, inquilino só ativos; operador `403`; nunca `presence_opt_in` nem `sub` |
+| `PATCH` | `/api/households/{id}/memberships/{mid}` | corpo `{ "presence_opt_in": bool }` (`extra=forbid`) → `MembershipSelfView`; só a própria membership de um inquilino (`403` a de outro, `404` se não é desta casa) |
 
 ### `HomeState`
 
@@ -165,6 +170,10 @@ Prefixo `/api`. JSON UTF-8, `snake_case`, horas ISO 8601 UTC. Todas as rotas `/a
 3. Token válido: `home_state` imediato; depois um `event` por linha nova do registo e um `home_state` completo a cada mudança.
 4. Outras mensagens do cliente são ignoradas. Sem heartbeat. Em queda, o cliente reconecta com backoff (1 s → 15 s) e recebe um snapshot novo; o histórico recupera-se por `GET /api/events`.
 5. Cliente lento: fila de 200 mensagens por ligação; as mais antigas são descartadas (o `home_state` seguinte repõe o estado).
+
+## 3b. Modelos partilhados no OpenAPI (Conta Certa, F0)
+
+Além dos modelos das rotas, `app.openapi()` inclui os de `contracts/api.py::OPENAPI_MODELS` (`install_shared_schemas`, `core/openapi_models.py`), sem rotas falsas: `HouseholdView`, `MemberView`, `MeContext`, `DeviceView`, `Appliance`, `EnergyReading`, `ConsumptionEvent`, `EnergySummary`, `PersonPresence`, `Attribution`, `ElectricityBill`, `BillAllocation`, `LandlordBillView`, `Budget`, `Contestation`, `NotificationView`, `NotificationPreferences`, `ConfirmationRequest`, agente e automações, `Provenance`, `ApiErrorBody` e os enums. **Não** entram `Device`, `Resident`, `Membership`, `ApplianceSignature`, `PresenceEvent` nem os eventos de domínio (dados privados). Os schemas e rotas existentes não mudaram (verificado por diferença com o OpenAPI anterior). Respostas: campos com valor por omissão são obrigatórios (`null` ≠ ausente), por isso o TypeScript gerado não os marca opcionais. Erros novos: [contracts.md](contracts.md) §8.
 
 ## 4. Extensões propostas e não implementadas
 

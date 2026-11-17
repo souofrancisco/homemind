@@ -1,6 +1,6 @@
 # Fluxo de eventos
 
-**PLANEADO.** Eventos e payloads em [contracts.md](contracts.md); entidades em [data-model.md](data-model.md).
+**IMPLEMENTADO**: barramento persistente, idempotência e replay (§4–§5; `core/events.py`). **PLANEADO**: os produtores e consumidores de cada módulo (§1–§3). Eventos e payloads em [contracts.md](contracts.md); entidades em [data-model.md](data-model.md).
 
 ## 1. Fluxo geral
 
@@ -118,11 +118,36 @@ Notas:
 - **Bi-horário** (P2): o preço passa a depender da hora de cada `ConsumptionEvent`.
 - Exemplos numéricos de teste (ambos de 120 €) em [modules/billing.md](../modules/billing.md).
 
-## 4. Garantias dos consumidores de eventos
+## 4. Semântica do barramento — IMPLEMENTADA (`core/events.py`)
+
+**Entrega pelo menos uma vez, com efeitos idempotentes.** Nunca «exactly once» de ponta a ponta.
+
+```text
+produtor → EventBus.publish → INSERT domain_event (seq) → COMMIT → acorda os consumidores
+consumidor: loop próprio lê o que ainda não processou (por seq)
+   BEGIN IMMEDIATE
+     INSERT processed_event(consumer, event_id)   -- PK: duplicado ⇒ ignora (efeito não repete)
+     handler(conn, evento)  → efeito + eventos de seguimento (gravados na mesma transação)
+   COMMIT                                          -- se o handler levantar: ROLLBACK de tudo
+```
 
 | Garantia | Como |
 |---|---|
-| Idempotência | Cada consumidor regista **todos** os `event.id` processados na mesma transação do efeito (tabela `processed_event(consumer, event_id)`, chave única); um id já visto é ignorado. Guardar só o último id **não** chega: um replay ou entrega fora de ordem repetiria efeitos |
-| Ordem | `correlation_id` **só agrupa** eventos do mesmo fluxo, não os ordena. A ordem vem de `seq`, número crescente atribuído pelo barramento ao gravar em `domain_event` (único, global), usado para ordenar replays e consultas. Em entrega, a ordem só é garantida entre eventos do mesmo tipo e produtor; os consumidores têm de tolerar chegadas fora de ordem (comparar `seq` ou `ts` do estado que alteram e ignorar o mais antigo) |
-| Falha | Um handler que falha é registado (tipo de erro, sem dados pessoais) e não afeta os outros |
-| Replay | Para a demo e para testes, **sempre numa base de dados isolada ou com o estado dos consumidores reposto** (limpar `processed_event` e as tabelas derivadas); reproduzir sobre a base real seria ignorado pela idempotência ou duplicaria efeitos. Os eventos reproduzidos levam `provenance=simulated` e novo `correlation_id` |
+| Persistir antes de entregar | O evento só existe após o COMMIT; um consumidor lê-o da base, não de uma fila em memória |
+| Idempotência | `processed_event(consumer, event_id)` com chave única guarda **todos** os ids (não só o último). O efeito e o registo estão **na mesma transação**: não há «efeito feito mas não registado» nem o contrário. Reentregar (`bus.deliver`) devolve `False` sem repetir o efeito. Republicar um evento com o mesmo `id` e conteúdo devolve o gravado; com conteúdo diferente é `EventConflictError` |
+| Atomicidade dos seguimentos | Os eventos que o handler devolve gravam-se na mesma transação (padrão *outbox*) e só se entregam depois do COMMIT |
+| Handlers | **Síncronos**, rápidos, `(conn, StoredEvent) -> eventos | None`, a correr numa thread com o lock da base. Sem I/O externo dentro do handler (WS, HTTP, MCP): usar eventos de seguimento e um consumidor próprio |
+| Falha | Tentativas limitadas (`max_attempts`=5) com *backoff* linear; `event_failure` regista tentativas e **só o tipo** do erro; ao esgotar fica `dead` para esse consumidor e deixa de o bloquear. Um consumidor nunca afeta outro nem o produtor |
+| Reinício | Nada a recuperar: o que não está em `processed_event` continua pendente. Reinício entre a gravação e a entrega, ou a meio do handler, é seguro |
+| Ordem | `seq` global e único (atribuído pela base). Cada consumidor recebe por `seq`, mas um evento em *retry* pode ser ultrapassado: os handlers têm de tolerar chegadas fora de ordem (comparar `seq`/`ts` do estado que alteram). `correlation_id` agrupa um fluxo e **não ordena** |
+| Dois produtores | `publish` serializa no lock; `publish_threadsafe` serve produtores fora do loop (visão). `seq` único e crescente (testado com 4 threads) |
+| Shutdown | `stop()` cancela os consumidores; uma transação em curso termina ou faz ROLLBACK; a base fecha depois. Eventos pendentes ficam para o arranque seguinte |
+| Consumidor novo | Um nome nunca visto processa **todo** o histórico dos seus tipos (ou desde `since_seq`). Renomear um consumidor reprocessa tudo: o nome é a chave de idempotência |
+| Privacidade | Só `data` tipado (`extra=forbid`); sem frames, imagens, tokens nem ids externos; `event_failure` nunca guarda mensagens |
+| Simulado vs real | `provenance.origin` em cada evento (`domain_event.origin`); uma casa `real` recusa eventos simulados |
+
+Como um módulo subscreve (no `lifespan` do seu router, depois de o core arrancar): `app.state.bus.subscribe("billing.attributor", handler, ["notification.responded"])`. O barramento está em `app.state.bus`; a base de dados em `app.state.db`.
+
+## 5. Replay e verificação de idempotência
+
+`load_events(conn)` lê `StoredEvent` por `seq`; `replay(events, bus)` republica-os (mesmos ids) **numa base isolada** (`Database(":memory:")` ou ficheiro temporário + `migrate` + a casa `demo`). Repetir o replay não duplica nada (testado). Eventos simulados nunca entram numa casa `real`. Para repetir um cenário: criar base nova, `seed_demo`, subscrever os consumidores, `replay`; para provar idempotência, repetir o `replay` e comparar `processed_event`. **Nunca** reproduzir sobre a base real de uma casa `demo` em uso sem limpar `processed_event` e as tabelas derivadas.
