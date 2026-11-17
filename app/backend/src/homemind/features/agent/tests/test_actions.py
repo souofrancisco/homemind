@@ -637,3 +637,22 @@ def test_a_feature_nao_importa_conectores_nem_o_motor():
             )
             offenders += [(path.name, n) for n in names if n.startswith(banned)]
     assert offenders == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "A tomada está desligada?",
+        "Quanto gastou a tomada enquanto esteve desligada?",
+        "Quanto consome a luz apagada?",
+        "O que posso mudar para gastar menos?",
+        "Põe-me o consumo de novembro",
+        "Qual a cor da luz?",
+    ],
+)
+def test_pergunta_de_leitura_nao_gera_proposta_nem_recusa_de_acao(client, text):
+    """Vai pelo caminho de leitura (sem LLM: resposta de recurso), nunca pelo de ação."""
+    body = say(client, ANA, text)
+    assert body["proposed_actions"] == []
+    assert "Ainda não foi executado" not in body["text"]
+    assert db(client.app, "SELECT COUNT(*) AS n FROM agent_action")[0]["n"] == 0

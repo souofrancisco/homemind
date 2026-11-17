@@ -14,12 +14,13 @@ from homemind.contracts.agent import DeviceCapability, DeviceCommand, RgbColor
 from homemind.contracts.devices import DeviceKind
 from homemind.contracts.home import CORES
 from homemind.features.agent.devices import ActuatorDevice
-from homemind.features.agent.guardrails import plain
+from homemind.features.agent.guardrails import OFF_VERBS, ON_VERBS, is_question, plain
 
 MAX_RATIONALE = 300
 
-_OFF = re.compile(r"\b(desliga\w*|apaga\w*)\b")
-_ON = re.compile(r"\b(liga|ligar|ligues?|ligam|acende\w*)\b")
+_OFF = re.compile(rf"\b(?:{OFF_VERBS})\b")  # só imperativo/infinitivo, nunca particípios
+_ON = re.compile(rf"\b(?:{ON_VERBS})\b")
+_NEGATION = re.compile(r"\b(?:nao|nunca)\b")
 _BULB = re.compile(r"\b(luz|luzes|lampada\w*|candeeiro\w*|iluminacao)\b")
 _PLUG = re.compile(r"\b(tomada\w*|ficha|aquecedor\w*|extensao|extensoes|regua)\b")
 _FORBIDDEN = re.compile(
@@ -128,6 +129,10 @@ def _rationale(verb: str, device: ActuatorDevice) -> str:
 
 def parse_action(text: str, devices: list[ActuatorDevice]) -> ActionIntent | Refusal:
     t = plain(text)
+    if is_question(t):  # defesa em profundidade: o router já só chama isto para pedidos de ação
+        return _refuse("unsupported", "Isso parece uma pergunta, não um pedido de ação. " + _HELP)
+    if _NEGATION.search(t):  # «não desligues a tomada» nunca é um pedido de desligar
+        return _refuse("unsupported", "Não percebi o pedido (tem uma negação). " + _HELP)
     if _FORBIDDEN.search(t):
         return _refuse(
             "forbidden_kind",

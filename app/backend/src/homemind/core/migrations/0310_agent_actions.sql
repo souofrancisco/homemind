@@ -26,8 +26,19 @@ CREATE TABLE agent_action (
   updated_at TEXT NOT NULL,
   CHECK (expires_at > proposed_at),
   CHECK ((status = 'executed') = (execution_json IS NOT NULL)),
-  CHECK ((execution_json IS NULL) = (execution_status IS NULL))
+  CHECK ((execution_json IS NULL) = (execution_status IS NULL)),
+  -- uma ação só passa de `proposed` com a confirmação humana gravada
+  CHECK (status IN ('proposed', 'rejected', 'expired') OR confirmation_json IS NOT NULL)
 );
+-- Só as transições do fluxo: proposed → confirmed | rejected, confirmed → executed. O estado
+-- terminal não volta atrás e nada salta a confirmação (`expired` é derivado, nunca se grava).
+CREATE TRIGGER agent_action_status_transition BEFORE UPDATE OF status ON agent_action
+WHEN NOT (
+  OLD.status = NEW.status
+  OR (OLD.status = 'proposed' AND NEW.status IN ('confirmed', 'rejected'))
+  OR (OLD.status = 'confirmed' AND NEW.status = 'executed')
+)
+BEGIN SELECT RAISE(ABORT, 'transição de estado inválida em agent_action'); END;
 CREATE INDEX agent_action_resident ON agent_action (household_id, proposed_for_resident_id, proposed_at);
 CREATE INDEX agent_action_device ON agent_action (household_id, target_device_id, executed_at);
 

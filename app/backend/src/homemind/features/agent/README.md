@@ -57,10 +57,10 @@ se repete e **SIMULADO** vem sempre etiquetado. A casa demo usa só o executor s
 
 | Ficheiro | O quê |
 |---|---|
-| `intents.py` | Parser PT puro: lâmpada (ligar/desligar/brilho/cor), tomada (só desligar) e recusas com código |
+| `intents.py` | Parser PT puro: lâmpada (ligar/desligar/brilho/cor), tomada (só desligar) e recusas com código; só imperativo/infinitivo, perguntas e negações nunca são ação |
 | `devices.py` | `ActuatorDevice`, porta `DeviceDirectory`, `DemoDevices` (SIMULADO) e `NoDevices` |
 | `execution.py` | Porta `ActionExecutor`, `SimulatedExecutor`, `select_executor`, `run_execution` (prazo, incerteza, nunca repete) |
-| `actions.py` | Serviço SQLite: propor, confirmar (CAS, COMMIT antes de executar), registar o desfecho, rejeitar; limites por dispositivo; `AgentActionView` |
+| `actions.py` | Serviço SQLite: propor, confirmar (CAS, COMMIT antes de executar), registar o desfecho (`executed_at` = hora do servidor; execução interrompida ou `confirmed` perdida → `uncertain/interrupted`), rejeitar; limites por dispositivo; `AgentActionView` |
 | `actions_router.py` | `GET …/agent/actions[/{id}]`, `POST …/{id}/confirm`, `POST …/{id}/reject` (montado por `router.py`) |
 
 Tabelas em `core/migrations/0310_agent_actions.sql`. PROPOSTA para a P1: registar

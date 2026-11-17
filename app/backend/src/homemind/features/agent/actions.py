@@ -9,10 +9,16 @@ Invariantes (todos testados):
 - os limites espelham os de `connectors/write_policy.py` (MCP-04) e aplicam-se por dispositivo;
   um limite violado grava um resultado `blocked` sem chamar o executor;
 - o estado `expired` é derivado na leitura (`expires_at`), sem escrita;
+- `executed_at` (coluna usada pelos limites) é SEMPRE a hora do servidor; a hora que o executor
+  declara fica só em `execution_json`, para que um relógio errado ou hostil não anule o cooldown;
+- uma ação `confirmed` há mais de `stale_s` (prazo do executor + margem) ficou interrompida
+  (cancelamento, crash): `sweep_stale` resolve-a como `executed/uncertain/interrupted`, de forma
+  preguiçosa (na leitura e antes dos limites). Nunca se repete e bloqueia o dispositivo;
 - `agent_action_log` tem uma linha por transição (só a acrescentar) e a proposta publica
   `agent.action_proposed` no outbox, na mesma transação.
 """
 
+import logging
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -44,10 +50,14 @@ from homemind.contracts.domain_events import AgentActionProposed
 from homemind.core.events import append_event
 from homemind.features.agent.devices import ActuatorDevice
 
+log = logging.getLogger(__name__)
+
 NOT_FOUND = "action_not_found"
 NOT_PENDING = "action_not_pending"
 EXPIRED = "action_expired"
 
+INTERRUPTED = "interrupted"
+STALE_MARGIN_S = 30.0  # folga sobre o prazo do executor antes de dar uma confirmação por perdida
 _COUNTED = (ExecutionStatus.confirmed, ExecutionStatus.failed, ExecutionStatus.uncertain)
 
 
@@ -58,6 +68,12 @@ class ActionLimits:
     cooldown_s: float
     max_per_hour: int
     lockout_s: float
+    timeout_s: float = 15.0
+
+    @property
+    def stale_s(self) -> float:
+        """Uma ação `confirmed` há mais do que isto já não está em execução."""
+        return self.timeout_s + STALE_MARGIN_S
 
     @classmethod
     def from_settings(cls, s) -> Self:
@@ -67,6 +83,7 @@ class ActionLimits:
             cooldown_s=s.agent_action_cooldown_s,
             max_per_hour=s.agent_action_max_per_hour,
             lockout_s=s.agent_action_lockout_s,
+            timeout_s=s.agent_action_timeout_s,
         )
 
 
@@ -197,13 +214,26 @@ def list_views(
     status: ActionStatus | None = None,
     limit: int = 50,
 ) -> list[AgentActionView]:
+    """O filtro vê o estado derivado (`expired`) e vai para o SQL, tal como o LIMIT. As datas são
+    sempre gravadas por `_utc(...).isoformat()`, por isso a comparação de texto é cronológica."""
+    now_s = _utc(now).isoformat()
+    where, args = "", []
+    if status is ActionStatus.proposed:
+        where, args = " AND status = 'proposed' AND expires_at > ?", [now_s]
+    elif status is ActionStatus.expired:
+        where, args = (
+            " AND (status = 'expired' OR (status = 'proposed' AND expires_at <= ?))",
+            [now_s],
+        )
+    elif status is not None:
+        where, args = " AND status = ?", [status.value]
     rows = conn.execute(
         "SELECT * FROM agent_action WHERE household_id = ? AND proposed_for_resident_id = ?"
-        " ORDER BY proposed_at DESC, rowid DESC",
-        (str(household_id), str(resident_id)),
+        + where
+        + " ORDER BY proposed_at DESC, rowid DESC LIMIT ?",
+        (str(household_id), str(resident_id), *args, limit),
     ).fetchall()
-    views = (_view(r, now) for r in rows)  # o filtro vê o estado derivado (expired)
-    return [v for v in views if status is None or v.action.status is status][:limit]
+    return [_view(r, now) for r in rows]
 
 
 # --- escrita -----------------------------------------------------------------------------------
@@ -310,6 +340,7 @@ def _limit_code(
     """Mesma lógica de `RuleWritePolicy.check`: bloqueio após incerto, cooldown, limite horário.
     Contam as tentativas (confirmadas, falhadas, incertas) e as ações já confirmadas ainda sem
     desfecho (em curso); as bloqueadas não contam."""
+    sweep_stale(conn, household_id, now, limits.stale_s)  # interrompidas → incertas
     attempts: list[tuple[datetime, bool]] = []  # (instante, incerta?)
     rows = conn.execute(
         "SELECT status, execution_status, executed_at, updated_at FROM agent_action"
@@ -335,14 +366,15 @@ def _limit_code(
 def _store_result(
     conn: sqlite3.Connection, action_id: UUID, result: ActionExecutionResult, now: datetime
 ) -> bool:
-    """CAS `confirmed → executed`. `False` se já não estava `confirmed` (nada se grava)."""
+    """CAS `confirmed → executed`. `False` se já não estava `confirmed` (nada se grava). A coluna
+    `executed_at` leva a hora do SERVIDOR (`now`); a do executor fica só em `execution_json`."""
     cur = conn.execute(
         "UPDATE agent_action SET status = 'executed', execution_json = ?, execution_status = ?,"
         " executed_at = ?, updated_at = ? WHERE id = ? AND status = 'confirmed'",
         (
             result.model_dump_json(),
             result.status.value,
-            result.executed_at.isoformat(),
+            _utc(now).isoformat(),
             _utc(now).isoformat(),
             str(action_id),
         ),
@@ -354,6 +386,30 @@ def _store_result(
         result.code or result.status.value,
     )  # fmt: skip
     return True
+
+
+def sweep_stale(conn: sqlite3.Connection, household_id: UUID, now: datetime, stale_s: float) -> int:
+    """Resolve as ações `confirmed` há mais de `stale_s` (execução interrompida: cancelamento ou
+    crash entre a confirmação e o desfecho) como `executed/uncertain/interrupted`. Pode ter sido
+    aplicado, por isso nunca se repete e o dispositivo fica bloqueado (`uncertain_lockout`)."""
+    now = _utc(now)
+    cutoff = (now - timedelta(seconds=stale_s)).isoformat()
+    rows = conn.execute(
+        "SELECT id FROM agent_action WHERE household_id = ? AND status = 'confirmed'"
+        " AND updated_at < ?",
+        (str(household_id), cutoff),
+    ).fetchall()
+    done = 0
+    for r in rows:
+        action_id = UUID(r["id"])
+        result = ActionExecutionResult(
+            action_id=action_id, status=ExecutionStatus.uncertain, executed_at=now,
+            code=INTERRUPTED,
+        )  # fmt: skip
+        if _store_result(conn, action_id, result, now):
+            log.warning("Ação %s ficou confirmada sem desfecho; resolvida como incerta", action_id)
+            done += 1
+    return done
 
 
 def confirm(

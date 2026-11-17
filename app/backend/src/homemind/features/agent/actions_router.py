@@ -13,7 +13,12 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.datastructures import State
 
-from homemind.contracts.agent import ActionStatus, AgentResponse
+from homemind.contracts.agent import (
+    ActionExecutionResult,
+    ActionStatus,
+    AgentResponse,
+    ExecutionStatus,
+)
 from homemind.contracts.common import Origin
 from homemind.core.access import (
     ClockDep,
@@ -126,6 +131,33 @@ async def reply_to_action_request(
     )
 
 
+def _record_interrupted(
+    db: Database,
+    household_id: UUID,
+    resident_id: UUID,
+    action_id: UUID,
+    result: ActionExecutionResult | None,
+    now,
+) -> None:
+    """Execução interrompida (cancelamento, erro inesperado) depois do COMMIT da confirmação:
+    grava já o desfecho, de forma SÍNCRONA (um `await` aqui seria cancelado outra vez). Sem
+    resultado conhecido é `uncertain/interrupted`: pode ter sido aplicado, por isso nunca se
+    repete e o dispositivo fica bloqueado. É um CAS: se o desfecho já entrou, não faz nada."""
+    outcome = result or ActionExecutionResult(
+        action_id=action_id, status=ExecutionStatus.uncertain, executed_at=now,
+        code=actions.INTERRUPTED,
+    )  # fmt: skip
+    try:
+        db.run_sync(
+            lambda c: actions.record_execution(
+                c, household_id, resident_id, action_id, outcome, now
+            )
+        )
+        log.warning("Execução da ação %s interrompida; desfecho registado", action_id)
+    except Exception as e:  # noqa: BLE001 - o `sweep_stale` resolve-a mais tarde
+        log.error("Não consegui registar a execução interrompida (%s)", type(e).__name__)
+
+
 @router.get("/households/{household_id}/agent/actions")
 async def list_actions(
     access: ReadAccess,
@@ -136,9 +168,13 @@ async def list_actions(
 ) -> list[AgentActionView]:
     """As ações propostas ao residente (as suas), da mais recente à mais antiga."""
     now = clock()
-    return await db.run(
-        lambda c: actions.list_views(c, access.household_id, access.resident_id, now, status, limit)
-    )
+    stale_s = ActionLimits.from_settings(get_agent_settings()).stale_s
+
+    def read(c):
+        actions.sweep_stale(c, access.household_id, now, stale_s)  # interrompidas → incertas
+        return actions.list_views(c, access.household_id, access.resident_id, now, status, limit)
+
+    return await db.run(read)
 
 
 @router.get("/households/{household_id}/agent/actions/{action_id}")
@@ -146,9 +182,13 @@ async def get_action(
     action_id: UUID, access: ReadAccess, db: DbDep, clock: ClockDep
 ) -> AgentActionView:
     now = clock()
-    view = await db.run(
-        lambda c: actions.get_view(c, access.household_id, access.resident_id, action_id, now)
-    )
+    stale_s = ActionLimits.from_settings(get_agent_settings()).stale_s
+
+    def read(c):
+        actions.sweep_stale(c, access.household_id, now, stale_s)  # interrompidas → incertas
+        return actions.get_view(c, access.household_id, access.resident_id, action_id, now)
+
+    view = await db.run(read)
     if view is None:
         raise _error(actions.NOT_FOUND)
     return view
@@ -175,13 +215,20 @@ async def confirm_action(
         return out.view
     action, confirmation = out.pending
     executor = select_executor(state, household_id, await _source_kind(db, household_id), clock)
-    result = await run_execution(
-        executor, action, confirmation, timeout_s=settings.agent_action_timeout_s, clock=clock
-    )
-    view = await db.run(
-        lambda c: actions.record_execution(c, household_id, resident_id, action.id, result, clock())
-        or actions.get_view(c, household_id, resident_id, action.id, clock())
-    )
+    result: ActionExecutionResult | None = None
+    try:
+        result = await run_execution(
+            executor, action, confirmation, timeout_s=settings.agent_action_timeout_s, clock=clock
+        )
+        view = await db.run(
+            lambda c: actions.record_execution(
+                c, household_id, resident_id, action.id, result, clock()
+            )
+            or actions.get_view(c, household_id, resident_id, action.id, clock())
+        )
+    except BaseException:  # incl. CancelledError: o executor pode ter aplicado a ação
+        _record_interrupted(db, household_id, resident_id, action.id, result, clock())
+        raise
     assert view is not None
     return view
 

@@ -8,13 +8,16 @@ chama o executor uma única vez e traduz qualquer falha em resultados honestos:
 - sem executor → `blocked` (`executor_unavailable`): nada foi tentado;
 - prazo esgotado, exceção ou resultado inválido → `uncertain`: pode ter sido aplicado, por isso
   NUNCA se repete (`may_retry` é falso) e fica bloqueado o dispositivo (ver `actions.py`).
+- o instante declarado pelo executor tem de cair entre a confirmação e «agora» (± 5 s); fora
+  disso o resultado é inválido (→ `uncertain`). Os limites usam de qualquer modo a hora do
+  servidor (ver `actions._store_result`).
 Sucesso físico só existe com releitura (`ActionExecutionResult` recusa `confirmed` sem ela).
 """
 
 import asyncio
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
@@ -27,6 +30,8 @@ from homemind.contracts.agent import (
 )
 
 log = logging.getLogger(__name__)
+
+_CLOCK_SKEW = timedelta(seconds=5)
 
 EXECUTOR_ATTR = "agent_action_executor"
 _SIMULATED_ATTR = "agent_simulated_executor"
@@ -130,6 +135,8 @@ async def run_execution(
             raise TypeError
         checked = ActionExecutionResult.model_validate(outcome.model_dump())
         if checked.action_id != action.id:
+            raise ValueError
+        if not confirmation.at - _CLOCK_SKEW <= checked.executed_at <= clock() + _CLOCK_SKEW:
             raise ValueError
     except (TypeError, ValueError):
         log.warning("Executor devolveu um resultado inválido; resultado incerto")

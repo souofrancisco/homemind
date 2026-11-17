@@ -149,3 +149,28 @@ def test_o_parser_nao_executa_nada():
     before = list(DEVICES)
     intent("desliga a luz")
     assert DEVICES == before
+
+
+@pytest.mark.parametrize(
+    ("text", "power"),
+    [("desligue a luz", False), ("apague a luz", False), ("acenda a luz", True),
+     ("ligue a luz", True), ("desliga a tomada", False)],
+)  # fmt: skip
+def test_formas_imperativas_geram_proposta(text, power):
+    assert intent(text).command.power is power
+
+
+def test_ligar_tomada_continua_recusado_no_conjuntivo():
+    assert refusal("ligue a tomada") == "plug_turn_on_not_allowed"
+
+
+@pytest.mark.parametrize(
+    "text", ["A tomada está desligada?", "Quanto consome a luz apagada?", "Qual a cor da luz?"]
+)
+def test_perguntas_nunca_sao_propostas(text):
+    assert refusal(text) == "unsupported"
+
+
+def test_negacao_nunca_propoe():
+    assert refusal("não desligues a tomada") == "unsupported"
+    assert refusal("nunca apagues a luz") == "unsupported"
