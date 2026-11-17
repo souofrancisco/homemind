@@ -83,7 +83,7 @@ de comandos é extra=forbid. A estrutura de erro é sempre
 | GET | /api/households/{household_id}/members | tenant/landlord | MemberView[]; tenant só membros na data local |
 | PATCH | /api/households/{household_id}/memberships/{membership_id} | tenant próprio | MembershipSelfView; apenas presence_opt_in |
 | POST | /api/households/{household_id}/rooms | landlord | 201 RoomView |
-| POST | /api/households/{household_id}/invitations | landlord | 201 {invitation_id,token,expires_at} |
+| POST | /api/households/{household_id}/invitations | landlord | 201 {invitation_id,code,expires_at} |
 | POST | /api/invitations/accept | utilizador OIDC com email verificado | 200 MembershipSelfView |
 | POST | /api/households/{household_id}/memberships/{membership_id}/revoke | landlord, apenas tenant | 200 MemberView terminado |
 
@@ -100,11 +100,11 @@ POST /api/households/{household_id}/invitations
 
 POST /api/invitations/accept
 
-    {"token":"segredo-entregue-uma-vez-pelo-senhorio"}
+    {"code":"segredo-entregue-uma-vez-pelo-senhorio"}
 
 Os UUID são ilustrativos; obter o room_id da rota de quartos. Não incluir
 token em path, query, analytics, logs, notificações globais ou eventos;
-enviar no corpo HTTPS. O segredo de criação só volta ao senhorio uma
+enviar no corpo HTTPS. O código de convite de uso único só volta ao senhorio uma
 vez. O backend não faz delivery de emails; HOUSE-05 implementa a UI.
 
 ## Estados e transições
