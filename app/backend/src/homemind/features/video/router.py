@@ -11,6 +11,10 @@ from homemind.features.video.service import LIMITE, Fonte, partes_mjpeg
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Captura independente do YOLO: sem isto `camera_ok` só subia após o primeiro GET /api/video,
+    # que o frontend só pede com `camera_ok=true`.
+    if get_settings().video_source:
+        service.get_fonte()
     try:
         yield
     finally:  # a visão (alfabeticamente depois) já parou: ninguém lê a fonte

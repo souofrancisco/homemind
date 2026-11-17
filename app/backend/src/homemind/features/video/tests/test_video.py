@@ -106,3 +106,18 @@ def test_parar_fonte_e_idempotente():
     service.parar_fonte()
     assert parou == [1]
     assert service._fonte is None
+
+
+def test_lifespan_inicia_captura_sem_detetor(monkeypatch):
+    monkeypatch.setenv("VIDEO_SOURCE", "rtsp://x")
+    monkeypatch.delenv("VISAO_DETETOR", raising=False)
+    get_settings.cache_clear()
+    monkeypatch.setattr(service, "criar_fonte", lambda settings: FonteFalsa())
+    service.parar_fonte()
+    try:
+        with TestClient(app):
+            assert service.camara_ok()
+        assert not service.camara_ok()  # parar_fonte() no encerramento
+    finally:
+        service.parar_fonte()
+        get_settings.cache_clear()
