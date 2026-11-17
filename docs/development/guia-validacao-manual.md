@@ -24,6 +24,7 @@ Roteiro dos testes a executar à mão. Os testes automáticos (`make check`, `ma
 | [F. Vídeo e visão](#f-vídeo-e-visão) | VID-01, VID-02, VID-03, YOLO-01, YOLO-02, POSE-01, TRK-01 |
 | [G. Gestos e presença](#g-gestos-e-presença) | GES-01, GES-02, PRE-01 |
 | [H. Demo](#h-demo) | LAT-01, LAT-02, DEMO-01, PB-01, PRIV-01 |
+| [I. Presença (Conta Certa)](#i-presença-conta-certa) | PRW-01 … PRW-04 |
 | [Folha de resultados](#folha-de-resultados) | tabela para preencher |
 
 ## Preparação comum
@@ -333,6 +334,34 @@ Backend no host com o extra de visão (ver README, «Visão real»).
 - **Esperado:** em `data/` só pesos, `rules.json`, `events.jsonl`, o grant e os clips/JSONL criados de propósito; eventos só com texto; `grep` sem resultados (`rtsp: 1`); `git status` sem `.env`, `data/`, clips, pesos ou `.mcp-auth`.
 - **PASS** se nada de imagem, URL ou segredo estiver em disco fora do previsto, nos logs ou no Git.
 
+## I. Presença (Conta Certa)
+
+Pistas por pessoa (PRES-03, **IMPLEMENTADO**). Pré-requisitos: backend no **anfitrião** ligado ao Wi-Fi do hub do kit (o contentor Docker não vê a ARP do anfitrião; ver [presence.md](../modules/presence.md)), `PRESENCE_MATCH_SALT`, `PRESENCE_WIFI_MODE=ingest`, `PRESENCE_INGEST_TOKEN` e `PRESENCE_WIFI_SUBNET` em `app/.env`, e um telemóvel de teste cuja dona deu consentimento. Nunca copiar MACs, IPs nem hashes para chats, issues ou prints. Rotas: `?household_id=<casa>` + `Authorization` de um inquilino.
+
+### PRW-01 — Telemóvel registado aparece
+- **Tipo:** REAL (varrimento da rede do hub) · **Issue:** #107
+- **Passos:** `make presence-wifi-scan` (noutra janela); registar o telemóvel (`POST /api/presence/devices`, `consent=true`, `wifi_address` = endereço Wi-Fi do telemóvel nessa rede); desligar e voltar a ligar o Wi-Fi do telemóvel; esperar um ciclo (30 s por omissão).
+- **Esperado:** um evento `presence.cue_recorded` com `source=wifi`, `state=in`, `origin=real`, em nome do morador; nenhuma pista dos outros aparelhos da rede (visitas, vizinhos) e nenhum MAC ou hash deles na base.
+- **PASS** se as três observações coincidirem.
+
+### PRW-02 — Opt-out imediato
+- **Tipo:** REAL · **Issue:** #107
+- **Passos:** `DELETE /api/presence/devices/{id}`; religar o Wi-Fi do telemóvel; esperar um ciclo.
+- **Esperado:** `204`; **nenhuma** pista nova; `GET /api/presence/devices` mostra `wifi_opt_in=false` e `revoked_at`.
+- **PASS** se não surgir nenhuma pista depois do `DELETE`.
+
+### PRW-03 — Wi-Fi desligado não é saída
+- **Tipo:** REAL · **Issue:** #107
+- **Passos:** com o telemóvel registado e visto, desligar o Wi-Fi do telemóvel 30 min.
+- **Esperado:** nenhum evento `presence.cue_recorded` com `state=out`; só uma declaração manual produz `out`.
+- **PASS** com zero pistas `out`.
+
+### PRW-04 — Declaração manual e senhorio
+- **Tipo:** REAL (API) · **Issue:** #107
+- **Passos:** `PUT /api/presence/me?household_id=…` com `{"state":"in"}` e depois `"out"`, como inquilino; repetir qualquer rota de presença com a sessão do senhorio e do operador.
+- **Esperado:** `200` com `PersonPresence` do próprio; cada declaração gera `presence.cue_recorded` (`source=manual`); senhorio e operador recebem `403 forbidden_role` em todas as rotas.
+- **PASS** se as duas observações coincidirem.
+
 ---
 
 ## Folha de resultados
@@ -377,5 +406,9 @@ Data: ________ · Testador(es): ________ · Hardware (GPU/CPU): ________ · Comm
 | DEMO-01 | 10 demos seguidas | | | ____ / 10 | #28 |
 | PB-01 | Plano B | | | troca em ____ s | #3, #28 |
 | PRIV-01 | Privacidade | | | | #28 |
+| PRW-01 | Telemóvel registado aparece (Wi-Fi) | | | | #107 |
+| PRW-02 | Opt-out imediato | | | | #107 |
+| PRW-03 | Wi-Fi desligado não é saída | | | | #107 |
+| PRW-04 | Declaração manual; senhorio 403 | | | | #107 |
 
 **Pronto para a demo** quando: INS-01, AUTH-01, MOT-01, MOT-02, OFF-01, PB-01 e PRIV-01 têm PASS; DEMO-01 tem 10/10; e o guião (`demo-script.md`) só apresenta como REAL os testes REAL com PASS.

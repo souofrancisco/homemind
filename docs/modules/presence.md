@@ -1,6 +1,6 @@
 # Módulo `presence` — câmara na porta e presença
 
-**Dono: P2 (1Mii).** **PLANEADO**, sobre `features/video` e `features/visao` existentes. Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
+**Dono: P2 (1Mii).** **IMPLEMENTADO** (PRES-03 #107): declaração manual, telemóveis com opt-in e pistas Wi-Fi, resposta a «estás em casa?». **PLANEADO**: câmara na porta (PRES-01/02), fusão (PRES-04 #108), ocupação (PRES-05). Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
 
 ## Responsabilidade
 
@@ -20,10 +20,10 @@ Saber **quando alguém entra ou sai** e, a partir daí, **quem está em casa** �
 | Recebe | Produz |
 |---|---|
 | Frames da câmara/clip (`features/video`, `FonteVideo`) | `DoorCrossed` (sentido, confiança), `presence.door_crossed` |
-| Registo manual «cheguei / saí» (`PUT /api/presence/me`, `PresenceMeIn`) | `PresenceEvent(source=manual)` em `presence.cue_recorded` |
-| Telemóveis registados no Wi-Fi com opt-in (`PresenceDevice.wifi_opt_in`) | idem, `source=wifi` (só `in`) |
+| Registo manual «cheguei / saí» (`PUT /api/presence/me`, `PresenceMeIn`) — **IMPLEMENTADO** | `PresenceEvent(source=manual)` em `presence.cue_recorded` |
+| Telemóveis registados no Wi-Fi com opt-in (`PresenceDevice.wifi_opt_in`) — **IMPLEMENTADO** | idem, `source=wifi` (só `in`) |
 | `energy.consumption_detected` com `appliance_owner_resident_id` (P1) | idem, `source=appliance` (só `in`) |
-| Resposta a «estás em casa?» (`notification.responded`, `ref.type=presence_check`, P3) | pista manual |
+| Resposta a «estás em casa?» (`notification.responded`, `ref.type=presence_check`, P3) — consumidor **IMPLEMENTADO**; o produtor (APP-02) **PLANEADO** | pista manual |
 | `sensor.reading_recorded` (contacto, fumo; P1) | `SafetyAlert` em `safety.alert_raised` (SAFE-01/03) |
 | — | `presence.changed` por pessoa; `presence.confirmation_needed` (pistas em conflito); `presence.occupancy_changed` (anónimo; «casa possivelmente vazia» só na fase 2) |
 
@@ -41,6 +41,32 @@ Contratos novos (`PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`
 
 Regras de fusão (PDF §6.8): presença no Wi-Fi conta muito, ausência conta pouco; só se considera que alguém saiu se houver uma saída pela porta e passarem 20–30 min; um aparelho a continuar ligado não prova presença, só um a **ligar** prova; contradição (entrada + aparelho a ligar sem ninguém «em casa») → `uncertain` e pergunta na aplicação.
 
+## Pistas por pessoa (PRES-03) — IMPLEMENTADO
+
+`features/presence/{wifi,repo,service,router,hostscan}.py`, migração `core/migrations/0200_presence_tables.sql` (convenção D-29, `02xx` = P2; tabelas `presence_device`, `presence_confirmation`, `presence_state` — a última só é usada pela fusão, PRES-04).
+
+**API** (todas com `?household_id=`; só inquilino com membership ativa; **senhorio e operador `403 forbidden_role`**, não-membro `404`; a pessoa é sempre a da sessão):
+
+| Rota | Efeito |
+|---|---|
+| `PUT /api/presence/me` | `PresenceMeIn` (`in`/`out`) → `PresenceEvent(source=manual)` em `presence.cue_recorded`; devolve `PersonPresence` provisório (a pista; a fusão é a PRES-04) |
+| `GET /api/presence/devices` | os **meus** telemóveis (`PresenceDeviceView`) |
+| `POST /api/presence/devices` | regista um telemóvel: `{label, wifi_address, consent: true}`; só guarda o hash; `409` se já registado ou acima de 5; `503` sem `PRESENCE_MATCH_SALT` |
+| `DELETE /api/presence/devices/{id}` | opt-out: deixa de ser reconhecido de imediato e o hash é **apagado** (idempotente) |
+| `POST /api/presence/wifi/observations` | só modo `ingest`; token de máquina (`X-Presence-Token`); fora do OpenAPI |
+
+**Wi-Fi.** O morador regista o telemóvel com consentimento explícito; o MAC só existe em memória para calcular `match_key = HMAC-SHA256(PRESENCE_MATCH_SALT, MAC normalizado)` (nunca em base de dados, logs, eventos, respostas nem para o senhorio; o macOS omite zeros nos MACs, por isso normaliza-se antes de comparar). Um varrimento (ping à sub-rede + `ip neigh`/`arp -an`) produz MACs; os que não correspondem a um telemóvel registado com opt-in são **descartados sem rasto** (visitas, vizinhos; nem o hash fica). Quando um telemóvel registado **aparece** grava-se uma pista `in` (`wifi`, confiança 0,8, `real/inferred`; `simulated/inferred` com o scanner falso); a **ausência nunca grava nada**, e um varrimento falhado também não. Cadência: pista ao reaparecer (mínimo 60 s entre pistas) e renovação a cada 5 min enquanto visto. A pista só se grava com membership de inquilino ativa, na mesma transação que o evento (a revogação tem efeito imediato).
+
+**Modos** (`PRESENCE_WIFI_MODE`, omissão `off`): `simulated` (scanner falso, MACs fictícios em `PRESENCE_WIFI_SIM_ADDRESSES`; **SIMULADO**), `arp` (o backend varre a rede; só no anfitrião), `ingest` (o varrimento corre no anfitrião e envia hashes: `make presence-wifi-scan`). Sub-rede em `PRESENCE_WIFI_SUBNET` (só privada, até /22), intervalo em `PRESENCE_WIFI_INTERVAL_S` (≥ 10 s, omissão 30).
+
+**Docker no macOS/Windows: o varrimento NÃO funciona no contentor.** O Docker Desktop corre os contentores numa VM com rede virtual NAT: o contentor não vê a tabela ARP do anfitrião (só o gateway virtual) e a imagem do backend nem traz `ping`/`ip`/`arp` (verificado: 0 aparelhos). Por isso, com Docker, usar `PRESENCE_WIFI_MODE=ingest` e correr `make presence-wifi-scan` no anfitrião ligado ao Wi-Fi do hub; o processo calcula os hashes com o mesmo sal e envia só hashes ao backend (`POST /api/presence/wifi/observations`, token em `app/.env`). A rota é a única de `/api/*` sem JWT (autenticação de máquina por token; desligada sem token).
+
+**Evidência do varrimento real.** Medição pontual (17/11/2026, macOS, /24 doméstica real, só leitura): 16 aparelhos vistos em ~12 s com o código de `wifi.py` (`ArpScanner`). Não é a validação do kit: PRW-01…03 do [guia](../development/guia-validacao-manual.md) por executar.
+
+**Resposta a «estás em casa?».** O consumidor `presence.answers` lê `notification.responded` com `ref.type=presence_check`: só aceita respostas a pedidos que presence emitiu (`presence_confirmation`), do próprio morador, uma única vez, com ação `in`/`out`; grava a pista manual (origem herdada da resposta). Os pedidos passam a ser emitidos pela fusão (PRES-04).
+
+**Pontos em aberto.** P-19: a declaração manual fica `real/measured` (o que o contrato já faz). PRIV-02 (#146, em revisão) propõe exigir também `Membership.presence_opt_in` e `PRESENCE_WIFI_COLLECTION_ENABLED`; aqui o consentimento do Wi-Fi é o do telemóvel (`wifi_opt_in`) e o interruptor global é `PRESENCE_WIFI_MODE != off`. A retenção dos eventos de pista (P-20) mantém-se por decidir.
+
 ## Limites reais
 
 - Acesso à imagem da câmara do kit (MEARI) **não está provado** para este caso de uso: só há leitura RTSP de 10 min via relay (medição herdada, ver [altice-mcp.md](../integrations/altice-mcp.md)) e a câmara do kit é fixa. Plano B: telemóvel como câmara IP ou clip gravado — dito sempre como tal.
@@ -53,7 +79,7 @@ Regras de fusão (PDF §6.8): presença no Wi-Fi conta muito, ausência conta po
 
 ## Ficheiros novos previstos
 
-`features/presence/{door,fusion,router,service,tests}`, `contracts/presence.py`. Pesos YOLO e `torch` continuam fora do Docker e do CI (extra `visao`).
+`features/presence/{door,fusion,router,service,tests}` (`router`, `service`, `repo`, `wifi`, `hostscan` já existem), `contracts/presence.py`. Pesos YOLO e `torch` continuam fora do Docker e do CI (extra `visao`).
 
 ## Dependências
 
