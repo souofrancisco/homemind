@@ -1,13 +1,13 @@
-# features/agent — assistente na app (AGENT-01 registo, AGENT-02 ciclo)
+# features/agent — assistente na app (AGENT-01 registo, AGENT-02 ciclo, AGENT-03 ações)
 
-Refs #110 e #111. Detalhe e pedidos pendentes em [`docs/modules/agent.md`](../../../../../../docs/modules/agent.md).
+Refs #110, #111 e #112. Detalhe e pedidos pendentes em [`docs/modules/agent.md`](../../../../../../docs/modules/agent.md).
 
 ## IMPLEMENTADO
 
 `POST /api/households/{household_id}/agent/messages` (`AgentMessageIn` → `AgentResponse`). Só
 inquilinos (`require_access(Resource.agent, write)`); senhorio e operador 403, não-membro 404. O
 residente e o papel vêm do token. Ferramentas só de leitura; todos os números vêm delas; sem LLM
-(ou com resposta não fundamentada) há um recurso determinístico. Sem tabelas, eventos nem lifespan.
+(ou com resposta não fundamentada) há um recurso determinístico. A leitura não tem tabelas nem eventos.
 
 | Ficheiro | O quê |
 |---|---|
@@ -47,10 +47,29 @@ Sem nada registado o comportamento é o de antes.
 código, `None` = sem medição, proveniência verdadeira, sem I/O bloqueante lento) e registar um
 `ProviderSet(consumption=…, budget=…, receipt=…)` em `app.state.agent_providers` na composição.
 
+## IMPLEMENTADO — ações propostas (AGENT-03, #112)
+
+Um pedido de ação («desliga a luz», «põe a luz azul», «desliga a tomada») **nunca chega ao LLM nem
+executa nada**: `send_message` interpreta-o em código (`intents.py`) e devolve **uma proposta por
+confirmar** em `proposed_actions` (ou um texto de recusa). Só `POST …/agent/actions/{id}/confirm`
+executa, uma vez, por um `ActionExecutor` injetado; `confirmed` exige releitura, `uncertain` nunca
+se repete e **SIMULADO** vem sempre etiquetado. A casa demo usa só o executor simulado.
+
+| Ficheiro | O quê |
+|---|---|
+| `intents.py` | Parser PT puro: lâmpada (ligar/desligar/brilho/cor), tomada (só desligar) e recusas com código; só imperativo/infinitivo, perguntas e negações nunca são ação |
+| `devices.py` | `ActuatorDevice`, porta `DeviceDirectory`, `DemoDevices` (SIMULADO) e `NoDevices` |
+| `execution.py` | Porta `ActionExecutor`, `SimulatedExecutor`, `select_executor`, `run_execution` (prazo, incerteza, nunca repete) |
+| `actions.py` | Serviço SQLite: propor, confirmar (CAS, COMMIT antes de executar), registar o desfecho (`executed_at` = hora do servidor; execução interrompida ou `confirmed` perdida → `uncertain/interrupted`), rejeitar; limites por dispositivo; `AgentActionView` |
+| `actions_router.py` | `GET …/agent/actions[/{id}]`, `POST …/{id}/confirm`, `POST …/{id}/reject` (montado por `router.py`) |
+
+Tabelas em `core/migrations/0310_agent_actions.sql`. PROPOSTA para a P1: registar
+`app.state.agent_action_executor` e `app.state.agent_device_directory`; sem eles uma casa real não
+executa nada. Limites e detalhe em [`docs/modules/agent.md`](../../../../../../docs/modules/agent.md).
+
 ## PLANEADO
 
-Providers reais de P4/P1 (ver acima), histórico por residente, AGENT-03 (ações
-propostas), AGENT-04 (automações), decisão P-06 antes de ligar o LLM, frontend.
+Providers reais de P4/P1 (ver «Providers»), executor real e diretório de dispositivos da P1, histórico por residente, AGENT-04 (automações), decisão P-06 antes de ligar o LLM, frontend.
 
 ## Testes
 
