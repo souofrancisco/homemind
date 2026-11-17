@@ -171,6 +171,12 @@ class DemoStore:
         if self.path.exists():
             self._guard(existing=True, allow_wal_recovery=True)
             self._migrate_existing()
+            try:
+                self.verify()
+            except AssertionError as exc:
+                raise DemoSafetyError(
+                    "a base não corresponde ao cenário atual; executar make demo-reset"
+                ) from exc
             self.replay()
         else:
             self._build()

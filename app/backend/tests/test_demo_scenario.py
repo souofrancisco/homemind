@@ -13,23 +13,31 @@ from pathlib import Path
 import pytest
 
 from homemind.contracts import billing
+from homemind.contracts import domain_events as de
 from homemind.contracts import fixtures as fx
 from homemind.contracts.common import replace, stable_id
-from homemind.contracts.energy import MatchOutcome, ReadingStatus
+from homemind.contracts.energy import CostEstimate, MatchOutcome, ReadingStatus
 from homemind.contracts.notification import ConfirmationVerdict, Notification
 from homemind.core.db import MIGRATIONS_DIR, Database
 from homemind.core.events import EventBus, append_event, load_events
 from homemind.demo.cli import FILE_NAME, DemoSafetyError, DemoStore
 from homemind.demo.scenario import CLOCK, POWER_PROFILE, events, power_samples, references
+from homemind.features.billing import attributor
+from homemind.features.energy.consumer import make_step_consumer
+from homemind.features.energy.steps import StepTracker
 from homemind.features.households.repo import insert_household
 from homemind.features.notifications.directory import SqliteResidentDirectory
 from homemind.features.notifications.handlers import (
+    ATTRIBUTION_CONSUMER,
+    ATTRIBUTION_EVENT_TYPES,
     CONFIRMATION_CONSUMER,
     CONFIRMATION_EVENT_TYPES,
+    make_attribution_handler,
     make_confirmation_handler,
 )
 from homemind.features.notifications.service import NotificationService
 from homemind.features.notifications.sqlite import SqliteNotificationRepository
+from homemind.features.presence.service import PresenceService
 
 
 @pytest.fixture
@@ -49,30 +57,132 @@ def test_deterministic_clock_samples_and_events():
     assert all(e.provenance.simulated for e in first)
 
 
-def test_presence_is_anonymous_and_confirmation_is_only_a_p3_input():
+def test_replay_contains_energy_and_presence_inputs_not_consumer_outputs():
+    types = {event.type for event in events()}
+    assert "energy.reading_recorded" in types
+    assert "presence.door_crossed" in types
+    assert not types.intersection(
+        {
+            "energy.step_detected",
+            "energy.consumption_detected",
+            "energy.consumption_closed",
+            "billing.confirmation_needed",
+            "billing.attribution_changed",
+            "notification.created",
+            "notification.responded",
+        }
+    )
+
+
+def test_presence_is_anonymous_and_no_consumer_output_is_fabricated():
     timeline = events()
     doors = [e for e in timeline if e.type == "presence.door_crossed"]
     assert len(doors) == 2
     assert [e.data.direction.value for e in doors] == ["in", "out"]
     assert all("resident_id" not in e.data.model_dump() for e in doors)
     assert not any(e.type == "presence.changed" for e in timeline)
-    assert sum(e.type == "billing.confirmation_needed" for e in timeline) == 1
+    assert not any(e.type == "billing.confirmation_needed" for e in timeline)
     assert not any(e.type in {"notification.created", "notification.responded"} for e in timeline)
     assert not any(e.type == "billing.attribution_changed" for e in timeline)
 
 
-def test_identified_ambiguous_unknown_do_not_become_identity():
-    closed = [e.data for e in events() if e.type == "energy.consumption_closed"]
-    assert [c.match.outcome for c in closed] == [
-        MatchOutcome.identified,
-        MatchOutcome.identified,
-        MatchOutcome.unknown,
-        MatchOutcome.ambiguous,
-    ]
-    assert closed[2].match.appliance_id is None
-    assert closed[3].match.appliance_id is None
-    assert closed[1].match.appliance_id == fx.HEATER
-    assert not any("resident_id" in c.model_dump() for c in closed)
+def test_real_presence_consumer_keeps_demo_door_crossing_anonymous(store):
+    store.prepare()
+    db = Database(store.path)
+    db.open()
+    try:
+        bus = EventBus(db)
+        service = PresenceService(
+            db,
+            bus,
+            salt="",
+            clock=lambda: CLOCK.at(160),
+            wifi_enabled=False,
+        )
+        crossed = next(
+            item for item in db.run_sync(load_events) if item.event.type == "presence.door_crossed"
+        )
+        assert db.run_sync(lambda conn: service.on_presence_input(conn, crossed)) == []
+        assert (
+            db.run_sync(
+                lambda conn: conn.execute("SELECT count(*) FROM presence_state").fetchone()[0]
+            )
+            == 0
+        )
+        assert "resident_id" not in crossed.event.data.model_dump()
+    finally:
+        db.close()
+
+
+def test_energy_inputs_have_no_nilm_labels_or_resident_identity():
+    readings = [e.data for e in events() if e.type == "energy.reading_recorded"]
+    assert readings
+    assert all("match" not in reading.model_dump() for reading in readings)
+    assert all("resident_id" not in reading.model_dump() for reading in readings)
+
+
+def test_real_energy_consumer_processes_simulated_demo_readings(store):
+    store.prepare()
+    db = Database(store.path)
+    db.open()
+    try:
+        bus = EventBus(db)
+        bus.subscribe(
+            "energy.steps",
+            make_step_consumer(StepTracker(household_id=fx.HOUSEHOLD)),
+            ["energy.reading_recorded"],
+        )
+        bus.subscribe(attributor.CONSUMER, attributor.handle, attributor.EVENT_TYPES)
+        inputs = db.run_sync(lambda conn: load_events(conn, types=["energy.reading_recorded"]))
+        assert len(inputs) == len(POWER_PROFILE) + 1  # readings plus explicit missing sample
+        assert all(asyncio.run(bus.deliver("energy.steps", stored)) for stored in inputs)
+
+        all_events = db.run_sync(load_events)
+        outputs = [
+            item.event
+            for item in all_events
+            if item.event.type.startswith("energy.")
+            and item.event.type != "energy.reading_recorded"
+        ]
+        assert outputs
+        assert {item.type for item in outputs} <= {
+            "energy.step_detected",
+            "energy.consumption_detected",
+            "energy.consumption_closed",
+        }
+        assert all(item.provenance.simulated for item in outputs)
+        consumption = [
+            item.data
+            for item in outputs
+            if item.type in {"energy.consumption_detected", "energy.consumption_closed"}
+        ]
+        assert consumption
+        assert all(item.match.outcome is MatchOutcome.unknown for item in consumption)
+        assert all(item.energy_wh is None or item.energy_wh >= 0 for item in consumption)
+        assert all(item.cost_estimate is None for item in consumption)
+
+        generated_consumptions = db.run_sync(
+            lambda conn: load_events(
+                conn,
+                types=["energy.consumption_detected", "energy.consumption_closed"],
+            )
+        )
+        assert generated_consumptions
+        assert all(
+            asyncio.run(bus.deliver(attributor.CONSUMER, stored))
+            for stored in generated_consumptions
+        )
+        active = db.run_sync(
+            lambda conn: conn.execute(
+                "SELECT json FROM billing_attribution WHERE status = 'active'"
+            ).fetchall()
+        )
+        assert len(active) == sum(item.status.value == "closed" for item in consumption)
+        assert not db.run_sync(
+            lambda conn: conn.execute("SELECT count(*) FROM billing_confirmation").fetchone()[0]
+        )
+    finally:
+        db.close()
 
 
 def test_sensor_failure_is_not_0_w_and_never_requires_hardware():
@@ -90,12 +200,6 @@ def test_sensor_failure_is_not_0_w_and_never_requires_hardware():
     assert zero.data.status is ReadingStatus.ok
     assert zero.data.power_w == 0
     assert zero.data.usable
-
-
-def test_ongoing_consumption_has_unknown_energy_not_zero():
-    ongoing = [e.data for e in events() if e.type == "energy.consumption_detected"]
-    assert len(ongoing) == 4
-    assert all(item.energy_wh is None and item.cost_estimate is None for item in ongoing)
 
 
 def test_bills_are_distinct_reference_fixtures():
@@ -128,6 +232,33 @@ def test_prepare_and_repeat_replay_do_not_duplicate(store):
     assert store.replay() == original
 
 
+def test_prepare_refuses_old_or_extra_scenario_events_without_mutating_db(store):
+    store.prepare()
+    legacy_step = de.EnergyStepDetected(
+        ts=CLOCK.at(1),
+        household_id=fx.HOUSEHOLD,
+        provenance=fx.SIM_MEASURED,
+        data=replace(fx.step(), id=stable_id("previous-demo-step")),
+    )
+    db = Database(store.path)
+    db.open()
+    try:
+        db.run_sync(lambda conn: append_event(conn, legacy_step))
+        before = db.run_sync(load_events)
+    finally:
+        db.close()
+
+    with pytest.raises(DemoSafetyError, match="demo-reset"):
+        store.prepare()
+
+    db = Database(store.path)
+    db.open()
+    try:
+        assert db.run_sync(load_events) == before
+    finally:
+        db.close()
+
+
 def test_prepare_applies_all_current_main_migrations(store):
     store.prepare()
     expected = {path.name for path in MIGRATIONS_DIR.glob("*.sql")}
@@ -139,6 +270,7 @@ def test_prepare_applies_all_current_main_migrations(store):
         "0101_house_appliance_catalog.sql",
         "0102_house_appliance_temporal_guards.sql",
     } <= applied
+    assert {"0101_billing_attributions.sql", "0102_billing_allocations.sql"} <= applied
     assert {"0200_presence_tables.sql", "0300_notifications_core.sql"} <= applied
 
 
@@ -220,24 +352,54 @@ DemoStore(Path(sys.argv[1])).replay()
     assert not Path(f"{store.path}-shm").exists()
 
 
-def test_real_p3_consumer_and_d32_votes_use_demo_input(store):
+def test_real_p4_p3_consumers_and_d32_votes_use_isolated_demo_db(store):
     store.prepare()
     db = Database(store.path)
     db.open()
     try:
-        confirmation = next(
-            row
-            for row in db.run_sync(load_events)
-            if row.event.type == "billing.confirmation_needed"
+        consumption = replace(
+            fx.consumption(closed=True),
+            energy_wh=5000,
+            cost_estimate=CostEstimate(cents=80, price_millicents_per_kwh=16_000),
         )
+        source = de.EnergyConsumptionClosed(
+            ts=CLOCK.at(131),
+            household_id=fx.HOUSEHOLD,
+            provenance=consumption.provenance,
+            data=consumption,
+        )
+
         bus = EventBus(db)
+        bus.subscribe(attributor.CONSUMER, attributor.handle, attributor.EVENT_TYPES)
         bus.subscribe(
             CONFIRMATION_CONSUMER,
             make_confirmation_handler(lambda: CLOCK.at(132)),
             CONFIRMATION_EVENT_TYPES,
         )
+        bus.subscribe(
+            ATTRIBUTION_CONSUMER,
+            make_attribution_handler(lambda: CLOCK.at(134)),
+            ATTRIBUTION_EVENT_TYPES,
+        )
+        stored_source = db.run_sync(lambda conn: append_event(conn, source))
+        assert asyncio.run(bus.deliver(attributor.CONSUMER, stored_source))
+        assert not asyncio.run(bus.deliver(attributor.CONSUMER, stored_source))
+        confirmation = next(
+            row
+            for row in db.run_sync(load_events)
+            if row.event.type == "billing.confirmation_needed"
+        )
+        assert isinstance(confirmation.event, de.BillingConfirmationNeeded)
         assert asyncio.run(bus.deliver(CONFIRMATION_CONSUMER, confirmation))
         assert not asyncio.run(bus.deliver(CONFIRMATION_CONSUMER, confirmation))
+        assert (
+            db.run_sync(
+                lambda conn: conn.execute(
+                    "SELECT count(*) FROM domain_event WHERE type = 'notification.created'"
+                ).fetchone()[0]
+            )
+            == 1
+        )
         notification_row = db.run_sync(
             lambda conn: conn.execute("SELECT json FROM notification").fetchone()
         )
@@ -282,6 +444,30 @@ def test_real_p3_consumer_and_d32_votes_use_demo_input(store):
         assert persisted.status.value == "actioned"
         assert persisted.response.resident_id == fx.DIOGO
         assert [vote.resident_id for vote in persisted.responses] == [fx.ANA, fx.CARLA, fx.DIOGO]
+
+        responded = db.run_sync(
+            lambda conn: load_events(conn, types=["notification.responded"])[-1]
+        )
+
+        assert asyncio.run(bus.deliver(attributor.CONSUMER, responded))
+        assert not asyncio.run(bus.deliver(attributor.CONSUMER, responded))
+        attributed = next(
+            row
+            for row in db.run_sync(load_events)
+            if row.event.type == "billing.attribution_changed"
+        )
+        assert isinstance(attributed.event, de.BillingAttributionChanged)
+        assert attributed.event.data.target_resident_id == fx.BRUNO
+        assert asyncio.run(bus.deliver(ATTRIBUTION_CONSUMER, attributed))
+        assert not asyncio.run(bus.deliver(ATTRIBUTION_CONSUMER, attributed))
+        saved = db.run_sync(lambda conn: attributor.active_attribution(conn, consumption.id))
+        assert saved == attributed.event.data
+        assert (
+            db.run_sync(
+                lambda conn: conn.execute("SELECT count(*) FROM notification").fetchone()[0]
+            )
+            == 2
+        )
     finally:
         db.close()
 

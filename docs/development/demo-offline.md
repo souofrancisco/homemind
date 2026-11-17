@@ -16,7 +16,11 @@ adicionais. O cenário define eventos Pydantic, persiste através de
 `append_event` (idempotente), e usa `Database/migrate/seed_demo`.
 `demo-prepare` aplica migrações aditivas em falta a uma base de demo existente;
 `demo-reset` constrói diretamente o schema atual.
-Não implementa motor financeiro, classificador, notificações ou autenticação.
+Se o cenário guardado for diferente da versão atual, `demo-prepare` recusa sem
+acrescentar eventos e pede `make demo-reset` (que volta a validar o marcador e
+o conteúdo exclusivo antes de substituir a base).
+Não substitui motores de negócio nem autenticação. `demo-replay` apenas grava as
+entradas; os consumidores reais são exercitados pelos testes isolados.
 
 ## Executar — sem Docker, rede, câmera, LLM ou MCP
 
@@ -52,23 +56,27 @@ transação. Nenhum outro ficheiro ou base da aplicação é removido.
 ## O cenário oficial
 
 - Casa F0: Ana, Bruno, Carla e Diogo; 4 quartos, sala, senhorio e operador
-  simulados. Bruno é dono do aquecedor, Carla declara ter usado o aquecedor
-  na sala. A entrada/saída pela porta permanece anónima.
-- Um medidor da extensão na bancada da sala: perfil determinístico em W,
-  chaleira (3 minutos), aquecedor (120 minutos), carga desconhecida e
-  uma assinatura ambígua. As probabilidades são **valores de referência
-  roteirizados**, não probabilidades calculadas por ENERGY-03.
+  simulados. A entrada/saída pela porta permanece anónima.
+- Um medidor da extensão na bancada da sala: perfil determinístico em W.
+  O replay guarda apenas `EnergyReadingRecorded`; não declara que a chaleira
+  ou o aquecedor foram identificados. O consumidor P1 real (`StepTracker` +
+  `make_step_consumer`) transforma estas amostras em degraus e sessões, com
+  match vazio (`unknown`), localização desconhecida e sem custo estimado.
+  ENERGY-03/classificação NILM continua por implementar.
 - Leituras tipadas em W incluem **0 W válido** e ausência (`power_w=None`),
-  que são estados distintos; consumos em curso ficam com `energy_wh=None`,
-  não com zero. Degraus e consumos ON/OFF têm rótulos/confianças roteirizados,
-  não calculados por ENERGY-02/03.
-- O pedido `billing.confirmation_needed` é uma entrada válida para o
-  consumidor real P3. `demo-replay` apenas persiste a entrada; não arranca o
-  lifespan/consumidor FastAPI. A integração isolada testa o handler P3 real,
-  a persistência SQLite da notificação e votos humanos distintos através de
-  `NotificationService`/D-32. Os eventos `notification.created`,
-  `notification.responded` e `billing.attribution_changed` não são fabricados
-  pelo cenário. P4 ainda não consome os votos no pipeline real.
+  que são estados distintos. A integração de teste executa o consumidor P1
+  sobre as leituras e entrega os eventos de consumo ao atribuidor P4 real.
+- Passagens `presence.door_crossed` continuam anónimas. A demo não opta
+  moradores por presença, não recolhe Wi-Fi/câmara e não faz check-in manual.
+  PRES-03/04 só grava estado para memberships com opt-in; uma resposta manual
+  só pode responder a uma pergunta pessoal do sistema. O CLI não inicia esse fluxo.
+- O CLI não fabrica `billing.confirmation_needed`, `notification.created`,
+  `notification.responded` nem `billing.attribution_changed`. Um teste de
+  integração isolado cria um evento de consumo válido para BILL-02, valida o
+  pedido de confirmação produzido pelo P4, a notificação persistida pelo P3,
+  votos distintos D-32 e a atribuição persistida pelo P4. A amostra de custo
+  desse teste é uma entrada simulada explícita, não uma saída calculada pelo
+  replay ou por ENERGY-02.
 - O limiar de orçamento 80% é um evento de referência ilustrativo; o produtor
   de orçamento/alertas não está ligado. A demo também não chama `allocate`.
 - Fatura de **120,00 €**: dois exemplos *distintos* da v5.1,
@@ -76,12 +84,12 @@ transação. Nenhum outro ficheiro ou base da aplicação é removido.
   `reference_bill`/`reference_allocation` (e não nos quadros de
   produção, que ainda pertencem a BILL-02 e sucessores).
 
-HOUSE-02 (#143) e HOUSE-03 (#142) estão integrados na `main` atual. O seed usa
-o `seed_demo` de HOUSE-02 para as memberships que o handler P3 consulta. As
-migrações de catálogo `0101`/`0102` são aplicadas e testadas, mas o cenário
-offline não popula o catálogo temporal via `ApplianceCatalog`: ENERGY-02/03
-ainda não está ligado para consumir essas referências roteirizadas. #145
-(HOUSE-04) continua draft e não é dependência da demo.
+HOUSE-02 (#143), HOUSE-03 (#142) e BILL-02/04 estão integrados na `main`.
+`demo-prepare` aplica e testa as migrações de catálogo `0101`/`0102`, billing
+`0101`/`0102`, presença `0200` e notificações `0300`. O replay não chama
+`ApplianceCatalog`, não cria faturas de produção e não arranca os consumidores
+no lifespan da aplicação. A compatibilidade dos contratos de consumo,
+atribuição e notificação é verificada em SQLite temporário.
 
 | Morador | Fixture A | Fixture B |
 |---|---:|---:|
@@ -92,8 +100,9 @@ ainda não está ligado para consumir essas referências roteirizadas. #145
 | **Total** | **120,00 €** | **120,00 €** |
 
 Os recibos são estruturas `BillAllocation` com breakdown validado pelos
-contratos F0; **não** foram calculados por `demo-replay`/BILL-02. BILL-02/04
-tem testes próprios que executam `allocate` e reproduzem A/B; D-34 fixa
+contratos F0; **não** foram calculados por `demo-replay` nem pelo teste de
+integração P3/P4. BILL-04 tem testes próprios que executam `allocate` e
+reproduzem A/B; D-34 fixa
 empates por hash da casa/período. O termo fixo,
 os consumos individuais e o resíduo pertencem aos exemplos originais da
 documentação, não à sequência de poucos minutos do replay.
@@ -110,8 +119,9 @@ resets. Comparar o **estado lógico**, não os bytes SQLite.
 A falta de câmara, MCP, Wi-Fi ou LLM não interfere no replay. Não inicia
 recolha de presença nem operação física MCP. As passagens de porta são apenas
 `DoorCrossed` anónimos; nenhuma identidade é inferida por imagem.
-Os casos `missing`, `unknown` e `ambiguous` são reproduzíveis;
-não são convertidos em medição zero, identidade ou cobrança pessoal.
+O caso `missing` e as sessões `unknown` produzidas por ENERGY-02 são
+reproduzíveis; a demo não cria `ambiguous` nem identifica aparelho, residente
+ou cobrança pessoal.
 Repetir o replay não duplica eventos; depois de reiniciar o processo,
 `verify` lê a mesma sequência. Falhas de consumidores reais são
 geridas pelo barramento F0, não por stand-ins ocultos da DEMO-01.
@@ -119,9 +129,9 @@ geridas pelo barramento F0, não por stand-ins ocultos da DEMO-01.
 ## Híbrido (PLANEADO, bloqueado por segurança)
 
 `--mode hybrid` **recusa-se explicitamente** enquanto não existir adaptador
-aprovado que valide origem, unidade, timestamps, permissão e casa. Quando
-MCP-02/ENERGY-03/PRES/APP/BILL estiverem implementados, podem substituir
-os produtores/consumidores simulados através dos mesmos contratos.
+aprovado que valide origem, unidade, timestamps, permissão e casa. Uma
+integração futura com sensores reais pode substituir as entradas simuladas
+através dos mesmos contratos. Não é feita neste cenário.
 Dados reais terão `origin=real`, sem ocultar os restantes simulados.
 **Nenhuma escrita MCP** está autorizada ou é necessária.
 
@@ -130,11 +140,11 @@ Dados reais terão `origin=real`, sem ocultar os restantes simulados.
 1. Correr `make demo-prepare`, `make demo-verify`, `make demo-replay` e
    `make demo-verify`; comparar
    `event_digest`, sequências e recibos.
-2. Explicar uma passagem anónima, um match ilustrativo e um desconhecido
-   sem atribuição; comparar 0 W com leitura ausente.
-3. Para mostrar notificações, executar o evento de confirmação no backend
-   P3 real com base isolada: pedido → notificação persistida → votos D-32.
-   O CLI de demo offline não cria nem responde a notificações.
+2. Explicar uma passagem anónima e uma sessão `unknown` produzida por P1;
+   comparar 0 W com leitura ausente.
+3. Para mostrar notificações, usar o teste de integração P4 → P3 em SQLite
+   isolado: evento simulado de consumo → pedido → notificação → votos D-32 →
+   atribuição. O CLI offline não cria nem responde a notificações.
 4. Mostrar o aviso de 80% como referência e as repartições A/B de 120 €
    **separadamente**; dizer que A/B são fixtures do documento.
 5. Se os serviços finais estiverem ligados, validar a UI com APP-02/BILL-02
