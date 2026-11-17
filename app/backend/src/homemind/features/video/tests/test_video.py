@@ -30,6 +30,7 @@ class FonteFalsa:
 
 def test_video_503_sem_fonte_configurada(monkeypatch):
     monkeypatch.delenv("VIDEO_SOURCE", raising=False)
+    monkeypatch.setenv("ENABLE_DEV_VIDEO_PREVIEW", "true")
     get_settings.cache_clear()
     app.dependency_overrides[current_user] = lambda: User(sub="t")
     try:
@@ -39,6 +40,32 @@ def test_video_503_sem_fonte_configurada(monkeypatch):
         get_settings.cache_clear()
     assert resposta.status_code == 503
     assert resposta.json()["error"]["code"] == "http_503"
+
+
+def test_video_preview_disabled_by_default_even_with_camera_source(monkeypatch):
+    monkeypatch.setenv("VIDEO_SOURCE", "rtsp://nao-contactar")
+    monkeypatch.delenv("ENABLE_DEV_VIDEO_PREVIEW", raising=False)
+    get_settings.cache_clear()
+    app.dependency_overrides[current_user] = lambda: User(sub="t")
+    try:
+        resposta = TestClient(app).get("/api/video")
+        assert resposta.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+        get_settings.cache_clear()
+
+
+def test_video_preview_never_exposes_live_rtsp_even_if_debug_enabled(monkeypatch):
+    monkeypatch.setenv("VIDEO_SOURCE", "rtsp://nao-contactar")
+    monkeypatch.setenv("ENABLE_DEV_VIDEO_PREVIEW", "true")
+    get_settings.cache_clear()
+    app.dependency_overrides[current_user] = lambda: User(sub="t")
+    try:
+        resposta = TestClient(app).get("/api/video")
+        assert resposta.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+        get_settings.cache_clear()
 
 
 def test_video_401_sem_login():

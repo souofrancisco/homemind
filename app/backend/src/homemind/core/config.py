@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost,https://localhost"
     # Vídeo: URL RTSP ou caminho de clip. Nunca logar nem devolver (pode conter credenciais).
     video_source: str = ""
+    # PRIV-02: o endpoint MJPEG herdado só pode servir clips locais em desenvolvimento.
+    # Nunca permitir preview de uma stream RTSP real; fechado por omissão.
+    enable_dev_video_preview: bool = False
+    # Pista individual por Wi-Fi: sem recolha antes de revisão e ativação explícita.
+    presence_wifi_collection_enabled: bool = False
     video_sem_frame_s: float = 3.0  # sem frame há mais do que isto -> camara_ok False e reabre
     video_reconexao_s: tuple[float, ...] = (1, 2, 4, 8, 10)  # esperas entre reaberturas
     video_timeout_abrir_ms: int = 5000

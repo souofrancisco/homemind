@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
 from homemind.core.config import get_settings
@@ -24,8 +24,19 @@ async def lifespan(app: FastAPI):
 router = APIRouter(prefix="/api", tags=["video"], lifespan=lifespan)
 
 
+def require_dev_video_preview() -> None:
+    """Bloqueia MJPEG em Conta Certa. Apenas clips locais em desenvolvimento explícito."""
+    settings = get_settings()
+    if not settings.enable_dev_video_preview or "://" in settings.video_source:
+        raise HTTPException(404, "Not Found")
+
+
 # Bearer obrigatório: o frontend usa fetch (um <img> não envia cabeçalhos; token nunca no URL).
-@router.get("/video", response_class=StreamingResponse, dependencies=[Depends(current_user)])
+@router.get(
+    "/video",
+    response_class=StreamingResponse,
+    dependencies=[Depends(current_user), Depends(require_dev_video_preview)],
+)
 async def video(fonte: Fonte, anotacoes: bool = True, esqueleto: bool = True) -> StreamingResponse:
     """MJPEG do frame mais recente, para `<img src="/api/video">`. Local, sem gravação.
 
