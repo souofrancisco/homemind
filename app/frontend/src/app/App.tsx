@@ -31,7 +31,7 @@ function Callback() {
   const navigate = useNavigate();
   useEffect(() => {
     completeLogin()
-      .then(() => navigate("/", { replace: true }))
+      .then((u) => navigate(typeof u?.state === "string" && u.state !== "/auth/callback" ? u.state : "/", { replace: true }))
       .catch(() => navigate("/", { replace: true }));
   }, [navigate]);
   return null;
