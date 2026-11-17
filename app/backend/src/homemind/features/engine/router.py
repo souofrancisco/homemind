@@ -138,6 +138,8 @@ async def desligar_tudo(_: CurrentUser, engine: EngineDep) -> OffResult:
 @router.post("/simulate")
 async def simular_evento(evento: Evento, _: CurrentUser, engine: EngineDep) -> HomeState:
     """Injeta um evento SIMULADO (desenvolvimento/plano B). Fica marcado `[SIMULADO]` no registo."""
+    if get_engine_settings().home_backend != "fake":
+        raise _erro(403, "simulation_disabled", "Simulação só com HOME_BACKEND=fake")
     await engine.processar(evento, simulado=True)
     return engine.home_state()
 

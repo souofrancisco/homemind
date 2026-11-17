@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from homemind.contracts.video import FrameVideo
 from homemind.core.config import get_settings
+from homemind.features.auth.service import User, current_user
 from homemind.features.video.router import video
 from homemind.features.video.service import partes_mjpeg
 from homemind.main import app
@@ -29,12 +30,18 @@ class FonteFalsa:
 def test_video_503_sem_fonte_configurada(monkeypatch):
     monkeypatch.delenv("VIDEO_SOURCE", raising=False)
     get_settings.cache_clear()
+    app.dependency_overrides[current_user] = lambda: User(sub="t")
     try:
         resposta = TestClient(app).get("/api/video")
     finally:
+        app.dependency_overrides.clear()
         get_settings.cache_clear()
     assert resposta.status_code == 503
     assert resposta.json()["error"]["code"] == "http_503"
+
+
+def test_video_401_sem_login():
+    assert TestClient(app).get("/api/video").status_code == 401
 
 
 def test_video_responde_multipart_mjpeg():

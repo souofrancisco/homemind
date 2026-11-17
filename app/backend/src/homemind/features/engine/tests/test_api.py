@@ -149,3 +149,13 @@ def test_websocket_sem_token_fecha(client):
         }
         with pytest.raises(WebSocketDisconnect):
             ws.receive_json()
+
+
+def test_simulate_recusado_com_mcp(client, monkeypatch):
+    monkeypatch.setattr(
+        engine_router,
+        "get_engine_settings",
+        lambda: EngineSettings(home_backend="mcp"),
+    )
+    r = client.post("/api/simulate", json=LIVRO)
+    assert r.status_code == 403 and r.json()["error"]["code"] == "simulation_disabled"
