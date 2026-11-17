@@ -1,8 +1,9 @@
 # HOUSE-03 — Catálogo de aparelhos e medidores (issue #86)
 
-**Estado:** implementação proposta no Draft PR, sem merge. O catálogo não implementa NILM (P1),
-consumo (P1) nem atribuição financeira (P4). F0 permanece como fonte de verdade para os
-tipos `Device`, `Appliance`, `ApplianceSignature`, `ConsumptionEvent` e autorização.
+**Estado:** implementado na branch do PR #142, ainda não integrado na `main`. O catálogo não
+implementa NILM (P1), ingestão de consumo (P1) nem atribuição financeira (P4). F0 permanece como
+fonte de verdade para os tipos `Device`, `Appliance`, `ApplianceSignature`, `ConsumptionEvent` e
+autorização.
 
 ## Investigação das três alternativas
 
@@ -36,23 +37,27 @@ ou biblioteca extra. Um único `main_meter` pode ser ligado a muitos aparelhos.
   [partial indexes](https://www.sqlite.org/partialindex.html):
   FKs compostas e unicidade parcial para a relação atual.
 
-## SQLite implementado (`0101_house_appliance_catalog.sql`)
+## SQLite implementado (`0101_house_appliance_catalog.sql` + `0102_house_appliance_temporal_guards.sql`)
 
 | Tabela | Chaves e invariantes |
 |---|---|
 | `device` | UUID interno, FK casa, FK composta casa/quarto, `source`, `external_ref` **interno**, `kind`, `role`, `power_unit`; unicidade de identidade externa dentro da casa |
 | `appliance` | UUID interno, FK casa e registante, nome, categoria, potência opcional, `created_at`, `retired_at`, estado; unicidade de registo ativo com mesmo registante/nome/categoria |
-| `appliance_state` | FK composta aparelho/casa + quarto/casa, `scope`, proprietário opcional, `home_room_id`, `valid_from`, `valid_to`; um único estado atual por aparelho |
-| `appliance_meter_link` | FK composta aparelho/casa e medidor/casa; N aparelhos → 1 medidor; um único medidor habitual ativo por aparelho; links históricos preservados |
+| `appliance_state` | FK composta aparelho/casa + quarto/casa, `scope`, proprietário opcional, `home_room_id`, `valid_from`, `valid_to`; um único estado atual e intervalos sem sobreposição por aparelho |
+| `appliance_meter_link` | FK composta aparelho/casa e medidor/casa; N aparelhos → 1 medidor; um único medidor habitual ativo e intervalos sem sobreposição por aparelho; links históricos preservados |
 | `appliance_signature` | Dados opcionais de `ApplianceSignature`, FK aparelho; P1 escreve e classifica, sem garantir identidade |
 
-O período é semiaberto `[valid_from, valid_to)`; leituras da base usam timestamps UTC
-normalizados. Mudança de contexto encerra a versão anterior e cria outra na **mesma
-transação**. Índices únicos parciais impedem duas versões atuais; triggers impedem
-apagar ou modificar versões encerradas. A aplicação impede janelas de duração zero
-(`409 catalog_time_conflict`) e valida proprietários como **inquilinos ativos no fuso
-da casa**, e divisões como pertencentes à mesma casa. Uma pessoa que abandone a casa
-não elimina estados históricos.
+O período é semiaberto `[valid_from, valid_to)`; timestamps persistidos usam UTC no formato fixo
+`YYYY-MM-DDTHH:MM:SS.ffffff+00:00`, necessário para comparação lexical correta no SQLite.
+Mudança de contexto encerra a versão anterior e cria outra na **mesma transação**
+(`BEGIN IMMEDIATE`). Índices únicos parciais impedem duas versões atuais; triggers impedem
+sobreposições mesmo por SQL direto, apagar ou modificar versões encerradas. A aplicação impede
+backdating e instantes não crescentes (`409 catalog_time_conflict`); duas alterações concorrentes no
+mesmo instante serializam e só uma pode efetivar-se. Proprietários novos têm de ser **inquilinos
+ativos no fuso da casa**; triggers verificam que proprietário, autor e registante têm membership
+histórica na mesma casa, sem exigir que ela continue ativa. Uma pessoa que abandone a casa não
+elimina nem invalida história. Retirar um aparelho fecha, na mesma transação, a associação a medidor
+e o estado atual; o aparelho e as versões antigas continuam consultáveis como registo retirado.
 
 A coluna `home_room_id` é **divisão habitual**, não a prova de onde o aparelho foi
 utilizado. O `device.room_id` indica a localização configurada do medidor. Num
@@ -100,32 +105,55 @@ ou desligar a associação com `{"device_id":null}`. Estes UUIDs são ilustrativ
 
 ## Contratos estáveis para P1 e P4
 
-**P1 (energia/assinaturas):**
+**P1 (energia/assinaturas), interface interna implementada:**
 - Pode provisionar um dispositivo descoberto pelo MCP com
-  `features.appliances.repo.register_device(conn, Device(...))`, dentro de
-  `db.run`/`run_sync`; a chave `external_ref` permanece privada. A API
-  `/devices/demo` não serve de integração MCP.
-- Usa `appliance_signature` e o modelo canónico `ApplianceSignature` para
-  aprender/classificar; HOUSE-03 **não** fornece um classificador, treino nem
-  ingestão de potência. P1 gere a escrita de assinaturas.
-- `meter_at(conn, appliance_id, ts)` é **associação configurada**, não prova
-  de que um único aparelho estava ativo. Com uma única tomada, vários
-  candidatos e `unknown` são resultados legítimos.
-- Mantém `ApplianceMatch` com `confidence` e candidatos no `ConsumptionEvent`;
-  pode conter dois aparelhos de potência muito próxima e não escolher vencedor.
+-  `register_device(conn, Device(...))`, dentro de `db.run`/`run_sync`; replay da mesma identidade
+  MCP é idempotente e preserva o UUID interno já referenciado pelos links; descobertas com
+  `last_seen_at` mais antigo não regridem o nome/estado atual. A chave `external_ref`
+  permanece privada. A API `/devices/demo` não serve de integração MCP.
+- Grava e lê assinaturas com `save_appliance_signature(conn, household_id, ApplianceSignature)` e
+  `signatures_for_household(conn, household_id)`. A leitura é uma consulta por casa, sem N+1, e só
+  devolve assinaturas dos aparelhos ativos dessa casa. Replays de `updated_at` antigo não substituem
+  assinaturas mais recentes; aparelhos retirados não aceitam novas assinaturas. P1 gere
+  aprendizagem/classificação; HOUSE-03 não fornece classificador, treino nem ingestão de potência.
+- `meter_at(conn, household_id, appliance_id, ts)` e
+  `meters_for_period(conn, household_id, appliance_id, start, end)` devolvem a associação
+  configurada, com períodos sem associação representados por `device_id=None`. Uma associação não é
+  prova de utilização. Vários aparelhos podem partilhar o mesmo medidor.
+- Preserva `ApplianceMatch` probabilístico. `unknown`, candidatos empatados e cargas simultâneas não
+  recebem aparelho por inferência forçada.
 
-**P4 (faturação):**
-- `context_for_consumption(conn, event: ConsumptionEvent)` devolve o
-  `ApplianceOwnership` válido em `event.started_at`, ou `None` se
-  `match.appliance_id` for `None` ou o aparelho não existir nesse instante.
-  Em alternativa: `ownership_at(conn, household_id, appliance_id, ts)`.
+**P4 (faturação), interface de contexto implementada:**
+- `ownership_at(conn, household_id, appliance_id, ts)` consulta a versão válida no instante, sem
+  consultar membership atual.
+- `context_segments_for_consumption(conn, event)` devolve segmentos `[start, end)` com o contexto
+  histórico em cada segmento. `context_for_consumption(conn, event)` devolve um único
+  `ApplianceOwnership` apenas se todo o evento tiver um único contexto; devolve `None` para match
+  desconhecido, aparelho ausente/retirado nesse período ou evento que cruza uma alteração temporal.
+  Tem em conta `started_at` e `ended_at`; a leitura de estado dos episódios fechados usa uma única
+  consulta. Para eventos a decorrer, o contexto no início é provisório.
 - O histórico preserva proprietário e divisão no passado; a **localização do
   evento**, o utilizador real e a regra de atribuição vêm de evidências separadas.
   **Proprietário ≠ utilizador ≠ pagador**. A `confidence` da classificação
   não é uma decisão financeira nem prova de identidade.
-- Nunca consultar o proprietário **atual** para reprocessar faturas antigas.
-  `Attribution` e `BillAllocation` continuam exclusivamente em P4,
-  com revisão explícita se existir contestação.
+- Segmentos são apenas contexto temporal: não incluem energia repartida por segmento. Se P1 não
+  conseguir fechar episódios/medir energia por segmento, P4 trata o consumo atravessado como
+  ambíguo e aplica o seu processo de revisão/resíduo. Não repartir energia proporcionalmente ao
+  tempo nem escolher o proprietário do início/fim.
+- Nunca consultar o proprietário **atual** para reprocessar faturas antigas. `Attribution` e
+  `BillAllocation` continuam exclusivamente em P4, com revisão explícita se existir contestação.
+
+Exemplo de transferência e evento que atravessa a fronteira:
+
+```mermaid
+flowchart LR
+    A["[12:00, 12:10)\nBruno · quarto 1"] -->|transição exata às 12:10| B["[12:10, 12:20)\nCarla · sala"]
+    E["Consumo [12:08, 12:12)"] --> S1["Contexto Bruno\n[12:08, 12:10)"]
+    E --> S2["Contexto Carla\n[12:10, 12:12)"]
+```
+
+Um `ConsumptionEvent` `[12:08, 12:12)` produz dois segmentos de contexto. A função singular devolve
+`None`; P4 não atribui os kWh todos a Bruno nem todos a Carla.
 
 ## Ensaios e limitações
 
@@ -133,12 +161,15 @@ ou desligar a associação com `{"device_id":null}`. Estes UUIDs são ilustrativ
 isolamento multi-casa e por papel, mudança de quarto/proprietário, consulta por
 `ConsumptionEvent.started_at`, dois aparelhos com assinaturas próximas,
 uma tomada para dois aparelhos, ausência de assinatura, soft-retire e saída
-de um inquilino sem eliminar história. Testes com DB `:memory:`, clock fixo
-e source `fake`; nenhum ensaio prova identificação real numa tomada Altice.
+de um inquilino sem eliminar história, rollback, fronteiras exatas, concorrência,
+replay de assinatura/dispositivo, intervalos SQL sobrepostos e persistência após
+reabrir SQLite. Testes com DB `:memory:`/temporário, clock fixo e source `fake`;
+nenhum ensaio prova identificação real numa tomada Altice.
 
 **Limites assumidos:** um aparelho tem no máximo um **medidor habitual** em cada
 instante, mas o mesmo medidor pode agregar vários aparelhos; isto não impede que P1
 reconheça a assinatura noutro medidor. Um histórico com alterações retroativas
 (backdating) não é aceite pelo CRUD: exige revisão explícita, para impedir que se
 reinterpretem silenciosamente períodos faturados. Alterações a uma divisão ou
-proprietário fora da casa são rejeitadas antes de gravar.
+proprietário fora da casa são rejeitadas pela aplicação e por triggers SQL. Os
+segmentos não substituem leituras de energia por segmento nem decidem uma divisão.

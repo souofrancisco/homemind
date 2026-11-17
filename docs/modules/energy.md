@@ -2,6 +2,9 @@
 
 **Dono: P1 (brunovieira88).** **PLANEADO**, sobre código existente em `connectors/`. Integração MCP: [integrations/altice-mcp.md](../integrations/altice-mcp.md).
 
+**HOUSE-03:** o catálogo e as suas interfaces SQLite estão implementados na branch do PR #142;
+continuam fora da `main` até integração. Isso não implementa o pipeline P1 descrito abaixo.
+
 ## Responsabilidade
 
 1. Falar com o kit (MCP) ou com o FakeHome/simulador e produzir `EnergyReading` com proveniência.
@@ -25,7 +28,7 @@
 | Registo de aparelhos (nome, dono, âmbito, potência típica) | API + formulário | P0 |
 | Deteção de degraus | Diferença entre janelas de leituras, limiar configurável; ΔW mínimo (PDF sugere > 300 W para a demo) | P0 |
 | Identificação | Vizinho mais próximo sobre (potência, duração, padrão), devolve `confidence` e candidatos; abaixo do limiar → `unknown` | P0 |
-| Localização | **MVP:** pela zona registada do aparelho e pela tomada principal (`main_meter`); com `room_meter` no futuro, pela tomada do quarto que mudou | P0 |
+| Localização | P1 observa `ConsumptionEvent.location`/`room_id`. `ApplianceOwnership.home_room_id` e `Device.room_id` são locais habituais/configurados, não prova da utilização efetiva. Uma tomada agregada pode não localizar uma carga individual | P0 |
 | Aprendizagem com confirmações | Atualiza `ApplianceSignature` (`origin=learned`) | P1 |
 | Aparelhos desconhecidos recorrentes (clustering) | Agrupar degraus semelhantes e perguntar uma vez | P2 |
 | Estimativa de lâmpada (9 W × tempo × brilho) | `provenance=estimated` | P2 |
@@ -64,6 +67,31 @@ Plano alternativo (PDF §20 #2): se não houver watts, potência nominal × esta
 ## Ficheiros novos previstos
 
 `features/devices/`, `features/energy/{steps,signatures,locate,router,service,tests}`, `contracts/energy.py`. O simulador de leituras e o replay de um mês ficam em `features/energy/simulation.py` (**PROPOSTA**).
+
+## Integração com o catálogo HOUSE-03 (interface disponível na branch do PR #142)
+
+P1 descobre apenas dispositivos fornecidos pelo conector autorizado para a casa e usa o UUID
+interno devolvido pelo catálogo. `Device.external_ref` é uma identidade operacional privada: não
+deve vir de um pedido de inquilino nem sair em DTOs, eventos ou logs. O registo MCP é idempotente
+por `(household_id, source, external_ref)` e mantém o UUID interno em replays.
+
+```python
+repo.register_device(conn, discovered_device)
+signatures = repo.signatures_for_household(conn, household_id)
+meter_history = repo.meters_for_period(conn, household_id, appliance_id, start, end)
+```
+
+`save_appliance_signature(conn, household_id, signature)` grava aprendizagem de P1. As assinaturas
+são candidatas para `ApplianceMatch`; a tomada habitual não identifica o que estava ligado. P1
+mantém `unknown`/`ambiguous`, guarda candidatos e confiança e não força um vencedor em cargas
+simultâneas ou próximas.
+
+`meters_for_period` divide o período nas fronteiras do histórico e devolve `device_id=None` onde não
+havia associação. `context_segments_for_consumption` divide propriedade, âmbito e divisão habitual
+nas fronteiras de estado; não altera a localização observada em `ConsumptionEvent` e não distribui
+energia pelos segmentos. Se o episódio atravessa uma
+fronteira e P1 não consegue dividi-lo com leituras observadas, P4 recebe contexto ambíguo e não deve
+repartir a energia pelo tempo decorrido.
 
 ## Dependências
 

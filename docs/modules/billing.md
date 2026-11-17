@@ -2,6 +2,9 @@
 
 **Dono: P4 (Amorim3000).** **PLANEADO.** Algoritmo e diagrama: [event-flow.md](../architecture/event-flow.md) §3. Entidades: [data-model.md](../architecture/data-model.md).
 
+**HOUSE-03:** o acesso ao contexto histórico do catálogo está implementado na branch do PR #142,
+ainda não integrada na `main`. P4 continua responsável por escolher e justificar a atribuição.
+
 ## Responsabilidade
 
 1. **Atribuição:** decidir a quem pertence cada `ConsumptionEvent` (morador ou conta comum) segundo as regras da casa e as respostas dos moradores.
@@ -18,6 +21,38 @@
 | `presence.changed` (P2) | Entrada para a regra C e para aparelhos esquecidos |
 | Fatura (entrada manual no MVP) | `ElectricityBill`, `BillAllocation`, recibos, `billing.bill_finalized` |
 | Orçamentos definidos pelo morador/senhorio | `alerts.threshold_crossed`, `alerts.alert_raised` |
+
+## Contexto temporal do catálogo (HOUSE-03)
+
+Para um `ConsumptionEvent` identificado, P4 consulta
+`context_for_consumption(conn, event)`; a consulta usa `event.started_at`, `event.ended_at` e a casa
+do evento, nunca o proprietário/membership atual. Para auditar uma transição, usa
+`context_segments_for_consumption(conn, event)`, que devolve intervalos semiabertos com o contexto
+válido em cada parte. `None` no resultado singular significa que não há um contexto único seguro:
+match desconhecido, catálogo ausente/retirado no instante ou consumo que cruza uma transição.
+
+```python
+context = repo.context_for_consumption(conn, event)
+if context is None:
+    segments = repo.context_segments_for_consumption(conn, event)
+    # Manter como ambíguo até P4 aplicar a regra aprovada ou pedir confirmação.
+```
+
+Estes dados alimentam o motor de atribuição; não são uma `Attribution` nem determinam quem paga.
+`owner_resident_id` não identifica quem usou o aparelho. A `home_room_id` é localização habitual;
+P4 considera separadamente `event.location`/`event.room_id`, que são evidência observada por P1.
+`scope=common` também não escolhe a regra: a regra A/B/C e as respostas pertencem à casa/P4.
+
+Se o evento fechado contém energia total mas atravessa uma mudança, os segmentos só descrevem tempo
+e contexto, não kWh por segmento. P4 não deve dividir energia proporcionalmente à duração nem
+atribuir tudo ao dono no início/fim. P1 pode emitir episódios com fronteiras coincidentes com as
+leituras; sem essa evidência, a energia fica ambígua para confirmação/resíduo segundo a decisão da
+casa.
+
+A roster usada no cálculo tem de ser reconstruída pela membership válida na data do consumo e pela
+divisão então válida. O fim atual da membership não apaga nem invalida a propriedade histórica; um
+morador que saiu continua a aparecer no contexto do evento antigo para contestação, sem ganhar acesso
+atual à API da casa.
 
 ## Regras da conta comum (PDF §6.2)
 

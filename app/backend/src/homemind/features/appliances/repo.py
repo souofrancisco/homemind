@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -11,6 +13,7 @@ from homemind.contracts.common import new_id
 from homemind.contracts.devices import (
     ApplianceOwnership,
     ApplianceScope,
+    ApplianceSignature,
     Device,
     DeviceView,
 )
@@ -93,8 +96,10 @@ def _check_owner(
 def _current(conn: sqlite3.Connection, house: UUID, appliance: UUID) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT a.*, s.scope, s.owner_resident_id, s.home_room_id, s.valid_from"
-        " FROM appliance a JOIN appliance_state s ON s.appliance_id = a.id"
-        " AND s.valid_to IS NULL WHERE a.id = ? AND a.household_id = ?",
+        " FROM appliance a JOIN appliance_state s ON s.id = ("
+        " SELECT latest.id FROM appliance_state latest WHERE latest.appliance_id = a.id"
+        " ORDER BY latest.valid_from DESC,latest.id DESC LIMIT 1)"
+        " WHERE a.id = ? AND a.household_id = ?",
         (str(appliance), str(house)),
     ).fetchone()
 
@@ -140,8 +145,10 @@ def _view(row: sqlite3.Row, access: HouseholdAccess):
 def list_appliances(conn: sqlite3.Connection, access: HouseholdAccess):
     rows = conn.execute(
         "SELECT a.*, s.scope, s.owner_resident_id, s.home_room_id, s.valid_from"
-        " FROM appliance a JOIN appliance_state s ON s.appliance_id = a.id"
-        " AND s.valid_to IS NULL WHERE a.household_id = ? ORDER BY a.name, a.id",
+        " FROM appliance a JOIN appliance_state s ON s.id = ("
+        " SELECT latest.id FROM appliance_state latest WHERE latest.appliance_id = a.id"
+        " ORDER BY latest.valid_from DESC,latest.id DESC LIMIT 1)"
+        " WHERE a.household_id = ? ORDER BY a.name, a.id",
         (str(access.household_id),),
     ).fetchall()
     return [_view(r, access) for r in rows if _can_read(r, access)]
@@ -298,6 +305,13 @@ def retire_appliance(
     if row["status"] == "retired":
         return _view(row, access)
     when = timestamp(at)
+    state = conn.execute(
+        "SELECT valid_from FROM appliance_state WHERE appliance_id = ? AND valid_to IS NULL",
+        (str(id),),
+    ).fetchone()
+    if state is None:
+        raise _not_found()
+    _monotonic(when, state["valid_from"])
     link = conn.execute(
         "SELECT valid_from FROM appliance_meter_link"
         " WHERE appliance_id = ? AND valid_to IS NULL",
@@ -310,6 +324,10 @@ def retire_appliance(
             " WHERE appliance_id = ? AND valid_to IS NULL",
             (when, str(id)),
         )
+    conn.execute(
+        "UPDATE appliance_state SET valid_to = ? WHERE appliance_id = ? AND valid_to IS NULL",
+        (when, str(id)),
+    )
     conn.execute(
         "UPDATE appliance SET status = 'retired', retired_at = ? WHERE id = ?",
         (when, str(id)),
@@ -344,25 +362,144 @@ def state_history(conn: sqlite3.Connection, access: HouseholdAccess, id: UUID):
 
 
 def register_device(conn: sqlite3.Connection, device: Device) -> DeviceView:
-    """Internal entrypoint for P1 discovery. external_ref stays in the database."""
+    """Internal P1 discovery upsert; MCP replay preserves the linked internal UUID."""
+    existing = None
+    if device.source.value == "mcp" and device.external_ref is not None:
+        existing = conn.execute(
+            "SELECT * FROM device WHERE household_id = ? AND source = 'mcp' AND external_ref = ?",
+            (str(device.household_id), device.external_ref),
+        ).fetchone()
+    if existing is None:
+        existing = conn.execute("SELECT * FROM device WHERE id = ?", (str(device.id),)).fetchone()
+    if existing is not None and (
+        existing["household_id"] != str(device.household_id)
+        or existing["source"] != device.source.value
+        or existing["external_ref"] != device.external_ref
+    ):
+        raise _invalid("A identidade do dispositivo não pode mudar de casa ou origem")
+    if (
+        existing is not None
+        and existing["last_seen_at"] is not None
+        and (
+            device.last_seen_at is None or timestamp(device.last_seen_at) < existing["last_seen_at"]
+        )
+    ):
+        return _device_view(existing)
+
+    device_id = existing["id"] if existing is not None else str(device.id)
+    values = (
+        str(device.household_id),
+        str(device.room_id) if device.room_id else None,
+        device.name,
+        device.kind.value,
+        device.role.value,
+        device.source.value,
+        device.external_ref,
+        device.power_unit.value,
+        timestamp(device.last_seen_at) if device.last_seen_at else None,
+        int(device.online),
+    )
+    if existing is None:
+        conn.execute(
+            "INSERT INTO device (id,household_id,room_id,name,kind,role,source,"
+            "external_ref,power_unit,last_seen_at,online) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (device_id, *values),
+        )
+    else:
+        conn.execute(
+            "UPDATE device SET household_id=?,room_id=?,name=?,kind=?,role=?,source=?,"
+            "external_ref=?,power_unit=?,last_seen_at=?,online=? WHERE id=?",
+            (*values, device_id),
+        )
+    row = conn.execute("SELECT * FROM device WHERE id = ?", (device_id,)).fetchone()
+    return _device_view(row)
+
+
+def _device_view(row: sqlite3.Row) -> DeviceView:
+    return DeviceView(
+        id=row["id"],
+        household_id=row["household_id"],
+        room_id=row["room_id"],
+        name=row["name"],
+        kind=row["kind"],
+        role=row["role"],
+        source=row["source"],
+        power_unit=row["power_unit"],
+        last_seen_at=row["last_seen_at"],
+        online=bool(row["online"]),
+    )
+
+
+def save_appliance_signature(
+    conn: sqlite3.Connection, household_id: UUID, signature: ApplianceSignature
+) -> None:
+    """P1-owned, replay-safe signature persistence, constrained to the target household."""
+    appliance = conn.execute(
+        "SELECT household_id,status FROM appliance WHERE id = ?", (str(signature.appliance_id),)
+    ).fetchone()
+    if appliance is None or appliance["household_id"] != str(household_id):
+        raise _not_found()
+    if appliance["status"] != "active":
+        raise CatalogError(409, "appliance_retired", "Aparelho retirado de serviço")
+    existing = conn.execute(
+        "SELECT appliance_id FROM appliance_signature WHERE id = ?", (str(signature.id),)
+    ).fetchone()
+    if existing is not None and existing["appliance_id"] != str(signature.appliance_id):
+        raise _invalid("A assinatura não pode mudar de aparelho")
     conn.execute(
-        "INSERT INTO device (id,household_id,room_id,name,kind,role,source,"
-        "external_ref,power_unit,last_seen_at,online) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO appliance_signature (id,appliance_id,watts_mean,watts_tolerance,"
+        "duration_typical_s,pattern,typical_hours_json,samples,origin,updated_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET"
+        " watts_mean=excluded.watts_mean,watts_tolerance=excluded.watts_tolerance,"
+        " duration_typical_s=excluded.duration_typical_s,pattern=excluded.pattern,"
+        " typical_hours_json=excluded.typical_hours_json,samples=excluded.samples,"
+        " origin=excluded.origin,updated_at=excluded.updated_at"
+        " WHERE excluded.updated_at > appliance_signature.updated_at",
         (
-            str(device.id),
-            str(device.household_id),
-            str(device.room_id) if device.room_id else None,
-            device.name,
-            device.kind.value,
-            device.role.value,
-            device.source.value,
-            device.external_ref,
-            device.power_unit.value,
-            device.last_seen_at.isoformat() if device.last_seen_at else None,
-            int(device.online),
+            str(signature.id),
+            str(signature.appliance_id),
+            signature.watts_mean,
+            signature.watts_tolerance,
+            signature.duration_typical_s,
+            signature.pattern.value,
+            json.dumps(signature.typical_hours, separators=(",", ":"))
+            if signature.typical_hours is not None
+            else None,
+            signature.samples,
+            signature.origin.value,
+            timestamp(signature.updated_at),
         ),
     )
-    return DeviceView.of(device)
+
+
+def signatures_for_household(
+    conn: sqlite3.Connection, household_id: UUID
+) -> dict[UUID, list[ApplianceSignature]]:
+    """Load current P1 signatures in one query, without crossing household scope."""
+    rows = conn.execute(
+        "SELECT s.* FROM appliance_signature s JOIN appliance a ON a.id = s.appliance_id"
+        " WHERE a.household_id = ? AND a.status = 'active'"
+        " ORDER BY s.appliance_id,s.updated_at,s.id",
+        (str(household_id),),
+    ).fetchall()
+    result: dict[UUID, list[ApplianceSignature]] = {}
+    for row in rows:
+        signature = ApplianceSignature(
+            id=row["id"],
+            appliance_id=row["appliance_id"],
+            watts_mean=row["watts_mean"],
+            watts_tolerance=row["watts_tolerance"],
+            duration_typical_s=row["duration_typical_s"],
+            pattern=row["pattern"],
+            typical_hours=json.loads(row["typical_hours_json"])
+            if row["typical_hours_json"] is not None
+            else None,
+            samples=row["samples"],
+            origin=row["origin"],
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+        result.setdefault(signature.appliance_id, []).append(signature)
+    return result
 
 
 def provision_demo_device(
@@ -446,13 +583,172 @@ def set_meter(
         )
 
 
-def meter_at(conn: sqlite3.Connection, appliance_id: UUID, at: datetime) -> UUID | None:
+def meter_at(
+    conn: sqlite3.Connection, household_id: UUID, appliance_id: UUID, at: datetime
+) -> UUID | None:
     row = conn.execute(
-        "SELECT device_id FROM appliance_meter_link WHERE appliance_id = ?"
+        "SELECT device_id FROM appliance_meter_link WHERE household_id = ? AND appliance_id = ?"
         " AND valid_from <= ? AND (valid_to IS NULL OR valid_to > ?)",
-        (str(appliance_id), timestamp(at), timestamp(at)),
+        (str(household_id), str(appliance_id), timestamp(at), timestamp(at)),
     ).fetchone()
     return UUID(row["device_id"]) if row else None
+
+
+@dataclass(frozen=True)
+class MeterContextSegment:
+    """Configured meter for one half-open portion of a requested period."""
+
+    started_at: datetime
+    ended_at: datetime
+    device_id: UUID | None
+
+
+def meters_for_period(
+    conn: sqlite3.Connection,
+    household_id: UUID,
+    appliance_id: UUID,
+    started_at: datetime,
+    ended_at: datetime,
+) -> list[MeterContextSegment]:
+    """Resolve configured meter links over a period; a link is not usage evidence."""
+    if ended_at < started_at:
+        raise ValueError("ended_at anterior a started_at")
+    start_text, end_text = timestamp(started_at), timestamp(ended_at)
+    rows = conn.execute(
+        "SELECT l.valid_from,l.valid_to,l.device_id FROM appliance a"
+        " LEFT JOIN appliance_meter_link l ON l.household_id = a.household_id"
+        " AND l.appliance_id = a.id AND (l.valid_to IS NULL OR l.valid_to > ?)"
+        " AND l.valid_from <= ? WHERE a.household_id = ? AND a.id = ?"
+        " ORDER BY l.valid_from,l.id",
+        (
+            start_text,
+            end_text,
+            str(household_id),
+            str(appliance_id),
+        ),
+    ).fetchall()
+    if not rows or rows[0]["valid_from"] is None:
+        return [MeterContextSegment(started_at, ended_at, None)]
+    links = [row for row in rows if row["valid_from"] is not None]
+    boundaries = {started_at, ended_at}
+    for row in links:
+        link_start = datetime.fromisoformat(row["valid_from"])
+        link_end = datetime.fromisoformat(row["valid_to"]) if row["valid_to"] else None
+        if started_at < link_start < ended_at:
+            boundaries.add(link_start)
+        if link_end is not None and started_at < link_end < ended_at:
+            boundaries.add(link_end)
+    ordered = sorted(boundaries)
+    if ended_at == started_at:
+        ordered = [started_at, ended_at]
+    return [
+        MeterContextSegment(
+            started_at=segment_start,
+            ended_at=segment_end,
+            device_id=next(
+                (
+                    UUID(row["device_id"])
+                    for row in links
+                    if datetime.fromisoformat(row["valid_from"]) <= segment_start
+                    and (
+                        row["valid_to"] is None
+                        or segment_start < datetime.fromisoformat(row["valid_to"])
+                    )
+                ),
+                None,
+            ),
+        )
+        for segment_start, segment_end in zip(ordered, ordered[1:], strict=False)
+    ]
+
+
+@dataclass(frozen=True)
+class ApplianceContextSegment:
+    """Context valid for one half-open portion of a consumption event."""
+
+    started_at: datetime
+    ended_at: datetime | None
+    ownership: ApplianceOwnership | None
+
+
+def context_segments_for_consumption(
+    conn: sqlite3.Connection, event: ConsumptionEvent
+) -> list[ApplianceContextSegment]:
+    """Return historical ownership segments; this is context, never payer attribution.
+
+    Closed events are split at every catalogue boundary using [start, end). An
+    ongoing event gets only a provisional snapshot at its start. Unknown matches
+    have no appliance-specific context.
+    """
+    appliance_id = event.match.appliance_id
+    if appliance_id is None:
+        return []
+
+    start = event.started_at
+    end = event.ended_at
+    if end is None:
+        ownership = ownership_at(conn, event.household_id, appliance_id, start)
+        return [
+            ApplianceContextSegment(
+                started_at=start,
+                ended_at=None,
+                ownership=ownership,
+            )
+        ]
+    rows = conn.execute(
+        "SELECT a.created_at,a.retired_at,s.scope,s.owner_resident_id,s.home_room_id,"
+        "s.valid_from,s.valid_to FROM appliance a LEFT JOIN appliance_state s"
+        " ON s.appliance_id = a.id WHERE a.household_id = ? AND a.id = ?"
+        " ORDER BY s.valid_from,s.id",
+        (str(event.household_id), str(appliance_id)),
+    ).fetchall()
+    if not rows:
+        return [ApplianceContextSegment(start, end, None)]
+    boundaries = {start, end}
+    for row in rows:
+        for column in ("created_at", "retired_at", "valid_from", "valid_to"):
+            value = row[column]
+            if value is not None:
+                boundary = datetime.fromisoformat(value)
+                if start < boundary < end:
+                    boundaries.add(boundary)
+    ordered = sorted(boundaries)
+    if end == start:
+        ordered = [start, end]
+    result: list[ApplianceContextSegment] = []
+    for segment_start, segment_end in zip(ordered, ordered[1:], strict=False):
+        state = next(
+            (
+                row
+                for row in rows
+                if row["valid_from"] is not None
+                and datetime.fromisoformat(row["valid_from"]) <= segment_start
+                and (
+                    row["valid_to"] is None
+                    or segment_start < datetime.fromisoformat(row["valid_to"])
+                )
+                and datetime.fromisoformat(row["created_at"]) <= segment_start
+                and (
+                    row["retired_at"] is None
+                    or segment_start < datetime.fromisoformat(row["retired_at"])
+                )
+            ),
+            None,
+        )
+        result.append(
+            ApplianceContextSegment(
+                segment_start,
+                segment_end,
+                ApplianceOwnership(
+                    scope=state["scope"],
+                    owner_resident_id=state["owner_resident_id"],
+                    home_room_id=state["home_room_id"],
+                )
+                if state is not None
+                else None,
+            )
+        )
+    return result
 
 
 def ownership_at(
@@ -474,12 +770,17 @@ def ownership_at(
     return ApplianceOwnership(**dict(row)) if row else None
 
 
-def context_for_consumption(conn: sqlite3.Connection, event: ConsumptionEvent):
-    """P1/P4 integration: candidate match is uncertain; no financial attribution here.
+def context_for_consumption(
+    conn: sqlite3.Connection, event: ConsumptionEvent
+) -> ApplianceOwnership | None:
+    """Return one context only when the whole event has one unambiguous snapshot.
 
-    A different meter does not invalidate a probable signature match, and an
-    appliance's owner does not identify who used it or who should pay.
+    A different meter does not invalidate a probable signature match. Unknown
+    matches and events crossing ownership/location/retirement boundaries return
+    None; use `context_segments_for_consumption` when P4 needs to inspect them.
+    An appliance's owner does not identify who used it or who should pay.
     """
-    if event.match.appliance_id is None:
+    segments = context_segments_for_consumption(conn, event)
+    if len(segments) != 1 or segments[0].ownership is None:
         return None
-    return ownership_at(conn, event.household_id, event.match.appliance_id, event.started_at)
+    return segments[0].ownership

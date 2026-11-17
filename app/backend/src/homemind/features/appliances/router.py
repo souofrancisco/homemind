@@ -134,7 +134,7 @@ async def assign_meter(
 
     def operation(conn):
         repo.set_meter(conn, access, appliance_id, body.device_id, at)
-        actual = repo.meter_at(conn, appliance_id, at)
+        actual = repo.meter_at(conn, access.household_id, appliance_id, at)
         return MeterAssignmentView(
             appliance_id=appliance_id,
             device_id=actual,
