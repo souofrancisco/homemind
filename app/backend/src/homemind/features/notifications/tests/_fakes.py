@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid5
 
 from homemind.contracts.common import Origin, Provenance, ValueKind
-from homemind.contracts.household import MembershipRole
+from homemind.contracts.household import MembershipRole, RoomKind
 from homemind.contracts.notification import ConfirmationChoice, ConfirmationRequest
 from homemind.features.notifications.repository import InMemoryNotificationRepository
 from homemind.features.notifications.service import NotificationService
@@ -40,7 +40,14 @@ class FakeClock:
 class FakeDirectory:
     """Papéis por (casa, residente); quem não consta não é membro."""
 
-    def __init__(self, roles: dict[tuple[UUID, UUID], MembershipRole] | None = None) -> None:
+    def __init__(
+        self,
+        roles: dict[tuple[UUID, UUID], MembershipRole] | None = None,
+        rooms: dict[tuple[UUID, UUID], tuple[str, RoomKind]] | None = None,
+        room_tenants: dict[tuple[UUID, UUID], list[UUID]] | None = None,
+    ) -> None:
+        self.rooms = rooms or {}
+        self._room_tenants = room_tenants or {}
         self.roles = (
             roles
             if roles is not None
@@ -54,6 +61,12 @@ class FakeDirectory:
 
     def role_in(self, household_id: UUID, resident_id: UUID, at: datetime) -> MembershipRole | None:
         return self.roles.get((household_id, resident_id))
+
+    def room(self, household_id: UUID, room_id: UUID) -> tuple[str, RoomKind] | None:
+        return self.rooms.get((household_id, room_id))
+
+    def room_tenants(self, household_id: UUID, room_id: UUID, at: datetime) -> list[UUID]:
+        return list(self._room_tenants.get((household_id, room_id), []))
 
 
 def make_service(

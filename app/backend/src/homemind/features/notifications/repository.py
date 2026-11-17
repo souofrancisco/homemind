@@ -41,6 +41,18 @@ class NotificationRepository(Protocol):
         """Notificação aberta (unread/read) com a mesma chave de deduplicação, a mais recente."""
         ...
 
+    def find_by_ref(
+        self,
+        *,
+        household_id: UUID,
+        ref: NotificationRef,
+        kind: NotificationKind | None = None,
+        open_only: bool = False,
+    ) -> list[Notification]:
+        """Notificações da casa com essa referência (por ordem de criação); `kind` e `open_only`
+        (só unread/read) filtram."""
+        ...
+
     def compare_and_set(self, new: Notification, *, expected: Notification) -> bool:
         """Grava `new` só se o estado atual for o que se leu (`expected`: o mesmo estado e o
         mesmo n.º de votos); `False` se perdeu (reler e reaplicar a regra)."""
@@ -97,6 +109,25 @@ class InMemoryNotificationRepository:
                 and n.status in _OPEN
             ]
         return max(matches, key=lambda n: (n.created_at, str(n.id)), default=None)
+
+    def find_by_ref(
+        self,
+        *,
+        household_id: UUID,
+        ref: NotificationRef,
+        kind: NotificationKind | None = None,
+        open_only: bool = False,
+    ) -> list[Notification]:
+        with self._lock:
+            matches = [
+                n
+                for n in self._items.values()
+                if n.household_id == household_id
+                and n.ref == ref
+                and (kind is None or n.kind == kind)
+                and (not open_only or n.status in _OPEN)
+            ]
+        return sorted(matches, key=lambda n: (n.created_at, str(n.id)))
 
     def compare_and_set(self, new: Notification, *, expected: Notification) -> bool:
         with self._lock:
