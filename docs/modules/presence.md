@@ -20,10 +20,14 @@ Saber **quando alguém entra ou sai** e, a partir daí, **quem está em casa** �
 | Recebe | Produz |
 |---|---|
 | Frames da câmara/clip (`features/video`, `FonteVideo`) | `DoorCrossed` (sentido, confiança), `presence.door_crossed` |
-| Registo manual «cheguei / saí» (`PUT /api/presence/me`) | `PresenceEvent(kind=person_state, source=manual)` |
-| (P2) telemóveis registados no Wi-Fi com opt-in | idem, `source=wifi` |
-| Consumo com presença por explicar (P4) | pistas para `uncertain` |
-| — | `presence.changed` por pessoa; estado agregado «casa vazia» |
+| Registo manual «cheguei / saí» (`PUT /api/presence/me`, `PresenceMeIn`) | `PresenceEvent(source=manual)` em `presence.cue_recorded` |
+| Telemóveis registados no Wi-Fi com opt-in (`PresenceDevice.wifi_opt_in`) | idem, `source=wifi` (só `in`) |
+| `energy.consumption_detected` com `appliance_owner_resident_id` (P1) | idem, `source=appliance` (só `in`) |
+| Resposta a «estás em casa?» (`notification.responded`, `ref.type=presence_check`, P3) | pista manual |
+| `sensor.reading_recorded` (contacto, fumo; P1) | `SafetyAlert` em `safety.alert_raised` (SAFE-01/03) |
+| — | `presence.changed` por pessoa; `presence.confirmation_needed` (pistas em conflito); `presence.occupancy_changed` (anónimo; «casa possivelmente vazia» só na fase 2) |
+
+Contratos novos (`PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`, `PresenceDevice`, `CameraStatus`, `SensorReading`, `SafetyAlert`): **PROPOSTA** (D-31), em `contracts/{presence,sensors,safety}.py`.
 
 ## Passos
 

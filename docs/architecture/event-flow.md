@@ -12,6 +12,8 @@ flowchart LR
 
   E -->|"consumption_detected"| B["billing (P4)"]
   P -->|"presence.changed"| B
+  E -->|"consumption_detected (dono), sensor.reading_recorded"| P
+  P -->|"presence.confirmation_needed, safety.alert_raised"| N
   B -->|"confirmation_needed"| N
   N -->|"notification.created (WS)"| UI["Aplicação"]
   UI -->|"respond"| N
