@@ -195,8 +195,11 @@ def test_core_lifespan_starts_before_and_stops_after_features(monkeypatch, tmp_p
     app = _app_with_probe(seen)
     with TestClient(app):
         db = app.state.db
-        assert seen == [2]
-    assert seen == [2, "feature-stopped"]
+        migrated = db.run_sync(
+            lambda c: c.execute("SELECT count(*) FROM schema_migration").fetchone()[0]
+        )
+        assert seen == [migrated]
+    assert seen == [migrated, "feature-stopped"]
     with pytest.raises(DatabaseClosedError):  # fechou no shutdown
         db.run_sync(lambda c: None)
     get_settings.cache_clear()
