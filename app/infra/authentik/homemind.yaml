@@ -10,7 +10,8 @@ entries:
       name: HomeMind
     attrs:
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      # default-invalidation-flow termina a sessão Authentik; o *-provider-* só sai da app e o SSO voltava a autenticar.
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-invalidation-flow]]
       client_type: public
       client_id: homemind
       issuer_mode: per_provider
@@ -39,23 +40,140 @@ entries:
     identifiers:
       slug: homemind
     attrs:
-      name: HomeMind
+      name: ObjectOS
       provider: !KeyOf provider
+      meta_launch_url: !Env [HOMEMIND_WEB_URL, "http://localhost:5173"]
+  # Flow de login próprio (o default-authentication-flow é gerido pelo blueprint do sistema, que repõe o título "Welcome to authentik!").
+  # Reutiliza as stages default; só muda o título.
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Authentication flow
+      required: false
+  - model: authentik_flows.flow
+    id: login-flow
+    identifiers:
+      slug: objectos-authentication
+    attrs:
+      name: ObjectOS authentication
+      title: Iniciar sessão no ObjectOS
+      designation: authentication
+      authentication: none
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      order: 10
+      target: !KeyOf login-flow
+      stage: !Find [authentik_stages_identification.identificationstage, [name, default-authentication-identification]]
+  - model: authentik_flows.flowstagebinding
+    id: login-password-binding
+    identifiers:
+      order: 20
+      target: !KeyOf login-flow
+      stage: !Find [authentik_stages_password.passwordstage, [name, default-authentication-password]]
+    attrs:
+      re_evaluate_policies: true
+  - model: authentik_flows.flowstagebinding
+    id: login-mfa-binding
+    identifiers:
+      order: 30
+      target: !KeyOf login-flow
+      stage: !Find [authentik_stages_authenticator_validate.authenticatorvalidatestage, [name, default-authentication-mfa-validation]]
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      order: 100
+      target: !KeyOf login-flow
+      stage: !Find [authentik_stages_user_login.userloginstage, [name, default-authentication-login]]
+  - model: authentik_policies.policybinding
+    identifiers:
+      order: 10
+      target: !KeyOf login-password-binding
+      policy: !Find [authentik_policies_expression.expressionpolicy, [name, default-authentication-flow-password-stage]]
+    attrs:
+      failure_result: true
+  - model: authentik_policies.policybinding
+    identifiers:
+      order: 10
+      target: !KeyOf login-mfa-binding
+      policy: !Find [authentik_policies_expression.expressionpolicy, [name, default-authentication-flow-authenticator-validate-stage]]
+    attrs:
+      failure_result: true
+  # Brand ObjectOS: tokens espelham o tema Mantine do frontend (indigo-6, dark-7, radius md, fonte do sistema).
   - model: authentik_brands.brand
     identifiers:
-      domain: localhost
+      default: true  # edita o brand por defeito; um 2.º default é rejeitado e invalida o blueprint todo
     attrs:
-      default: true
-      branding_title: HomeMind
+      branding_title: ObjectOS
+      branding_logo: objectos-logo.svg
+      branding_favicon: objectos-icon.svg
+      flow_authentication: !KeyOf login-flow
       branding_custom_css: |
         :root {
-          --ak-color-primary: #4c6ef5;
-          --ak-font-family-sans-serif: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          --ak-global--Color--100: #212529;
-          --ak-global--BackgroundColor--100: #f8f9fa;
+          --os-primary: #4c6ef5;
+          --os-primary-hover: #4263eb;
+          --os-radius: 0.5rem;
+          /* Variáveis herdam para os shadow roots; seletores html[data-theme] não os alcançam. */
+          --os-page-bg: #f8f9fa;
+          --os-card-border: rgba(0, 0, 0, 0.08);
+          --os-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          --ak-font-family-sans-serif: var(--os-font);
+          --ak-font-family-heading: var(--os-font);
+          --pf-global--FontFamily--sans-serif: var(--os-font);
+          --pf-global--FontFamily--heading--sans-serif: var(--os-font);
+          --pf-global--primary-color--100: var(--os-primary);
+          --pf-global--primary-color--200: var(--os-primary-hover);
+          --pf-global--active-color--100: var(--os-primary);
+          --pf-global--link--Color: var(--os-primary);
+          --pf-global--BorderRadius--sm: var(--os-radius);
+          --pf-c-button--m-primary--BackgroundColor: var(--os-primary);
+          --pf-c-button--m-primary--hover--BackgroundColor: var(--os-primary-hover);
+          --pf-c-button--m-primary--active--BackgroundColor: var(--os-primary-hover);
+          --pf-c-button--m-primary--focus--BackgroundColor: var(--os-primary-hover);
+          --pf-c-login__main--BackgroundColor: #fff;
+          --pf-c-login__header--c-brand--MarginBottom: 1.5rem;
         }
 
-        html[data-theme="dark"] {
-          --ak-global--Color--100: #f8f9fa;
-          --ak-global--BackgroundColor--100: #212529;
+        html[data-theme="dark"], :root[data-theme="dark"] {
+          --os-page-bg: #242424;
+          --os-card-border: rgba(255, 255, 255, 0.08);
+          --pf-c-login__main--BackgroundColor: #2e2e2e;
+          --pf-global--BackgroundColor--100: #2e2e2e;
+          --pf-global--BackgroundColor--200: #242424;
+          --ak-dark-background: #242424;
+          --ak-dark-background-light: #2e2e2e;
+          --ak-dark-background-lighter: #3b3b3b;
+          --pf-global--link--Color: #748ffc;
+        }
+
+        /* Fundo e cartão (light/dark) */
+        :root { --ak-global--background-image: none !important; }
+        .pf-c-background-image { display: none !important; }
+        html, body, .pf-c-login { background: var(--os-page-bg); }
+        .pf-c-login__main {
+          border-radius: calc(var(--os-radius) * 2);
+          border: 1px solid var(--os-card-border);
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08) !important;
+          overflow: hidden;
+          background-color: var(--pf-c-login__main--BackgroundColor);
+        }
+
+        /* Sem referências visuais ao Authentik: rodapé 'Powered by authentik' */
+        .pf-c-login__footer { display: none !important; }
+
+        /* Cabeçalho e logótipo */
+        .pf-c-brand, .pf-c-login__header img { max-height: 2.5rem; width: auto; }
+        .pf-c-login__main-header { text-align: center; }
+        .pf-c-title, .pf-c-login__main-header h1 { font-weight: 700; letter-spacing: -0.01em; }
+
+        /* Controlos */
+        .pf-c-button { border-radius: var(--os-radius); font-weight: 600; }
+        .pf-c-form-control, input.pf-c-form-control {
+          border-radius: var(--os-radius);
+          min-height: 2.5rem;
+        }
+        .pf-c-form-control:focus-within, input:focus { outline: 2px solid var(--os-primary); outline-offset: 0; }
+
+        /* Telemóvel: cartão ocupa o ecrã, sem moldura */
+        @media (max-width: 575px) {
+          .pf-c-login { background: var(--pf-c-login__main--BackgroundColor); padding: 0; }
+          .pf-c-login__main { border: 0; border-radius: 0; box-shadow: none !important; }
         }
