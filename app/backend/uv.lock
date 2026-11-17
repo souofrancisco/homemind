@@ -631,7 +631,6 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyjwt", extra = ["crypto"] },
-    { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -658,7 +657,6 @@ requires-dist = [
     { name = "pydantic", specifier = "==2.10.4" },
     { name = "pydantic-settings", specifier = "==2.7.1" },
     { name = "pyjwt", extras = ["crypto"], specifier = "==2.10.1" },
-    { name = "tzdata", marker = "sys_platform == 'win32'", specifier = "==2026.6" },
     { name = "ultralytics", marker = "extra == 'visao'", specifier = "==8.4.215" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.34.0" },
 ]
