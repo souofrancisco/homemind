@@ -1,17 +1,17 @@
-# Trabalho paralelo (3–4 agentes)
-Regras base em `AGENTS.md` (MVP simples, sem testes, sem co-autoria nos commits).
-- **Unidade = feature.** Cada agente: 1 issue/US → 1 branch → 1 worktree → 1 PR pequeno. `make worktree b=feat/US-12-nome` cria `../homemind-US-12-nome` a partir de `origin/main`. Remover no fim: `git worktree remove ../homemind-US-12-nome`.
-- **Nomes:** branch `feat/US-xx-nome` · `fix/nome` · `chore/nome`; PR `US-xx: resumo` (ou `chore: …`), corpo com o template.
-- **Sem conflitos por desenho:** routers backend descobertos (`core/features.py`), API do frontend por feature, tipos TS gerados (não versionados). Adicionar uma feature = só ficheiros novos.
-- **Ficheiros partilhados** (dono no `.github/CODEOWNERS`): `core/`, `contracts/`, `pyproject.toml`/`uv.lock`, `package.json`/lock, `compose.yaml`, `Makefile`, `.github/`, `.env.example`. Regras: PR próprio e pequeno só para isso; dependência nova só se a tarefa a exigir (`uv add …` / `npm i -E …`); em conflito de lockfile regenerar (`uv lock` / `npm install`), nunca editar à mão. Contratos partilhados só mudam com acordo da equipa.
-- **Migrations/BD:** SQLite por modo; esquema de uma feature vive na feature; mudanças a tabelas de outra feature = pedir à dona.
-- **Contrato front↔back:** o OpenAPI do FastAPI é a fonte. Mudar um schema/rota → `make contracts && make check`; o `tsc` do frontend falha se o contrato quebrar o código existente.
-- **Integrar cedo:** PR pequeno (≤ ~300 linhas), rebase em `main` antes de abrir, merge assim que o CI estiver verde.
-- **Antes de concluir:** `make check` (e `make smoke` se tocou Docker/proxy).
+# Trabalho paralelo — ObjectOS (5 pessoas)
 
-## GitHub (manual, Settings; requer o dono)
-- Branch protection em `main`: PR obrigatório, checks `check` e `smoke`, 1 aprovação/code owner, sem force-push.
-- Auto-merge: ativar "Allow auto-merge"; depois `gh pr merge <n> --auto --squash`.
-- Se só um job falhar: `gh run rerun <run-id> --job <job-id>`.
-- Issues: labels P0/P1, área (backend/frontend/hardware/security/documentation/devops), `blocked`/`blocked-mcp`. Segredos nunca em código/CI/Docs; `make secrets` verifica.
-- Bloqueado >30 min: pedir ajuda com erro reproduzível; SIMULATION rotulado, nunca fingir hardware real.
+Ler `CLAUDE.md`, `docs/objectos-plano.md` e a issue. Cada pessoa assume um módulo; o GitHub assignee só é atribuído depois de conhecidos os cinco usernames.
+
+| Pessoa | Área | Primeira entrega |
+|---|---|---|
+| 1 | RTSP, YOLO, MJPEG, integração e demo | frames estáveis e caixas/esqueleto |
+| 2 | gestos, presença, queue e afinador | eventos reproduzíveis sobre clip |
+| 3 | Home, FakeHome e MCP real | FakeHome e script real de alteração da lâmpada |
+| 4 | contratos, motor, regras, LLM e testes | máquina de estados e testes com FakeHome |
+| 5 | UI em React/Mantine | dashboard com WebSocket simulado |
+
+## Contratos partilhados primeiro
+Eventos `objeto_levantado` (classe/hora), `presenca` (ha_alguem/hora); interface `Home` com quatro métodos; regra tipada com objeto e ações; endpoints /video, /ws, /status, /rules, /rules/parse, /off. Confirmar convenções de prefixo em FastAPI antes de gerar frontend via `make contracts`.
+
+## Regras de integração
+Uma issue por branch/worktree; não editar em paralelo modelos, config, lockfiles, Main ou mesmo ficheiro; abrir PR pequeno e integrar cedo. Usar `make check`; `pytest` em componentes puros. `FakeHome` antes do MCP real; sem acessos reais sem permissão e validação de tools. Os extras só após 10 demos consecutivas sem falhas. Dono de entregáveis: Pessoa 1 com colaboração de todos, deadline PDF 18/11/2026 às 19h.
