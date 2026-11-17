@@ -1,6 +1,6 @@
 # Contratos
 
-**IMPLEMENTADO (fundação F0, branch `feat/conta-certa-foundation`)**: modelos Pydantic, eventos de domínio, SQLite, barramento persistente, guardas por casa/papel e OpenAPI→TS. **PLANEADO**: os motores e as rotas de cada módulo (P1–P5). **DECISÃO PENDENTE**: marcadas por «(proposta)» e listadas em §9 e em [decisions.md](../decisions.md).
+**IMPLEMENTADO (fundação F0)**: modelos Pydantic, eventos de domínio, SQLite, barramento persistente, guardas por casa/papel e OpenAPI→TS. **PLANEADO**: os motores e as rotas de cada módulo (P1–P5). **DECISÃO PENDENTE**: marcadas por «(proposta)» e listadas em §9 e em [decisions.md](../decisions.md).
 
 A API que já existia (ObjectOS) está em [api-implementada.md](api-implementada.md) e **não mudou**. Entidades e estados: [data-model.md](data-model.md); eventos: [event-flow.md](event-flow.md).
 

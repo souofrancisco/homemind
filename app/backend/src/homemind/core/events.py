@@ -33,7 +33,7 @@ from homemind.contracts.domain_events import (
     StoredEvent,
     domain_event_adapter,
 )
-from homemind.core.db import Database
+from homemind.core.db import Database, DatabaseClosedError
 
 log = logging.getLogger(__name__)
 
@@ -244,7 +244,12 @@ class EventBus:
             self._wake()  # eventos de seguimento já estão gravados
         return ran
 
-    def _pending(self, conn: sqlite3.Connection, sub: _Subscription) -> list[StoredEvent]:
+    def _pending(self, conn: sqlite3.Connection, sub: _Subscription) -> list[sqlite3.Row]:
+        # Linhas em bruto: uma que já não valida (contrato apertado, base de dev antiga) tem de
+        # falhar POR EVENTO, dentro do `try` do consumidor, e não matar o consumidor.
+        # shortcut: relê tudo o que falta desde `since_seq` a cada acordar (NOT EXISTS indexado
+        # pela PK de processed_event); trocar por um *high-water mark* por consumidor quando
+        # o histórico passar de ~100 mil eventos.
         sql = (
             "SELECT d.* FROM domain_event d WHERE d.seq > ? "
             "AND NOT EXISTS (SELECT 1 FROM processed_event p"
@@ -256,10 +261,7 @@ class EventBus:
         if sub.types is not None:
             sql += f" AND d.type IN ({','.join('?' * len(sub.types))})"
             args += sub.types
-        return [
-            _from_row(r)
-            for r in conn.execute(sql + " ORDER BY d.seq LIMIT ?", [*args, self.batch_size])
-        ]
+        return conn.execute(sql + " ORDER BY d.seq LIMIT ?", [*args, self.batch_size]).fetchall()
 
     def _record_failure(
         self, conn: sqlite3.Connection, consumer: str, event_id: str, err: str
@@ -285,43 +287,56 @@ class EventBus:
         ).fetchone()[0]
 
     async def _run(self, sub: _Subscription) -> None:
+        """Um consumidor nunca morre por uma falha de leitura ou de um evento: regista, espera
+        e continua. Só termina ao ser cancelado (shutdown) ou com a base de dados fechada."""
         loop = asyncio.get_running_loop()
         not_before: dict[str, float] = {}  # evento -> instante (loop.time) do próximo retry
         while True:
-            sub.wake.clear()  # antes de ler: um publish durante o processamento volta a acordar
-            batch = await self.db.run(lambda c: self._pending(c, sub))
-            now = loop.time()
-            progressed = False
-            for stored in batch:
-                eid = str(stored.event.id)
-                if not_before.get(eid, 0.0) > now:
-                    continue
-                try:
-                    await self.deliver(sub.consumer, stored)
-                    not_before.pop(eid, None)
-                    progressed = True
-                except Exception as e:  # noqa: BLE001 - isolar o handler; só o tipo vai para o log
-                    attempts = await self.db.run(
-                        lambda c, eid=eid, e=e: self._record_failure(
-                            c, sub.consumer, eid, type(e).__name__
-                        )
-                    )
-                    dead = attempts >= self.max_attempts
-                    log.warning(
-                        "consumidor %s falhou em %s seq=%d (%s) tentativa %d/%d%s",
-                        sub.consumer, stored.event.type, stored.seq, type(e).__name__,
-                        attempts, self.max_attempts, " — desistiu" if dead else "",
-                    )  # fmt: skip
-                    not_before[eid] = loop.time() + self.retry_delay_s * attempts
-            if progressed or len(batch) >= self.batch_size:
-                continue
-            timeout = None
-            if not_before:
-                timeout = max(0.0, min(not_before.values()) - loop.time())
             try:
-                await asyncio.wait_for(sub.wake.wait(), timeout)
-            except TimeoutError:
-                pass
+                await self._drain_once(sub, loop, not_before)
+            except DatabaseClosedError:
+                return
+            except Exception as e:  # noqa: BLE001 - o consumidor não pode morrer em silêncio
+                log.error("consumidor %s: erro no ciclo (%s)", sub.consumer, type(e).__name__)
+                await asyncio.sleep(self.retry_delay_s)
+
+    async def _drain_once(
+        self, sub: _Subscription, loop: asyncio.AbstractEventLoop, not_before: dict[str, float]
+    ) -> None:
+        sub.wake.clear()  # antes de ler: um publish durante o processamento volta a acordar
+        batch = await self.db.run(lambda c: self._pending(c, sub))
+        now = loop.time()
+        progressed = False
+        for row in batch:
+            eid = row["id"]
+            if not_before.get(eid, 0.0) > now:
+                continue
+            try:
+                await self.deliver(sub.consumer, _from_row(row))  # validar também é por evento
+                not_before.pop(eid, None)
+                progressed = True
+            except Exception as e:  # noqa: BLE001 - isolar o handler; só o tipo vai para o log
+                attempts = await self.db.run(
+                    lambda c, eid=eid, e=e: self._record_failure(
+                        c, sub.consumer, eid, type(e).__name__
+                    )
+                )
+                log.warning(
+                    "consumidor %s falhou em %s seq=%d (%s) tentativa %d/%d%s",
+                    sub.consumer, row["type"], row["seq"], type(e).__name__,
+                    attempts, self.max_attempts,
+                    " — desistiu" if attempts >= self.max_attempts else "",
+                )  # fmt: skip
+                not_before[eid] = loop.time() + self.retry_delay_s * attempts
+        if progressed or len(batch) >= self.batch_size:
+            return  # pode haver mais: volta já a ler
+        timeout = None
+        if not_before:
+            timeout = max(0.0, min(not_before.values()) - loop.time())
+        try:
+            await asyncio.wait_for(sub.wake.wait(), timeout)
+        except TimeoutError:
+            pass
 
 
 async def replay(events: Iterable[StoredEvent], bus: EventBus) -> list[StoredEvent]:

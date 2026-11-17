@@ -469,3 +469,31 @@ def test_replay_into_isolated_database_is_idempotent():
         dst.close()
 
     asyncio.run(main())
+
+
+def test_unreadable_stored_event_fails_per_event_and_never_kills_the_consumer():
+    async def main():
+        db = make_db()
+        bus = EventBus(db, max_attempts=2, retry_delay_s=0.01)
+        eff = Effects(db)
+        bus.subscribe("c", eff.handler)
+        # linha antiga que já não valida (as triggers só impedem UPDATE/DELETE)
+        db.run_sync(
+            lambda c: c.execute(
+                "INSERT INTO domain_event (id,type,schema_version,ts,household_id,correlation_id,"
+                "origin,kind,payload_json,recorded_at) VALUES ('bad','billing.bill_created',1,"
+                f"'2026-11-17T19:00:00+00:00','{fx.HOUSEHOLD}','c','real','measured','{{\"x\":1}}','x')"
+            )
+        )
+        await bus.start()
+        await bus.publish(ev(1))  # um evento válido depois do inválido
+        await until(lambda: len(eff.rows) == 1)
+        await until(lambda: count(db, "SELECT dead FROM event_failure WHERE event_id='bad'") == 1)
+        assert not any(t.done() for t in bus._tasks)  # o consumidor continua vivo
+        assert count(db, "SELECT last_error_type FROM event_failure") == "ValidationError"
+        await bus.publish(ev(2))
+        await until(lambda: len(eff.rows) == 2)
+        await bus.stop()
+        db.close()
+
+    asyncio.run(main())

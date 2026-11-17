@@ -30,8 +30,11 @@ def test_no_dangling_refs(spec):
 
 def test_private_models_and_fields_never_reach_the_frontend(spec):
     schemas = spec["components"]["schemas"]
-    for internal in ("Device", "Resident", "Membership", "StoredEvent", "ApplianceSignature",
-                     "PresenceEvent", "Notification", "DoorCrossed"):  # fmt: skip
+    internal_models = (
+        *("Device", "Resident", "Membership", "StoredEvent", "ApplianceSignature"),
+        *("PresenceEvent", "Notification", "DoorCrossed", "ConfirmationRequest"),
+    )
+    for internal in internal_models:
         assert internal not in schemas, internal
     props = {p for s in schemas.values() for p in s.get("properties", {})}
     assert not props & {"external_ref", "auth_subject", "image", "frame", "frames", "token"}
@@ -61,7 +64,7 @@ def test_enums_and_formats_are_precise(spec):
     assert s["ValueKind"]["enum"] == ["measured", "estimated", "inferred"]
     assert s["Origin"]["enum"] == ["real", "simulated"]
     assert s["PresenceState"]["enum"] == ["in", "out", "uncertain"]
-    assert s["ConfirmationChoice"]["enum"] == ["mine", "everyone", "unknown"]
+    assert s["NotificationAction"]["properties"]["id"]["pattern"]
     assert s["EnergyReading"]["properties"]["ts"]["format"] == "date-time"
     assert s["EnergyReading"]["properties"]["device_id"]["format"] == "uuid"
     assert s["ElectricityBill"]["properties"]["total_cents"]["type"] == "integer"

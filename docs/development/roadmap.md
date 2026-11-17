@@ -17,7 +17,7 @@ Nada de F2/F3 bloqueia o MVP. Em particular **AWAY, casa vazia e aparelho esquec
 
 ## Definição de pronto dos contratos (F0)
 
-> **Estado (17/11/2026):** a fundação técnica está **implementada no PR draft `feat/conta-certa-foundation`** (BASE-02, BASE-03, HOUSE-01 parcial, PRIV-01 parcial: ver [contracts.md](../architecture/contracts.md)); aguarda a revisão da equipa e as decisões D-23…D-30. As issues **não** se fecham com o PR.
+> **Estado:** a fundação técnica está **implementada** (BASE-02, BASE-03, HOUSE-01 parcial, PRIV-01 parcial: ver [contracts.md](../architecture/contracts.md)); as decisões D-23…D-30 aguardam aprovação da equipa e as issues só se fecham depois dessa revisão.
 
 Cada pessoa só começa a implementar quando, para o seu módulo:
 

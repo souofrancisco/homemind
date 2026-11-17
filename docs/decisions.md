@@ -30,8 +30,8 @@ Registo das decisões da reorganização (17/11/2026), reconciliadas com o docum
 | D-22 | **GitHub Project v2** único «Conta Certa — Desenvolvimento» (owner `souofrancisco`): **decidido, PENDENTE de criação** (falta o scope `project` do `gh`); atualizar com o URL quando existir | Gestão |
 | **D-23** | **Proveniência em duas dimensões:** `Provenance{origin: real\|simulated, kind: measured\|estimated\|inferred}`. Aceita as strings antigas por compatibilidade. **Substitui** o enum de 4 valores de D-04 na forma, não no objetivo (REAL vs SIMULADO) | Uma inferência sobre dados simulados não pode perder a origem. **PROPOSTA a rever** |
 | **D-24** | Energia em **Wh inteiros**, preço em **milicêntimos/kWh**, custo por `cost_cents()` (`Decimal`, um arredondamento); potência `float` W; ausência = `None`, nunca 0 | Faturas exatas; `float` acumulava erro. **PROPOSTA** |
-| **D-25** | **Barramento:** entrega pelo menos uma vez, efeito + `processed_event` na mesma transação, handlers síncronos, retries limitados e *dead letter*; `seq` atribuído pela base; sem dependências novas (SQLite da stdlib). Resolve P-05 | Garantias reais sem *exactly-once* nem infraestrutura. IMPLEMENTADA |
-| **D-26** | **Autorização:** papéis em `membership` (resolve P-02), no servidor, por `PERMISSIONS` (recurso × operação × papel). Sem membership ativa e dentro de datas (fuso da casa) ⇒ **404** (não revela a casa); membro sem papel ⇒ 403 `forbidden_role` | Isolamento entre casas; privacidade do senhorio. IMPLEMENTADA, **a rever** |
+| **D-25** | **Barramento:** entrega pelo menos uma vez, efeito + `processed_event` na mesma transação, handlers síncronos, retries limitados e *dead letter*; `seq` atribuído pela base; sem dependências novas (SQLite da stdlib). Propõe a resolução de P-05 (**a rever**) | Garantias reais sem *exactly-once* nem infraestrutura. IMPLEMENTADA |
+| **D-26** | **Autorização:** papéis em `membership` (**proposta** para P-02), no servidor, por `PERMISSIONS` (recurso × operação × papel). Sem membership ativa e dentro de datas (fuso da casa) ⇒ **404** (não revela a casa); membro sem papel ⇒ 403 `forbidden_role` | Isolamento entre casas; privacidade do senhorio. IMPLEMENTADA, **a rever** |
 | **D-27** | `ConsumptionEvent` só tem ciclo de vida (`ongoing→closed\|discarded`, P1); a atribuição é de `Attribution` (P4) e a confirmação de `Notification` (P3). `cost_estimate` e `energy_wh` são `None` quando faltam dados | Um dono por estado; sem valores inventados. IMPLEMENTADA |
 | **D-28** | OpenAPI: `OPENAPI_MODELS` junta os modelos partilhados sem rotas falsas; `Device`, `Resident`, `Membership`, `PresenceEvent` e eventos de domínio **não** saem. Campos com omissão são obrigatórios nas respostas | O frontend só vê DTOs filtrados. IMPLEMENTADA |
 | **D-29** | Migrações por nome (`NNNN_modulo_desc.sql`), checksum, sem DROP; cada módulo cria as suas; `0001–0099` core, `0100…` módulos | Ramos paralelos sem colisão |
@@ -76,10 +76,10 @@ Os PDFs continuam a mencionar Telegram; essa parte **não faz parte da arquitetu
 | ID | Questão | Quem decide | Antes de |
 |---|---|---|---|
 | P-01 | Estender o MCP a **leitura** de sensores de contacto/clima e/ou a segurança/cenários? (hoje proibido) | Equipa + mentores | Qualquer automação por sensores |
-| ~~P-02~~ | **Resolvido (D-26):** papéis na base de dados (`membership.role`) | P5 | — |
+| P-02 | **Proposta implementada (D-26), aguarda aprovação:** papéis na base de dados (`membership.role`) | Equipa | Antes de P1–P4 usarem as guardas |
 | P-03 | Quem pode responder a um pedido de confirmação e como se contesta (primeira resposta vence?); omissão da regra da casa (`ask`), limiar (0,50 €) e prazo (24 h) | Equipa | C-P3-02, C-P4-01 |
 | P-04 | O que vê um inquilino dos outros (totais da casa/quartos vs mais)? | Equipa | UI de consumo |
-| ~~P-05~~ | **Resolvido (D-25, D-29):** `sqlite3` da stdlib, migrações por nome | P5 | — |
+| P-05 | **Proposta implementada (D-25, D-29), aguarda aprovação:** `sqlite3` da stdlib, migrações por nome, sem dependências novas | Equipa | Antes de P1–P4 criarem tabelas |
 | P-06 | Fornecedor de LLM para o assistente e que dados de consumo podem sair; consentimento | Equipa | C-P3-04 |
 | P-07 | O «Desligar tudo» do ObjectOS mantém-se como ação manual? Para quem? | Equipa | C-P5-06 |
 | P-08 | Retenção de leituras e eventos (prazos com DPO) | Equipa | Piloto |

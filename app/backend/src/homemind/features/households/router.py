@@ -6,6 +6,7 @@ fim de contrato (a escrita existe em `repo.py`, sem rota ainda).
 
 from typing import Annotated
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field
@@ -44,8 +45,9 @@ MemberWriteAccess = Annotated[
 
 @router.get("/me/context")
 async def my_context(user: CurrentUser, db: DbDep, clock: ClockDep) -> MeContext:
-    """O residente ligado ao `sub` e as suas memberships ativas (para escolher casa/papel)."""
-    today = clock().date().isoformat()
+    """O residente ligado ao `sub` e as suas memberships ativas (para escolher casa/papel).
+    «Hoje» conta no fuso de cada casa, como em `find_membership`."""
+    now = clock()
 
     def query(conn):
         resident = conn.execute(
@@ -54,22 +56,28 @@ async def my_context(user: CurrentUser, db: DbDep, clock: ClockDep) -> MeContext
         if resident is None:
             return None, []
         rows = conn.execute(
-            "SELECT id, household_id, role, room_id, starts_on, ends_on, status, presence_opt_in"
-            " FROM membership WHERE resident_id = ? AND status = 'active' AND starts_on <= ?"
-            " AND (ends_on IS NULL OR ends_on >= ?) ORDER BY starts_on, id",
-            (resident["id"], today, today),
+            "SELECT m.id, m.household_id, m.role, m.room_id, m.starts_on, m.ends_on, m.status,"
+            " m.presence_opt_in, h.timezone FROM membership m JOIN household h"
+            " ON h.id = m.household_id WHERE m.resident_id = ? AND m.status = 'active'"
+            " ORDER BY m.starts_on, m.id",
+            (resident["id"],),
         ).fetchall()
         return resident, rows
 
     resident, rows = await db.run(query)
+    memberships = []
+    for r in rows:
+        today = now.astimezone(ZoneInfo(r["timezone"])).date().isoformat()
+        if r["starts_on"] <= today and (r["ends_on"] is None or r["ends_on"] >= today):
+            data = {k: r[k] for k in r.keys() if k != "timezone"}
+            memberships.append(
+                MembershipSelfView(**{**data, "presence_opt_in": bool(r["presence_opt_in"])})
+            )
     return MeContext(
         resident=ResidentView(id=resident["id"], display_name=resident["display_name"])
         if resident
         else None,
-        memberships=[
-            MembershipSelfView(**{**dict(r), "presence_opt_in": bool(r["presence_opt_in"])})
-            for r in rows
-        ],
+        memberships=memberships,
     )
 
 

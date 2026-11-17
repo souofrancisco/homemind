@@ -1,10 +1,11 @@
 """Contrato público da API: erros e o conjunto de modelos partilhados exposto no OpenAPI.
 
 `OPENAPI_MODELS` é o que `make contracts` entrega ao frontend além dos modelos das rotas
-reais (ver `homemind.openapi_shared`). Só entram DTOs e contratos públicos: `Device` (tem
-`external_ref`), `Resident` (tem `sub`), `Membership` (tem `presence_opt_in` de terceiros),
-`ApplianceSignature`, `PresenceEvent` e os eventos de domínio (`StoredEvent`: incluem presença
-de pessoas) ficam de fora de propósito; chegam à app como DTOs filtrados por papel.
+reais (ver `core/openapi_models.py`). Só entram DTOs e contratos públicos. Ficam de fora de
+propósito: `Device` (tem `external_ref`), `Resident` (tem `sub`), `Membership` (tem o
+`presence_opt_in` de terceiros), `ApplianceSignature`, `PresenceEvent`, `ConfirmationRequest`
+(lista de quem pode responder: payload interno P4→P3) e os eventos de domínio (`StoredEvent`
+inclui presença de pessoas). Chegam à app como DTOs filtrados por papel.
 """
 
 from __future__ import annotations
@@ -70,7 +71,6 @@ OPENAPI_MODELS: tuple[type[BaseModel], ...] = (
     # notificações
     notification.NotificationView,
     notification.NotificationPreferences,
-    notification.ConfirmationRequest,
     # assistente e automações
     agent.AgentMessageIn,
     agent.AgentResponse,
