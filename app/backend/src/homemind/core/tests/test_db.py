@@ -192,11 +192,12 @@ def test_core_lifespan_starts_before_and_stops_after_features(monkeypatch, tmp_p
     monkeypatch.setenv("DB_PATH", str(tmp_path / "l.sqlite3"))
     get_settings.cache_clear()
     seen: list = []
+    expected_migrations = len(list(dbmod.MIGRATIONS_DIR.glob("*.sql")))
     app = _app_with_probe(seen)
     with TestClient(app):
         db = app.state.db
-        assert seen == [2]
-    assert seen == [2, "feature-stopped"]
+        assert seen == [expected_migrations]
+    assert seen == [expected_migrations, "feature-stopped"]
     with pytest.raises(DatabaseClosedError):  # fechou no shutdown
         db.run_sync(lambda c: None)
     get_settings.cache_clear()
