@@ -45,6 +45,23 @@ Código: `connectors/mcp_energy.py` (`reading_from_device`, função pura) e `co
 - **Polling:** `MCP_POLL_SECONDS` (por omissão 5, mínimo 1) e backoff exponencial até `MCP_POLL_BACKOFF_MAX_S` (60) após falhas seguidas.
 - **Por fazer (PLANEADO):** montar o `EnergyCollector` no arranque da app com o barramento (`app.state.bus`), o `household_id` e o `device_id`. Ainda não existe tabela de dispositivos (HOUSE-03) nem rota para criar casas (HOUSE-01); o barramento recusa eventos de casas inexistentes. O `publish` injetado deve ser não bloqueante quando chamado no event loop.
 
+## Degraus e sessões ON/OFF (ENERGY-02) — **IMPLEMENTADO** (sem ligação à app)
+
+Código: `features/energy/steps.py` (`StepTracker`, puro) e `features/energy/consumer.py` (consumidor do barramento para `energy.reading_recorded`). Publica `energy.step_detected`, `energy.consumption_detected` e `energy.consumption_closed`. Valores **decididos pelo utilizador (17/11/2026)**:
+
+| Regra | Valor |
+|---|---|
+| Degrau | variação ≥ **100 W** face à base (§6.7: abaixo disso vai para o resíduo) |
+| Confirmação | na **primeira** leitura que mostra o novo nível (a tomada já só reporta de ~30 em ~30 s e na mudança) |
+| Lacunas (`missing`/`stale`/`unit_unknown`) | **sem degrau** através da lacuna; a primeira leitura boa a seguir é a nova base; sem energia durante a lacuna |
+| Sessão que já não cabe depois de uma lacuna | fecha com `ended_at` = **última leitura boa antes da lacuna** (subestima, nunca sobrestima) |
+| Sessões | `ConsumptionEvent` com aparelho por identificar (`match` vazio) e `location=unknown`; o ENERGY-03/05 preenchem depois |
+| Termóstato | por tomada, a mesma carga (±50 W) que volta em ≤ **10 min** continua a mesma sessão |
+| Energia | sample-and-hold; com **uma** sessão aberta conta a potência medida acima da base, com **várias** cada uma conta o seu ΔW |
+| Várias cargas na mesma tomada | uma descida fecha a sessão de ΔW mais parecido (§6.7); empate: a mais antiga |
+
+**Por fazer (PLANEADO):** subscrever o consumidor no arranque da app (precisa de casa e dispositivos: HOUSE-01/03) e identificar o aparelho (ENERGY-03). O estado do tracker é em memória e reinicia com o processo.
+
 ## O que não se promete
 
 Com **uma só tomada de medição** o sistema separa cargas com potências bem distintas (aquecedor ~2000 W vs secador ~600 W), mas **não** garante a identificação de aparelhos pequenos (< 100 W), de dois aparelhos em simultâneo com potências próximas, nem a distinção de dois aparelhos iguais em quartos diferentes. O resultado tem sempre `confidence` e pode ser `unknown`; o resíduo divide-se por igual. Os próprios autores do PDF dizem que o NILM «funciona para cargas grandes» (§15.1).

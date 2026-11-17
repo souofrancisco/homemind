@@ -159,9 +159,9 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 |---|---|---|---|
 | `GET` | `/api/households/{id}/attributions?event_id` | T | |
 | `GET` `POST` | `/api/households/{id}/bills` (+ `POST …/bills/preview`, `GET …/bills/{bill_id}`) | L (criar, ver todas), T (só finalizadas) | **IMPLEMENTADO (BILL-01):** `BillIn` → `BillPreview` / `BillView`; ver [api-implementada.md](api-implementada.md) |
-| `POST` | `/api/bills/{id}/finalize` | L | Calcula e fixa; `409 bill_finalized` se repetido |
-| `GET` | `/api/bills/{id}/allocations` | L (totais por quarto), T (a sua) | |
-| `GET` | `/api/bills/{id}/receipt/me` | T | Recibo explicado |
+| `POST` | `/api/households/{id}/bills/{bill_id}/finalize` (+ `…/revisions`) | L | **IMPLEMENTADO (BILL-04):** calcula e fixa; `409 bill_finalized` se repetido; correção = nova revisão (`409 bill_not_finalized` num rascunho) |
+| `GET` | `/api/households/{id}/bills/{bill_id}/summary` | L (totais por quarto) | **IMPLEMENTADO** (`LandlordBillView`) |
+| `GET` | `/api/households/{id}/bills/{bill_id}/receipt` | T | **IMPLEMENTADO**: `BillAllocation` própria (recibo por linhas) |
 | `POST` | `/api/allocations/{id}/contest` | T | |
 | `GET` `PUT` | `/api/me/budget?period` | T | Orçamento pessoal |
 | `GET` `PUT` | `/api/households/{id}/room-allowances` | L | Plafond por quarto |
@@ -207,7 +207,7 @@ O servidor só envia notificações do utilizador autenticado (pessoais) e da su
 |---|---|---|
 | 403 | `forbidden_role` | Papel sem acesso ao recurso (ex.: senhorio a pedir presença) |
 | 404 | `household_not_found`, `bill_not_found`, `notification_not_found` | |
-| 409 | `already_responded`, `notification_expired`, `bill_finalized` | |
+| 409 | `already_responded`, `notification_expired`, `bill_finalized`, `bill_not_finalized` | |
 | 422 | `bill_inconsistent` | Soma de kWh atribuídos acima do total da fatura |
 | 403 | `simulation_disabled` | Já existe |
 

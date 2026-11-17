@@ -1,8 +1,11 @@
-"""Consumidor do barramento: `billing.confirmation_needed` -> notificação da casa.
+"""Consumidores do barramento da feature: eventos de outros módulos -> notificações.
 
-Síncrono, sem I/O externo, na transação do efeito (`processed_event`): corre sobre a ligação que o
-barramento passa. Idempotente por evento de origem (ids derivados) e devolve os eventos de
-seguimento (`notification.created`) para o *outbox*.
+Síncronos, sem I/O externo, na transação do efeito (`processed_event`): correm sobre a ligação
+que o barramento passa. Idempotentes por evento de origem (ids derivados) e devolvem os eventos
+de seguimento (`notification.created`) para o *outbox*.
+
+Os nomes dos consumidores são PERMANENTES: são a chave de idempotência em `processed_event`.
+Renomear um faz-lhe reprocessar todo o histórico dos seus tipos.
 """
 
 import sqlite3
@@ -15,23 +18,36 @@ from homemind.features.notifications.directory import SqliteResidentDirectory
 from homemind.features.notifications.service import NotificationService
 from homemind.features.notifications.sqlite import SqliteNotificationRepository
 
-# Nome PERMANENTE do consumidor: é a chave de idempotência em `processed_event`. Renomeá-lo faz
-# reprocessar todo o histórico de `billing.confirmation_needed`.
 CONFIRMATION_CONSUMER = "notifications.confirmation_needed"
 CONFIRMATION_EVENT_TYPES = ("billing.confirmation_needed",)
 
+PRESENCE_CHECK_CONSUMER = "notifications.presence_check"
+PRESENCE_CHECK_EVENT_TYPES = ("presence.confirmation_needed",)
 
-def make_confirmation_handler(
-    clock: Callable[[], datetime],
-) -> Callable[[sqlite3.Connection, StoredEvent], list[de.DomainEvent]]:
+SAFETY_ALERT_CONSUMER = "notifications.safety_alert"
+SAFETY_ALERT_EVENT_TYPES = ("safety.alert_raised",)
+
+ATTRIBUTION_CONSUMER = "notifications.attribution_changed"
+ATTRIBUTION_EVENT_TYPES = ("billing.attribution_changed",)
+
+ALLOCATION_CONSUMER = "notifications.allocation_published"
+ALLOCATION_EVENT_TYPES = ("billing.allocation_published",)
+
+Handler = Callable[[sqlite3.Connection, StoredEvent], list[de.DomainEvent]]
+
+
+def _service(conn: sqlite3.Connection, clock: Callable[[], datetime]) -> NotificationService:
+    return NotificationService(
+        SqliteNotificationRepository(conn), SqliteResidentDirectory(conn), clock
+    )
+
+
+def make_confirmation_handler(clock: Callable[[], datetime]) -> Handler:
     def handler(conn: sqlite3.Connection, stored: StoredEvent) -> list[de.DomainEvent]:
         ev = stored.event
         if not isinstance(ev, de.BillingConfirmationNeeded):  # nunca acontece (filtro de tipos)
             return []
-        service = NotificationService(
-            SqliteNotificationRepository(conn), SqliteResidentDirectory(conn), clock
-        )
-        out = service.on_confirmation_needed(
+        out = _service(conn, clock).on_confirmation_needed(
             ev.data,
             source_event_id=ev.id,
             household_id=ev.household_id,
@@ -41,3 +57,78 @@ def make_confirmation_handler(
         return list(out.events)
 
     return handler
+
+
+def make_presence_check_handler(clock: Callable[[], datetime]) -> Handler:
+    def handler(conn: sqlite3.Connection, stored: StoredEvent) -> list[de.DomainEvent]:
+        ev = stored.event
+        if not isinstance(ev, de.PresenceConfirmationNeeded):
+            return []
+        out = _service(conn, clock).on_presence_check(
+            ev.data,
+            household_id=ev.household_id,
+            correlation_id=ev.correlation_id,
+            provenance=ev.provenance,
+        )
+        return list(out.events)
+
+    return handler
+
+
+def make_safety_alert_handler(clock: Callable[[], datetime]) -> Handler:
+    def handler(conn: sqlite3.Connection, stored: StoredEvent) -> list[de.DomainEvent]:
+        ev = stored.event
+        if not isinstance(ev, de.SafetyAlertRaised):
+            return []
+        out = _service(conn, clock).on_safety_alert(
+            ev.data,
+            household_id=ev.household_id,
+            correlation_id=ev.correlation_id,
+            provenance=ev.provenance,
+        )
+        return list(out.events)
+
+    return handler
+
+
+def make_attribution_handler(clock: Callable[[], datetime]) -> Handler:
+    def handler(conn: sqlite3.Connection, stored: StoredEvent) -> list[de.DomainEvent]:
+        ev = stored.event
+        if not isinstance(ev, de.BillingAttributionChanged):
+            return []
+        out = _service(conn, clock).on_attribution_changed(
+            ev.data,
+            household_id=ev.household_id,
+            correlation_id=ev.correlation_id,
+            provenance=ev.provenance,
+        )
+        return list(out.events)
+
+    return handler
+
+
+def make_allocation_handler(clock: Callable[[], datetime]) -> Handler:
+    def handler(conn: sqlite3.Connection, stored: StoredEvent) -> list[de.DomainEvent]:
+        ev = stored.event
+        if not isinstance(ev, de.BillingAllocationPublished):
+            return []
+        out = _service(conn, clock).on_allocation_published(
+            ev.data,
+            household_id=ev.household_id,
+            correlation_id=ev.correlation_id,
+            provenance=ev.provenance,
+        )
+        return list(out.events)
+
+    return handler
+
+
+# Todos os consumidores da feature: (nome, fábrica, tipos). `alerts.*` NÃO está aqui de propósito
+# (BudgetThreshold e AlertRaisedData ainda não chegam para escrever o aviso).
+CONSUMERS: tuple[tuple[str, Callable[[Callable[[], datetime]], Handler], tuple[str, ...]], ...] = (
+    (CONFIRMATION_CONSUMER, make_confirmation_handler, CONFIRMATION_EVENT_TYPES),
+    (PRESENCE_CHECK_CONSUMER, make_presence_check_handler, PRESENCE_CHECK_EVENT_TYPES),
+    (SAFETY_ALERT_CONSUMER, make_safety_alert_handler, SAFETY_ALERT_EVENT_TYPES),
+    (ATTRIBUTION_CONSUMER, make_attribution_handler, ATTRIBUTION_EVENT_TYPES),
+    (ALLOCATION_CONSUMER, make_allocation_handler, ALLOCATION_EVENT_TYPES),
+)
