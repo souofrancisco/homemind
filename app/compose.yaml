@@ -72,6 +72,9 @@ services:
     ports: ["${AUTHENTIK_PORT:-9000}:9000"]
     volumes:
       - ./infra/authentik:/blueprints/custom:ro
+      # Assets do brand (branding_logo/branding_favicon são nomes de ficheiros em /media/public); o favicon reutiliza o ícone da app.
+      - ./infra/authentik/media/objectos-logo.svg:/media/public/objectos-logo.svg:ro
+      - ./frontend/assets/icon.svg:/media/public/objectos-icon.svg:ro
     depends_on:
       authentik-db:
         condition: service_healthy
