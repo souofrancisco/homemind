@@ -62,7 +62,7 @@ Caminhos relativos a `app/backend/src/homemind/` (backend) e `app/frontend/src/`
 | Caminho | Destino | Justificação | Resp. |
 |---|---|---|---|
 | `features/video` (`fonte.py`, `service.py`, `router.py`, `medir.py`) | **ADAPT** | No serviço só clips sintéticos allowlisted em `PROFILE=demo` + `HOME_BACKEND=fake`; fontes RTSP recusadas por PRIV-02; ferramentas não devem recolher dados reais | P2 |
-| `features/video/router.py` (`GET /api/video` MJPEG) | **REMOVE / 404 em PRIV-02** | Superfície de frames desativada; reabrir exige endpoint de diagnóstico sem frames/imagens e contrato de autorização revisto | P2 |
+| `features/video/router.py` (`GET /api/video` MJPEG) | **ADAPT** | MJPEG desligado por omissão (PRIV-02: `404` salvo clip allowlisted em demo/fake com flag) e, quando ligado, só para o `operator` (**IMPLEMENTADO**, fix/video-mjpeg-operador); máscara da soleira **PLANEADO** | P2 |
 | `features/visao/detetor.py` (`DetetorYolo`, YOLO11 + pose + ByteTrack) | **ADAPT** | Mantém-se a classe «pessoa» e o tracking; **sai** a deteção de caneca/livro/comando e a pose | P2 |
 | `features/visao/thread.py`, `dispositivo.py`, `pesos.py` | **KEEP** | Thread de visão, escolha de dispositivo (MPS/CUDA/CPU), descarga de pesos | P2 |
 | `features/visao/anotar.py` | **ADAPT** | Passa a desenhar só a soleira e a máscara a preto | P2 |
