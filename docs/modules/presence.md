@@ -184,3 +184,45 @@ flowchart LR
 **AINDA NÃO IMPLEMENTADO / não declarar PASS de integração:** processamento real da câmara; contagem na soleira; sensor de Wi-Fi; endpoint de presença manual; chamadas do predicado pelo futuro produtor PRES-03; retenção/expurgo, gestão de correspondência MAC, UI de consentimento granular, avisos finais e AIPD. Dependências: PRES-02 #106, PRES-03 #107, PRES-04 #108, HOUSE-02 #85, APP-01 #94 e revisão jurídica/PILOT. Não abrir captura real nesta tarefa.
 
 **Integração exigida à PRES-03:** chamar `individual_cue_allowed(conn, cue, now=clock(), actor_resident_id=access.resident_id, wifi_collection_enabled=settings.presence_wifi_collection_enabled)` na **mesma transação** que persistir a pista, verificar novamente `presence_opt_in` em todas as leituras relacionadas e nunca gravar pistas reprovadas. Não usar cache de opt-in; cortar o coletor à revogação; ocultar rotas de diagnóstico do senhorio.
+
+## PRIV-02 #119 — Complemento da P2: câmara, fontes alternativas e Wi-Fi (PROPOSTA / PLANEADO)
+
+> **Âmbito:** só presença e câmara; completa a secção anterior (P5) sem a repetir. Aplica-se a ela quanto a finalidades, acessos, retenção (P-25 desse bloco, P-20), base legal e AIPD. **Não é parecer jurídico.** Código de PRES-01…04 ainda em PRs próprios; nada abaixo está na `main`.
+
+### Decisões do dono (P2) refletidas aqui
+
+1. **Presença individual visível só ao próprio morador.** Nenhum colega vê estados individuais; a fusão é usada **internamente** (ex.: regra C da conta da sala). Em linha com `Resource.presence.read=own`.
+2. **Wi-Fi como pista exige os dois consentimentos:** `wifi_opt_in` no telemóvel (`PresenceDevice`) **e** `Membership.presence_opt_in`. Faltando um, a pista não entra.
+3. **`GET /api/video` (MJPEG):** desligado por omissão (`ENABLE_DEV_VIDEO_PREVIEW=false`, #146); quando ligado em dev, só operador (PR #158, ainda não na `main`). O MJPEG serve o **frame completo, sem máscara**: a máscara de soleira só protege a entrada do detetor, não o que o MJPEG mostra. Por isso nunca se liga com a câmara real.
+
+### Câmara: fonte de vídeo e pipeline (PLANEADO)
+
+- **Fonte, por ordem:** (a) câmara do kit, **só leitura**, por app/link (acesso não provado, ver «Limites reais»); (b) plano B: telemóvel como câmara IP ou clip, **sempre rotulado SIMULADO** (`CameraStatus.origin`) na UI e no pitch; (c) sem câmara: declaração manual + Wi-Fi.
+- **Pipeline:** frame → máscara preta fora da soleira → `DetetorYolo` (só «pessoa») + ByteTrack → linha virtual → `DoorCrossed` (sentido, confiança) → frame descartado **a cada ciclo** do detetor. Só a soleira é analisada; sem reconhecimento facial; `track_id` nunca persistido; visitas só como número.
+- **Teste exigido (PRES-02):** varrer o diretório de dados e falhar se existir qualquer imagem; nenhum evento com URL, caminho de frame ou identidade.
+- Clips de desenvolvimento: só com consentimento de quem aparece, em `app/backend/data/` (fora do Git).
+- **Operador** = suporte técnico: vê diagnóstico (`CameraStatus`), **nunca presença**; hoje não está limitado à sua casa (decisão para a demo, P-28).
+
+### Wi-Fi: varrimento ping + ARP (PRES-03, PR #153, ainda não na `main`)
+
+- **Mecanismo:** varrimento ping + ARP numa sub-rede privada configurável (`PRESENCE_WIFI_SUBNET`; na demo, a rede do hub do kit). Recolha desligada por omissão (`PRESENCE_WIFI_COLLECTION_ENABLED=false`, #146).
+- **Modo `ingest`:** o anfitrião calcula o HMAC de **todos** os MACs vistos e envia-os; o **backend descarta os não registados** (não persiste, não regista em logs).
+- **`match_key`:** HMAC-SHA256 com **um segredo único da instalação** (`PRESENCE_MATCH_SALT`). É **pseudonimização**: quem tenha o segredo pode testar MACs conhecidos. Sal por casa: **PLANEADO**, não existe (P-30). O MAC em claro nunca sai em API.
+- **Efeito na fusão:** presença Wi-Fi é pista a favor de `in`; ausência **não renova** o `in` e **nunca** prova saída (Wi-Fi nunca produz `out`, D-30). Só a fusão (PRES-04, PR #159, ainda não na `main`) passa a `out`, após 20–30 min **e** saída pela porta.
+- **Revogação** (`DELETE /api/presence/devices/{id}`, PRES-03, PR #153, ainda não na `main`; rotas de presença e o `403` ao senhorio idem): apaga o `match_key` e para novas pistas, mas **não apaga as pistas já gravadas**; `domain_event` é append-only sem expurgo (P-20, P-25 do bloco anterior).
+
+### Plano alternativo sem câmara
+
+Presença manual + Wi-Fi (ambos com opt-in). Sem contagem de visitas nem confirmação de saída pela porta: mais `uncertain` e mais perguntas «estás em casa?». A regra C funciona com menos precisão, dito na UI.
+
+### Informação a prestar e UI (PLANEADO)
+
+Os textos abaixo são **rascunho — não usar até PRES-02 e #146 estarem implementados e validados**; a rever por P5 e jurista (P-24 do bloco anterior; inclui o aviso e o pictograma).
+
+- **Aviso à entrada (visitantes e moradores), rascunho:** «Nesta porta há um sensor ótico que conta entradas e saídas. Não grava nem guarda imagens e não identifica pessoas. Só a pessoa que vive na casa vê o seu próprio estado.»
+- **Moradores, rascunho:** finalidades, o que não acontece, como registar e retirar o telemóvel, como declarar manualmente, que recusar não tem consequências.
+- **UI (APP):** indicador «Câmara na porta: ativa/desligada · REAL/SIMULADO» (`CameraStatus`); lista de telemóveis com «Retirar»; interruptores separados para `wifi_opt_in` e `presence_opt_in`, com o aviso de que o Wi-Fi precisa dos dois.
+
+### Base legal por finalidade — candidatas, por validar
+
+Contagem na porta: interesse legítimo + votação da casa (PDF §10.2). Wi-Fi: consentimento (PDF §10.2). **Declaração manual: base candidata nossa (consentimento/pedido do próprio), não consta do §10.2.** Nenhuma está validada (P-24 do bloco anterior).
