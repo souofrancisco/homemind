@@ -3,6 +3,7 @@
 Todos os eventos são roteirizados, com IDs e relógio fixos. A origem é SIMULATED;
 a confiança é um *input ilustrativo*, nunca o resultado de um classificador real.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,9 +29,16 @@ CLOCK = DemoClock()
 # (minuto virtual, W agregados). A tomada na bancada é o medidor da extensão
 # montada na sala. Os valores são ficcionais, não uma aquisição MCP.
 POWER_PROFILE = (
-    (0, 40.0), (1, 1840.0), (4, 40.0), (10, 2040.0),
-    (70, 2040.0), (130, 40.0), (140, 940.0), (144, 40.0),
-    (147, 2040.0), (149, 40.0),
+    (0, 40.0),
+    (1, 1840.0),
+    (4, 40.0),
+    (10, 2040.0),
+    (70, 2040.0),
+    (130, 40.0),
+    (140, 940.0),
+    (144, 40.0),
+    (147, 2040.0),
+    (149, 40.0),
 )
 
 
@@ -126,16 +134,19 @@ def events() -> list[ev.EventBase]:
     out: list[ev.EventBase] = []
     correlation = stable_id("demo", "official-correlation")
 
-    def add(name: str, cls: type[ev.EventBase], minute: int,
-            data: BaseModel, provenance: Provenance) -> None:
-        out.append(cls(
-            id=stable_id("demo-event", name),
-            household_id=fx.HOUSEHOLD,
-            correlation_id=correlation,
-            ts=CLOCK.at(minute),
-            provenance=provenance,
-            data=data,
-        ))
+    def add(
+        name: str, cls: type[ev.EventBase], minute: int, data: BaseModel, provenance: Provenance
+    ) -> None:
+        out.append(
+            cls(
+                id=stable_id("demo-event", name),
+                household_id=fx.HOUSEHOLD,
+                correlation_id=correlation,
+                ts=CLOCK.at(minute),
+                provenance=provenance,
+                data=data,
+            )
+        )
 
     prev: float | None = None
     for minute, w in POWER_PROFILE:
@@ -144,21 +155,27 @@ def events() -> list[ev.EventBase]:
         if prev is not None and w != prev:
             step = energy.PowerStep(
                 id=stable_id("demo-step", str(minute)),
-                device_id=fx.METER, ts=CLOCK.at(minute),
-                before_w=prev, after_w=w, provenance=fx.SIM_MEASURED,
+                device_id=fx.METER,
+                ts=CLOCK.at(minute),
+                before_w=prev,
+                after_w=w,
+                provenance=fx.SIM_MEASURED,
             )
             add(f"step-{minute}", ev.EnergyStepDetected, minute, step, fx.SIM_MEASURED)
         prev = w
 
     kettle_match = energy.ApplianceMatch(
-        appliance_id=fx.KETTLE, confidence=0.88,
+        appliance_id=fx.KETTLE,
+        confidence=0.88,
         candidates=[energy.ApplianceCandidate(appliance_id=fx.KETTLE, confidence=0.88)],
     )
     heater_match = fx.consumption().match
-    ambiguous_match = energy.ApplianceMatch(candidates=[
-        energy.ApplianceCandidate(appliance_id=fx.HEATER, confidence=0.55),
-        energy.ApplianceCandidate(appliance_id=fx.KETTLE, confidence=0.45),
-    ])
+    ambiguous_match = energy.ApplianceMatch(
+        candidates=[
+            energy.ApplianceCandidate(appliance_id=fx.HEATER, confidence=0.55),
+            energy.ApplianceCandidate(appliance_id=fx.KETTLE, confidence=0.45),
+        ]
+    )
     cases = (
         ("kettle", 1, 4, 1800, kettle_match, energy.LocationKind.common, fx.ROOM_SALA),
         ("heater", 10, 130, 2000, heater_match, energy.LocationKind.common, fx.ROOM_SALA),
@@ -168,62 +185,123 @@ def events() -> list[ev.EventBase]:
     for name, start, end, watts, match, location, room in cases:
         args = (name, start, end, watts, match)
         kwargs = dict(location=location, room_id=room)
-        add(name + "-on", ev.EnergyConsumptionDetected, start,
-            _episode(*args, closed=False, **kwargs), fx.SIM_INFERRED)
-        add(name + "-off", ev.EnergyConsumptionClosed, end,
-            _episode(*args, closed=True, **kwargs), fx.SIM_INFERRED)
+        add(
+            name + "-on",
+            ev.EnergyConsumptionDetected,
+            start,
+            _episode(*args, closed=False, **kwargs),
+            fx.SIM_INFERRED,
+        )
+        add(
+            name + "-off",
+            ev.EnergyConsumptionClosed,
+            end,
+            _episode(*args, closed=True, **kwargs),
+            fx.SIM_INFERRED,
+        )
 
     for name, minute, direction in (
         ("door-in", 9, presence.DoorDirection.entered),
         ("door-out", 125, presence.DoorDirection.left),
     ):
         # Sem resident_id, rosto, frame ou associação a pessoa.
-        add(name, ev.PresenceDoorCrossed, minute, presence.DoorCrossed(
-            ts=CLOCK.at(minute), direction=direction,
-            confidence=0.93, provenance=fx.SIM_INFERRED,
-        ), fx.SIM_INFERRED)
+        add(
+            name,
+            ev.PresenceDoorCrossed,
+            minute,
+            presence.DoorCrossed(
+                ts=CLOCK.at(minute),
+                direction=direction,
+                confidence=0.93,
+                provenance=fx.SIM_INFERRED,
+            ),
+            fx.SIM_INFERRED,
+        )
 
     # Pedido/aceitação roteirizados; a decisão é humana, não derivada da câmara.
     req = replace(
-        fx.confirmation_request(), estimated_cost_cents=64,
+        fx.confirmation_request(),
+        estimated_cost_cents=64,
         expires_at=CLOCK.at(131) + timedelta(hours=24),
     )
     add("ask", ev.BillingConfirmationNeeded, 131, req, fx.SIM_INFERRED)
     original = fx.confirmation_notification()
-    add("notification", ev.NotificationCreated, 132, ev.NotificationCreatedData(
-        notification_id=original.id, scope=original.scope, kind=original.kind,
-    ), fx.SIM_MEASURED)
-    answer = notification.NotificationResponse(
-        notification_id=original.id, action_id="mine",
-        resident_id=fx.CARLA, responded_at=CLOCK.at(133),
-    )
-    add("answer", ev.NotificationResponded, 133, ev.NotificationRespondedData(
-        response=answer,
-        ref=notification.NotificationRef(
-            type=notification.RefType.consumption_event, id=fx.CONSUMPTION,
+    add(
+        "notification",
+        ev.NotificationCreated,
+        132,
+        ev.NotificationCreatedData(
+            notification_id=original.id,
+            scope=original.scope,
+            kind=original.kind,
         ),
-    ), fx.SIM_MEASURED)
-    attribution = replace(fx.carla_attribution(), decided_by=Audit(
-        at=CLOCK.at(133), by_resident_id=fx.CARLA,
-    ))
+        fx.SIM_MEASURED,
+    )
+    answer = notification.NotificationResponse(
+        notification_id=original.id,
+        action_id="mine",
+        resident_id=fx.CARLA,
+        responded_at=CLOCK.at(133),
+    )
+    add(
+        "answer",
+        ev.NotificationResponded,
+        133,
+        ev.NotificationRespondedData(
+            response=answer,
+            ref=notification.NotificationRef(
+                type=notification.RefType.consumption_event,
+                id=fx.CONSUMPTION,
+            ),
+        ),
+        fx.SIM_MEASURED,
+    )
+    attribution = replace(
+        fx.carla_attribution(),
+        decided_by=Audit(
+            at=CLOCK.at(133),
+            by_resident_id=fx.CARLA,
+        ),
+    )
     add("attribution", ev.BillingAttributionChanged, 133, attribution, fx.SIM_MEASURED)
-    add("budget-80", ev.AlertsThresholdCrossed, 138, billing.BudgetThreshold(
-        budget_id=fx.budget().id, pct=80, spent_cents=2000, forecast_cents=3100,
-    ), fx.SIM_ESTIMATED)
+    add(
+        "budget-80",
+        ev.AlertsThresholdCrossed,
+        138,
+        billing.BudgetThreshold(
+            budget_id=fx.budget().id,
+            pct=80,
+            spent_cents=2000,
+            forecast_cents=3100,
+        ),
+        fx.SIM_ESTIMATED,
+    )
     # Falha de sensor é reproduzível: missing != 0W, não gera inferência.
-    add("missing-power", ev.EnergyReadingRecorded, 160, energy.EnergyReading(
-        id=stable_id("demo-reading", "missing"),
-        device_id=fx.METER, ts=CLOCK.at(160),
-        status=energy.ReadingStatus.missing,
-        power_w=None, provenance=fx.SIM_ESTIMATED,
-    ), fx.SIM_ESTIMATED)
+    add(
+        "missing-power",
+        ev.EnergyReadingRecorded,
+        160,
+        energy.EnergyReading(
+            id=stable_id("demo-reading", "missing"),
+            device_id=fx.METER,
+            ts=CLOCK.at(160),
+            status=energy.ReadingStatus.missing,
+            power_w=None,
+            provenance=fx.SIM_ESTIMATED,
+        ),
+        fx.SIM_ESTIMATED,
+    )
 
     out.sort(key=lambda item: item.ts)  # estável para timestamps iguais
     ids = [item.id for item in out]
     assert len(ids) == len(set(ids))
     assert all(item.provenance.simulated and item.household_id == fx.HOUSEHOLD for item in out)
-    assert [item.data.match.outcome.value for item in out
-            if item.type == "energy.consumption_closed"] == [
-                "identified", "identified", "unknown", "ambiguous",
-            ]
+    assert [
+        item.data.match.outcome.value for item in out if item.type == "energy.consumption_closed"
+    ] == [
+        "identified",
+        "identified",
+        "unknown",
+        "ambiguous",
+    ]
     return out
