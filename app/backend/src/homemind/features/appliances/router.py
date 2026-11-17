@@ -60,7 +60,10 @@ async def list_appliances(access: Read, db: DbDep) -> list[Visible]:
 
 @router.post("/appliances", status_code=201)
 async def create_appliance(
-    body: ApplianceCreate, access: Write, db: DbDep, clock: ClockDep,
+    body: ApplianceCreate,
+    access: Write,
+    db: DbDep,
+    clock: ClockDep,
 ) -> Visible:
     return await _run(db, lambda conn: repo.create_appliance(conn, access, body, clock()))
 
@@ -72,7 +75,11 @@ async def get_appliance(appliance_id: UUID, access: Read, db: DbDep) -> Visible:
 
 @router.patch("/appliances/{appliance_id}")
 async def patch_appliance(
-    appliance_id: UUID, body: AppliancePatch, access: Write, db: DbDep, clock: ClockDep,
+    appliance_id: UUID,
+    body: AppliancePatch,
+    access: Write,
+    db: DbDep,
+    clock: ClockDep,
 ) -> Visible:
     return await _run(
         db, lambda conn: repo.patch_appliance(conn, access, appliance_id, body, clock())
@@ -81,7 +88,10 @@ async def patch_appliance(
 
 @router.delete("/appliances/{appliance_id}")
 async def retire_appliance(
-    appliance_id: UUID, access: Write, db: DbDep, clock: ClockDep,
+    appliance_id: UUID,
+    access: Write,
+    db: DbDep,
+    clock: ClockDep,
 ) -> Visible:
     """Soft retirement: historical ownership and meter links remain immutable."""
     return await _run(db, lambda conn: repo.retire_appliance(conn, access, appliance_id, clock()))
@@ -89,7 +99,9 @@ async def retire_appliance(
 
 @router.get("/appliances/{appliance_id}/history")
 async def appliance_history(
-    appliance_id: UUID, access: Read, db: DbDep,
+    appliance_id: UUID,
+    access: Read,
+    db: DbDep,
 ) -> list[ApplianceHistoryView]:
     return await _run(db, lambda conn: repo.state_history(conn, access, appliance_id))
 
@@ -102,7 +114,9 @@ async def list_devices(access: DeviceRead, db: DbDep) -> list[DeviceView]:
 
 @router.post("/devices/demo", status_code=201)
 async def create_demo_device(
-    body: DeviceCreateDemo, access: DeviceWrite, db: DbDep,
+    body: DeviceCreateDemo,
+    access: DeviceWrite,
+    db: DbDep,
 ) -> DeviceView:
     """No physical operations; P1 provisions real MCP devices via register_device."""
     return await _run(db, lambda conn: repo.provision_demo_device(conn, access, body))
@@ -110,8 +124,11 @@ async def create_demo_device(
 
 @router.put("/appliances/{appliance_id}/meter")
 async def assign_meter(
-    appliance_id: UUID, body: MeterAssignment,
-    access: DeviceWrite, db: DbDep, clock: ClockDep,
+    appliance_id: UUID,
+    body: MeterAssignment,
+    access: DeviceWrite,
+    db: DbDep,
+    clock: ClockDep,
 ) -> MeterAssignmentView:
     at = clock()
 
@@ -119,7 +136,9 @@ async def assign_meter(
         repo.set_meter(conn, access, appliance_id, body.device_id, at)
         actual = repo.meter_at(conn, appliance_id, at)
         return MeterAssignmentView(
-            appliance_id=appliance_id, device_id=actual, effective_at=at,
+            appliance_id=appliance_id,
+            device_id=actual,
+            effective_at=at,
         )
 
     return await _run(db, operation)
