@@ -42,6 +42,8 @@ def main() -> None:
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     s = get_settings()
+    if not s.presence_wifi_collection_enabled:
+        raise SystemExit("recolha desligada: PRESENCE_WIFI_COLLECTION_ENABLED=false em app/.env")
     if not (s.presence_match_salt and s.presence_ingest_token and s.presence_wifi_subnet):
         raise SystemExit(
             "falta PRESENCE_MATCH_SALT, PRESENCE_INGEST_TOKEN ou PRESENCE_WIFI_SUBNET em app/.env"

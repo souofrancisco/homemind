@@ -1,11 +1,12 @@
-"""Pistas de presença por pessoa (PRES-03): Wi-Fi opt-in e declaração manual.
+"""Pistas de presença por pessoa (PRES-03): Wi-Fi opt-in e resposta à pergunta do sistema.
 
 Regras (contrato `PresenceEvent`, decisão D-30/D-31):
 - o Wi-Fi só produz `in`, e só quando um telemóvel registado COM opt-in aparece; a sua ausência
   nunca gera nada (nem `out`);
-- só a declaração manual diz `out`;
-- uma pista só se grava se o morador tem membership de inquilino ativa; a verificação e a gravação
-  do evento acontecem na MESMA transação, por isso uma revogação tem efeito imediato.
+- não há check-in manual: a presença vem da câmara (porta) e do Wi-Fi; só a RESPOSTA a «estás em
+  casa?» (pergunta do sistema, em caso de contradição) vira pista manual;
+- uma pista individual só se grava com `Membership.presence_opt_in` (e membership ativa); a
+  verificação e a gravação do evento acontecem na MESMA transação: a revogação é imediata.
 """
 
 import asyncio
@@ -24,7 +25,6 @@ from homemind.contracts.domain_events import (
 )
 from homemind.contracts.notification import RefType
 from homemind.contracts.presence import (
-    PersonPresence,
     PresenceDevice,
     PresenceEvent,
     PresenceSource,
@@ -80,27 +80,6 @@ def _cue(
     )
 
 
-def person_presence_of(cue: PresenceEvent) -> PersonPresence:
-    """Estado provisório a partir de UMA pista (a fusão com várias pistas é a PRES-04)."""
-    return PersonPresence(
-        resident_id=cue.resident_id,
-        state=cue.state,
-        since=cue.ts,
-        confidence=cue.confidence,
-        provenance=cue.provenance,
-        sources=[cue.source],
-    )
-
-
-def append_cue(conn: sqlite3.Connection, ev: PresenceCueRecorded) -> bool:
-    """Grava a pista se o morador é inquilino ativo (verificação e gravação na mesma transação)."""
-    cue = ev.data
-    if not repo.is_active_tenant(conn, cue.household_id, cue.resident_id, cue.ts):
-        return False
-    append_event(conn, ev)
-    return True
-
-
 def on_notification_responded(conn: sqlite3.Connection, stored: StoredEvent) -> list[DomainEvent]:
     """«Estás em casa?» respondido na app → pista manual. Só pedidos que presence emitiu, do
     próprio morador e uma única vez; qualquer outra coisa é ignorada sem erro."""
@@ -117,7 +96,7 @@ def on_notification_responded(conn: sqlite3.Connection, stored: StoredEvent) -> 
         or state is None
         or req["household_id"] != str(ev.household_id)
         or req["resident_id"] != str(resp.resident_id)
-        or not repo.is_active_tenant(conn, ev.household_id, resp.resident_id, resp.responded_at)
+        or not repo.has_presence_opt_in(conn, ev.household_id, resp.resident_id, resp.responded_at)
     ):
         return []
     if not repo.mark_confirmation_answered(conn, ref.id, resp.responded_at):
@@ -152,27 +131,6 @@ class PresenceService:
         self.refresh_s = refresh_s
         self._last_cue: dict[tuple[UUID, UUID], datetime] = {}
         self._prev_seen: set[tuple[UUID, UUID]] = set()
-
-    # --- declaração manual ------------------------------------------------------------------
-
-    async def record_manual(
-        self, household_id: UUID, resident_id: UUID, state: PresenceState
-    ) -> PersonPresence:
-        """P-19: a declaração manual é `real/measured` (o contrato não a distingue; o morador
-        diz-nos o seu estado). Numa casa `real` nunca é simulada."""
-        ev = _cue(
-            household_id=household_id,
-            resident_id=resident_id,
-            ts=self.clock(),
-            state=state,
-            source=PresenceSource.manual,
-            confidence=1.0,
-            provenance=Provenance(origin=Origin.real, kind=ValueKind.measured),
-        )
-        if not await self.db.run(lambda c: append_cue(c, ev)):
-            raise DeviceError("not_a_resident")
-        await self.bus.publish(ev)  # idempotente: só acorda os consumidores
-        return person_presence_of(ev.data)
 
     # --- telemóveis -------------------------------------------------------------------------
 

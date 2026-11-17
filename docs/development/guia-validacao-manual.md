@@ -353,13 +353,13 @@ Pistas por pessoa (PRES-03, **IMPLEMENTADO**). Pré-requisitos: backend no **anf
 ### PRW-03 — Wi-Fi desligado não é saída
 - **Tipo:** REAL · **Issue:** #107
 - **Passos:** com o telemóvel registado e visto, desligar o Wi-Fi do telemóvel 30 min.
-- **Esperado:** nenhum evento `presence.cue_recorded` com `state=out`; só uma declaração manual produz `out`.
+- **Esperado:** nenhum evento `presence.cue_recorded` com `state=out`; o Wi-Fi nunca produz `out`.
 - **PASS** com zero pistas `out`.
 
-### PRW-04 — Declaração manual e senhorio
+### PRW-04 — Isolamento por papel
 - **Tipo:** REAL (API) · **Issue:** #107
-- **Passos:** `PUT /api/presence/me?household_id=…` com `{"state":"in"}` e depois `"out"`, como inquilino; repetir qualquer rota de presença com a sessão do senhorio e do operador.
-- **Esperado:** `200` com `PersonPresence` do próprio; cada declaração gera `presence.cue_recorded` (`source=manual`); senhorio e operador recebem `403 forbidden_role` em todas as rotas.
+- **Passos:** repetir `GET /api/presence/devices` com a sessão do senhorio e do operador; sem `presence_opt_in` na membership, registar o telemóvel e voltar a ligá-lo ao Wi-Fi.
+- **Esperado:** `403 forbidden_role` em todas as rotas de presença para senhorio e operador; **nenhuma** pista Wi-Fi enquanto a membership não tiver `presence_opt_in=true`.
 - **PASS** se as duas observações coincidirem.
 
 ---
@@ -409,6 +409,6 @@ Data: ________ · Testador(es): ________ · Hardware (GPU/CPU): ________ · Comm
 | PRW-01 | Telemóvel registado aparece (Wi-Fi) | | | | #107 |
 | PRW-02 | Opt-out imediato | | | | #107 |
 | PRW-03 | Wi-Fi desligado não é saída | | | | #107 |
-| PRW-04 | Declaração manual; senhorio 403 | | | | #107 |
+| PRW-04 | Isolamento por papel; sem opt-in sem pista | | | | #107 |
 
 **Pronto para a demo** quando: INS-01, AUTH-01, MOT-01, MOT-02, OFF-01, PB-01 e PRIV-01 têm PASS; DEMO-01 tem 10/10; e o guião (`demo-script.md`) só apresenta como REAL os testes REAL com PASS.

@@ -103,7 +103,6 @@ Prefixo `/api`. JSON UTF-8, `snake_case`, horas ISO 8601 UTC. Todas as rotas `/a
 | `GET` | `/api/households/{id}/rooms` | `[RoomView]` |
 | `GET` | `/api/households/{id}/members` | `[MemberView]`: senhorio vê todos os estados, inquilino só ativos; operador `403`; nunca `presence_opt_in` nem `sub` |
 | `PATCH` | `/api/households/{id}/memberships/{mid}` | corpo `{ "presence_opt_in": bool }` (`extra=forbid`) → `MembershipSelfView`; só a própria membership de um inquilino (`403` a de outro, `404` se não é desta casa) |
-| `PUT` | `/api/presence/me?household_id=` | corpo `PresenceMeIn` (`{"state":"in"\|"out"}`) → `PersonPresence` (provisório: a pista; **PRES-03**). Só inquilino; senhorio/operador `403 forbidden_role`; não-membro `404` |
 | `GET` | `/api/presence/devices?household_id=` | `[PresenceDeviceView]` dos telemóveis do próprio (nunca o hash nem o MAC) |
 | `POST` | `/api/presence/devices?household_id=` | corpo `{label, wifi_address, consent: true}` → `201 PresenceDeviceView` · `400 invalid_request` · `409 device_already_registered \| device_limit` · `503 wifi_unconfigured` |
 | `DELETE` | `/api/presence/devices/{id}?household_id=` | opt-out imediato → `204` · `404 device_not_found` (inexistente ou de outro) |

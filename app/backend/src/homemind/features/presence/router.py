@@ -1,4 +1,4 @@
-"""Presença (P2). IMPLEMENTADO: declaração manual e telemóveis com opt-in (PRES-03).
+"""Presença (P2). IMPLEMENTADO: telemóveis com opt-in e pistas Wi-Fi (PRES-03).
 
 Todas as rotas levam `?household_id=` e exigem inquilino com membership ativa: o senhorio e o
 operador recebem `403 forbidden_role`, quem não é membro `404 household_not_found`. A identidade
@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request,
 from pydantic import Field
 
 from homemind.contracts.common import ContractModel, Origin, ShortText
-from homemind.contracts.presence import PersonPresence, PresenceDeviceView, PresenceMeIn
+from homemind.contracts.presence import PresenceDeviceView
 from homemind.core.access import (
     HouseholdAccess,
     Operation,
@@ -104,19 +104,9 @@ def _http(e: DeviceError) -> HTTPException:
         "invalid_address": (400, "Endereço de rede inválido"),
         "device_limit": (409, "Número máximo de telemóveis atingido"),
         "device_already_registered": (409, "Telemóvel já registado"),
-        "not_a_resident": (403, "Sem permissão"),
     }
     status, message = table.get(e.code, (400, "Pedido inválido"))
     return HTTPException(status, {"code": e.code, "message": message})
-
-
-@router.put("/me")
-async def put_me(body: PresenceMeIn, access: Write, service: Service) -> PersonPresence:
-    """«Cheguei / saí». A pessoa é a da sessão; o corpo só diz `in` ou `out`."""
-    try:
-        return await service.record_manual(access.household_id, access.resident_id, body.state)
-    except DeviceError as e:
-        raise _http(e) from e
 
 
 class PresenceDeviceIn(ContractModel):
