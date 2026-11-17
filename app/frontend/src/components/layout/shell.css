@@ -1,0 +1,19 @@
+.conta-skip-link {
+  position: fixed;
+  top: -80px;
+  left: 8px;
+  z-index: 1000;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--mantine-primary-color-filled);
+  color: white;
+  font-weight: 700;
+}
+.conta-skip-link:focus-visible {
+  top: 8px;
+  outline: 3px solid var(--mantine-color-blue-5);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .conta-skip-link { transition: none; }
+}
