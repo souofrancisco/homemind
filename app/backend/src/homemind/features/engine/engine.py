@@ -251,7 +251,10 @@ class Engine:
     # ---- transições ----------------------------------------------------------------------
     async def _objeto(self, ev: ObjetoLevantado, prefixo: str) -> None:
         self._log(f"{prefixo}{ev.classe.capitalize()} levantado(a)")
-        self.presenca = True  # o gesto implica alguém presente
+        if self.presenca is not True:
+            # O gesto implica alguém presente: tratar como regresso (cancela a espera ou repõe
+            # a casa suspensa) antes da regra, senão a casa podia suspender com a pessoa lá.
+            await self._presenca(Presenca(ha_alguem=True, hora=ev.hora), prefixo)
         regra = self.regras.ativa_para(ev.classe)
         if regra is None:
             self._log(f"Sem regra ativa para {ev.classe}; ignorado")
