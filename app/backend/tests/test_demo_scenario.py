@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from homemind.contracts import billing, fixtures as fx
+from homemind.contracts import billing
+from homemind.contracts import fixtures as fx
 from homemind.contracts.common import replace, stable_id
 from homemind.contracts.energy import MatchOutcome, ReadingStatus
 from homemind.core.db import Database
