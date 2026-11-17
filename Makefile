@@ -31,9 +31,9 @@ android: contracts  ## APK debug -> app/frontend/android/app/build/outputs/apk/d
 	cd $(FRONTEND)/android && ./gradlew --no-daemon assembleDebug
 
 smoke:  ## sobe a stack, valida backend/frontend/proxy, desliga
-	@trap 'docker compose -f app/compose.yaml down -v >/dev/null 2>&1' EXIT; \
-	export BACKEND_PORT=$${BACKEND_PORT:-18000} FRONTEND_PORT=$${FRONTEND_PORT:-15173}; \
-	docker compose -f app/compose.yaml up --build -d --wait --wait-timeout 180 && \
+	@trap 'docker compose -p homemind-smoke -f app/compose.yaml down -v >/dev/null 2>&1' EXIT; \
+	export BACKEND_PORT=$${BACKEND_PORT:-18000} FRONTEND_PORT=$${FRONTEND_PORT:-15173} AUTHENTIK_PORT=$${AUTHENTIK_PORT:-19000}; \
+	docker compose -p homemind-smoke -f app/compose.yaml up --build -d --wait --wait-timeout 180 && \
 	curl -fsS localhost:$$BACKEND_PORT/healthz | grep -q '"status":"ok"' && \
 	curl -fsS localhost:$$FRONTEND_PORT/ | grep -q 'ObjectOS' && \
 	curl -fsS localhost:$$FRONTEND_PORT/healthz | grep -q '"status":"ok"' && echo "smoke OK"

@@ -159,3 +159,23 @@ def test_simulate_recusado_com_mcp(client, monkeypatch):
     )
     r = client.post("/api/simulate", json=LIVRO)
     assert r.status_code == 403 and r.json()["error"]["code"] == "simulation_disabled"
+
+
+def test_percurso_completo_ws_regra_e_off(client):
+    """Gesto simulado → modo → evento WS → regra → desligar tudo; reconexão recupera o estado."""
+    with client.websocket_connect("/api/ws") as ws:
+        ws.send_json({"type": "auth", "token": "bom"})
+        assert ws.receive_json()["data"]["mode"] is None
+        assert client.post("/api/simulate", json=LIVRO).json()["mode"] == "leitura"
+        tipos = []
+        while "home_state" not in tipos[-1:]:
+            tipos.append(ws.receive_json()["type"])
+        assert "event" in tipos
+    # Ligação perdida (WS fechado): ao reconectar chega logo o estado atual.
+    with client.websocket_connect("/api/ws") as ws:
+        ws.send_json({"type": "auth", "token": "bom"})
+        assert ws.receive_json()["data"]["mode"] == "leitura"
+    assert client.patch("/api/rules/leitura", json={"enabled": False}).json()["enabled"] is False
+    assert client.get("/api/state").json()["mode"] == "leitura"  # desativar não desliga a casa
+    assert client.post("/api/off").json()["success"] is True
+    assert client.get("/api/state").json()["state"] == "inativo"
