@@ -1,51 +1,76 @@
-# HomeMind Spaces
+# ObjectOS
 
-📄 **Fonte de verdade (Google Docs):** https://docs.google.com/document/d/1b9Lq2ZejWwpkt-by3U_Belzig1Or-jZxCQE2yLQSoyU/edit?tab=t.0
-(editável por quem tem o link — nunca colocar segredos lá)
+**Aveiro Tech City Hackathon 2026 · Desafio 3 — Altice Labs (Connected Home)**
 
-Hackathon Altice Labs · 16–20 nov 2026 · equipa de 5.
+Protótipo de casa inteligente controlada por gestos com objetos comuns. A câmara MEARI por RTSP identifica **caneca, livro e comando** usando YOLO e pose. Levantar o objeto ativa um modo (por exemplo, leitura); a presença mantém o ambiente. Ao sair da divisão, o sistema entra em espera e suspende luz e tomada após um período, restaurando-as quando alguém regressa. O botão **Desligar tudo** permite controlo explícito.
 
-## O que é / que problema resolve
-Camada de "inteligência de ocupação" para alojamento temporário: liga **estadia → permissões → preferências → plano contextual → ações verificadas** aos dispositivos Altice (via MCP). Na mudança de hóspede, o gestor repete tarefas manuais (acesso, preparação, revogação); o HomeMind transforma check-in/check-out em decisões auditáveis, protegendo a privacidade do hóspede. Não é gestor de reservas nem Home Assistant.
+**Privacidade:** vídeo processado localmente; nenhum frame armazenado nem enviado para serviços externos. A NVIDIA recebe apenas texto durante a configuração de regras, nunca o stream de vídeo. O MCP Altice só pode atuar em lâmpada e tomada após validação de capabilities.
+
+## Estado atual
+
+Este repositório era o *HomeMind Spaces* e já contém infraestrutura reutilizável: FastAPI feature-first, React/Vite/TS/Mantine, Authentik OIDC, cliente MCP em Python, Docker Compose e CI. **A visão, os gestos, o motor de regras e o painel ObjectOS ainda têm de ser desenvolvidos.** Não confundir infraestrutura existente com funcionalidades demonstradas.
+
+## Documentação e tarefas
+
+- [Plano de implementação ObjectOS](docs/objectos-plano.md) — requisitos, arquitetura, interfaces, cinco responsáveis, critérios e riscos.
+- [Instruções para Claude e agentes](CLAUDE.md) — regras, paths reais e segurança.
+- [Trabalho paralelo](docs/parallel-work.md) — divisão por pessoa e integração.
+- [Issues ObjectOS](https://github.com/souofrancisco/homemind/issues) — unidades de implementação e critérios de aceitação.
+- [Capacidades MCP](docs/mcp-capabilities.md) — conferir schemas reais antes de fazer escritas. O que estiver legado/por validar não deve ser dado como confirmado.
 
 ## Stack
-FastAPI + Pydantic + SQLite (backend) · React + Vite + TypeScript + Mantine (frontend) · Capacitor (Android) · Authentik (OIDC + PKCE) · Ruff · Docker Compose · GitHub Actions. Monólito modular, sem Redis/filas/microserviços.
 
-## Arrancar (Docker)
-```bash
-cp app/.env.example app/.env      # opcional; defaults = SIMULATION, escritas físicas OFF
-make dev   # = docker compose up --build  (backend + frontend + Authentik)
+Backend Python 3.12+, FastAPI, Pydantic v2, asyncio, SDK `mcp` (existentes); OpenCV/FFmpeg, Ultralytics YOLO11s e YOLO11s-pose/ByteTrack, SDK `openai` para NVIDIA (**a adicionar nas issues correspondentes**). Frontend React, Vite, TypeScript, Mantine já existentes. Regras e eventos simples em `rules.json` / `events.jsonl`, sem base de dados nova para o ObjectOS.
+
+## Estrutura real
+
+```text
+app/
+  backend/
+    src/homemind/
+      main.py
+      core/config.py
+      connectors/altice.py
+      features/{auth,health,mcp}/
+      ... novos módulos ObjectOS a implementar
+  frontend/
+    src/
+  compose.yaml
+docs/objectos-plano.md
+CLAUDE.md
+AGENTS.md
 ```
-Frontend http://localhost:5173 · API http://localhost:8000 (docs `/docs`, `/healthz`, `/api/me`) · Authentik http://localhost:9000.
-Login de desenvolvimento: `akadmin` / `homemind-dev` (só dev; mudar com `AUTHENTIK_ADMIN_PASSWORD`). O provider OIDC (`homemind`, público, PKCE) é criado automaticamente por `app/infra/authentik/homemind.yaml`. Se mudares `AUTHENTIK_PORT`/`FRONTEND_PORT`, o issuer e os redirect URIs acompanham via compose.
 
-## Android (APK debug)
-Requer JDK 21 e Android SDK (`ANDROID_HOME`, plataforma 36).
+O plano original descreve `backend/video.py` e `frontend/` conceptualmente; seguir os paths reais do monorepo para não criar uma aplicação paralela.
+
+## Desenvolvimento
+
 ```bash
-make android    # -> app/frontend/android/app/build/outputs/apk/debug/app-debug.apk
-adb reverse tcp:8000 tcp:8000 && adb reverse tcp:9000 tcp:9000   # dispositivo/emulador → serviços locais
-adb install -r app/frontend/android/app/build/outputs/apk/debug/app-debug.apk
+cp app/.env.example app/.env
+make dev       # Docker Compose (backend + frontend + Authentik)
+make check     # lint, contratos OpenAPI, build, validação de compose
 ```
-A app usa o mesmo frontend; o login abre o navegador do sistema e volta por deep link (`pt.homemind.app://auth/callback`). Para outros URLs: `VITE_API_URL=… VITE_OIDC_AUTHORITY=… make android` (o issuer tem de coincidir com `OIDC_ISSUER` do backend).
 
-## Verificar (CI = make check; sem testes automatizados na hackathon)
-```bash
-make check   # ruff + eslint + contrato OpenAPI→TS + build frontend + compose config
-make smoke   # opcional, local: sobe a stack Docker e valida (fora do CI)
-```
-Requer `uv`, Node 22, Docker, make. Também: `make dev`, `make down`, `make lint`, `make android`.
+A infraestrutura atual disponibiliza frontend em `http://localhost:5173`, backend em `http://localhost:8000` e Authentik em `http://localhost:9000` com a configuração de desenvolvimento existente. Não pressupor que as rotas ObjectOS já existem.
 
-## Equipa
-Pessoa 1 MCP & dispositivos · 2 Espaços/estadias/permissões · 3 Frontend base · 4 Planos/regras/turnover · 5 Hóspede & QA. Detalhe: separador 31 do Docs. Mapeamento pessoa→GitHub user: *por preencher* (ver [docs/parallel-work.md](docs/parallel-work.md)).
+As variáveis do ObjectOS a definir durante a implementação incluem `VIDEO_SOURCE`, `HOME_BACKEND=fake|mcp`, `PROFILE=normal|demo`, `NVIDIA_API_KEY` e as variáveis MCP existentes (`MCP_ENDPOINT`, `MCP_API_KEY`, `MCP_AUTH_TOKEN`). Guardar segredos fora do repositório. O `FakeHome` e o clip MEARI são reservas de desenvolvimento/demo, sempre identificados como simulação.
 
-## User Stories
-14 US (P0/P1) nos separadores 09–22 do Docs e como issues GitHub (label `P0`/`P1`). Não duplicadas aqui.
+## Equipa (cinco pessoas)
 
-## Contribuir
-Regras para agentes e humanos: [AGENTS.md](AGENTS.md); trabalho paralelo: [docs/parallel-work.md](docs/parallel-work.md).
+| Pessoa | Responsabilidade |
+|---|---|
+| 1 | Vídeo RTSP, YOLO/pose, MJPEG, integração e entregáveis |
+| 2 | Gestos, presença, filas de eventos e afinação |
+| 3 | `Home`, `FakeHome`, `McpHome`, OAuth e segurança do MCP |
+| 4 | Regras, máquina de estados, poupança, LLM, testes |
+| 5 | Painel React/Mantine, WebSocket, vídeo, regras e controlo |
 
-## O que depende da Altice (MCP)
-Endpoint, transporte, auth, catálogo de tools, e se contacto de porta/lâmpada são expostos para leitura/escrita: **desconhecido até 16/11**. Template em [docs/mcp-capabilities.md](docs/mcp-capabilities.md); perguntas em [docs/mentor-questions.md](docs/mentor-questions.md). Sem MCP, só SIMULATION (rotulado) — não prova integração.
+As issues indicam o número do responsável; o assignee GitHub será definido quando houver o mapeamento dos cinco usernames.
 
-## Estado
-Preparação (15/11): apenas infraestrutura e documentação + `/healthz`. Funcionalidades de produto só a partir de 16/11, conforme regulamento.
+## Demo e entregáveis
+
+Meta de latência gesto→luz **<4 segundos**, RTSP <1,5 s de atraso, inferência ≥10 FPS com GPU, dez demos consecutivas antes de extras. PDF executivo 2 páginas com prazo **18 de novembro de 2026 às 19h**, PPT no template oficial e apresentações de 3 e 5 minutos. Não afirmar controlo real até haver chamada MCP e estado confirmado.
+
+## Segurança
+
+Nenhum reconhecimento facial, persistência de frames ou transmissão do vídeo para cloud. Não controlar alarmes ou equipamentos de segurança; usar apenas ações autorizadas sobre lâmpada e tomada. Não inventar tools ou resultados MCP. As funcionalidades antigas de estadias não fazem parte do escopo ObjectOS.
