@@ -104,3 +104,33 @@ P1 (consumo), P3 (confirmações e entrega), P5 (casas, base de dados), P2 (pres
 ## Testes
 
 Puros, com relógio simulado e sem rede/hardware: fixtures, regra A/B/C, prazo de 24 h, saída a meio do mês, resíduo negativo, arredondamento, permissões.
+## Contrato recebido de HOUSE-04 #87 (implementado na branch de revisão; ligação P4 planeada)
+
+HOUSE-04 **resolve a política**; P4 **materializa a atribuição** e faz todos os
+cálculos da fatura real. Usar `contracts.policy.PolicyDecision` com `status`,
+`reason`, `policy_version`, `target_type`, `target_resident_id`, `method`
+e `provenance`. Uma `PolicyDecision(status='pending')` **nunca** gera
+`Attribution` ativa individual nem uma dívida individual.
+
+`AttributionMethod.equal_rule` distingue a aplicação automática da regra
+A de `AttributionMethod.equal_fallback` (B expirou). `room_rule` vem do
+contrato temporal do quarto; `confirmation` vem da resposta validada de P3.
+O proprietário do aparelho não é o pagador, nem um medidor agregado prova
+onde está o aparelho. P4 recebe `location_verified` de HOUSE-03;
+não inferir `True` a partir de `Device.room_id` ou de uma assinatura.
+
+Transições: `pending → confirmed` em `mine/everyone`; `unknown` conserva
+`pending` até expirar; ao expirar `fallback/common/equal_fallback`.
+O fallback F1 é igual e fica no snapshot da política. Falta de localização,
+ocupante ou custo conhecido permanece pendente; o resíduo será explicitamente
+tratado em BILL-02, nunca desaparece silenciosamente. C por presença é F2.
+
+P4 deve consumir `resolve_and_store`, `respond_and_store`,
+`expire_and_store`, `confirmation_intent` e `as_attribution` como descrito
+em [households.md](households.md), com transações do `core/events.py`.
+P4 cria a sua tabela `Attribution` com índice único parcial por consumo
+ativo; o índice único de `household_policy_decision` não o substitui.
+
+**A implementar em BILL-02:** handlers reais `energy.consumption_closed` e
+`notification.responded`, agendamento de expirações, publicação
+`billing.attribution_changed`, revisão/contestação e repartição financeira.
