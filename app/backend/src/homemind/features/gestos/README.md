@@ -51,3 +51,24 @@ Inicial `False`. Frame com pessoas: regresso confirmado após `presenca_frames_r
 - A ausência de 3 s é a do detetor; o «em espera» de 180 s (10 s no demo) é do motor de P4.
 - **Integração:** P1 chama via `ProcessadorObjectOS` (#8), que corre presença antes de gesto. P4 consome `Presenca` pela fila (#7).
 - **Pendente:** validar no clip MEARI real (P1 + afinador #8). Testes com dados SIMULADOS.
+
+## Ponte thread de visão -> asyncio (#7)
+
+`ponte.py`: `PublicadorFila(loop, fila)` implementa `PublicadorEventos`; `PublicadorLista` guarda eventos (afinador, testes).
+
+```python
+# P4, no lifespan (dentro do loop do FastAPI):
+fila: asyncio.Queue[Evento] = asyncio.Queue()           # sem limite
+publicador = PublicadorFila(asyncio.get_running_loop(), fila)
+# ... entrega `publicador` a P1; a thread de visão chama publicador.publicar(evento) por evento.
+```
+
+`publicar` faz `loop.call_soon_threadsafe(...)`: nunca bloqueia, preserva a ordem (FIFO) e não duplica. A fila e o loop são de P4; a thread de visão é de P1 (os testes usam mocks em `tests/_fakes.py`: `DetetorFalso`, `FonteVideoFalsa`, `ThreadVisaoFalsa`).
+
+### Assunções (ponte)
+- **Fila sem limite** (P4). Com `maxsize` e fila cheia, o evento é descartado com `logger.warning` (só o tipo).
+- **Loop fechado** (`RuntimeError` no encerramento): descarta com `logger.debug` (só o tipo); a thread nunca recebe a exceção. Eventos pendentes no loop ao fechar perdem-se (contrato).
+- **Encerramento:** P4 pára o consumo, P1 pára a thread (`threading.Event`); a ordem entre os dois é indiferente para a ponte. P4 deve criar o publicador *dentro* do loop (`get_running_loop()`).
+- **Só se regista o tipo do evento**; nunca hora, classe, frames ou pessoas.
+- **Pendente (integração):** thread de visão real (P1) com `ProcessadorObjectOS` (#8) e consumidor/lifespan (P4). Medição «atraso do WS com inferência real» só com o Detetor real; os testes usam inferência SIMULADA (300 ms).
+- Sem `uv`, `make check` não foi corrido; usados venv local, `ruff` e `pytest`.
