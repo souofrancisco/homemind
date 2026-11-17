@@ -43,6 +43,19 @@ class Settings(BaseSettings):
     visao_intervalo_max_s: float = 1.0  # buraco entre frames reais > isto reinicia janelas
     # --- fim P2 ---
 
+    # --- P1 — visão (YOLO objetos + pose + ByteTrack; extra opcional `visao`) ---
+    visao_pasta_modelos: str = "data/modelos"  # pesos .pt (ignorados pelo Git; ver pesos.py)
+    visao_variante: Literal["s", "n"] = "s"  # "n" só se o FPS não chegar
+    visao_modelo_objetos: str = ""  # vazio -> yolo11{variante}.pt
+    visao_modelo_pose: str = ""  # vazio -> yolo11{variante}-pose.pt
+    visao_conf_objetos: float = 0.4
+    visao_conf_pessoa: float = 0.4
+    visao_livro_coco: int = 73  # alternativas se o livro falhar: 39 garrafa, 67 telemóvel
+    visao_device: str = "auto"  # auto = CUDA > MPS > CPU; ou cpu / mps / cuda:0
+    visao_imgsz: int = 640
+    visao_tracker: str = "bytetrack.yaml"
+    # --- fim P1 — visão ---
+
 
 @lru_cache
 def get_settings() -> Settings:
