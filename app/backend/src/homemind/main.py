@@ -7,6 +7,7 @@ from homemind.core.config import get_settings
 from homemind.core.errors import register_errors
 from homemind.core.features import register_features
 from homemind.core.lifespan import core_lifespan
+from homemind.core.openapi_models import install_shared_schemas
 
 # O uvicorn só configura os seus próprios loggers: sem isto os INFO da app (visão ligada,
 # tempos das escritas MCP) perdiam-se. Nunca se registam segredos, URLs de vídeo nem frames.
@@ -27,3 +28,4 @@ app.add_middleware(
 )
 register_errors(app)
 register_features(app)
+install_shared_schemas(app)  # modelos partilhados no contrato OpenAPI, sem rotas falsas

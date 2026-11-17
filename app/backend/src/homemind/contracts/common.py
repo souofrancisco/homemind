@@ -31,9 +31,15 @@ from homemind.contracts.base import Contrato
 
 
 class ContractModel(Contrato):
-    """Base dos contratos novos: imutável, sem campos extra e sem NaN/infinito."""
+    """Base dos contratos novos: imutável, sem campos extra e sem NaN/infinito.
 
-    model_config = Contrato.model_config | {"allow_inf_nan": False}
+    Nas respostas, campos com valor por omissão contam como presentes (o TypeScript gerado não
+    os marca opcionais): `null` e campo ausente são coisas diferentes."""
+
+    model_config = Contrato.model_config | {
+        "allow_inf_nan": False,
+        "json_schema_serialization_defaults_required": True,
+    }
 
 
 def _to_utc(v: AwareDatetime) -> AwareDatetime:
