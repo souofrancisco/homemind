@@ -1,12 +1,23 @@
 """SQL de presença (dono: presence). Funções síncronas sobre uma `conn` já dentro de uma
 transação. Nunca recebem nem devolvem um MAC: só `match_key`."""
 
+import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from homemind.contracts.presence import PresenceConfirmationRequest, PresenceDevice
+from homemind.contracts.common import Provenance
+from homemind.contracts.presence import (
+    DoorCrossed,
+    PersonPresence,
+    PresenceConfirmationRequest,
+    PresenceDevice,
+    PresenceEvent,
+    PresenceSource,
+    PresenceState,
+    UncertainReason,
+)
 
 MAX_DEVICES_PER_RESIDENT = 5
 
@@ -158,3 +169,129 @@ def mark_confirmation_answered(conn: sqlite3.Connection, request_id: UUID, at: d
         (at.isoformat(), str(request_id)),
     )
     return cur.rowcount == 1
+
+
+# --- pistas e passagens (lidas do registo imutável de eventos) --------------------------------
+
+
+def load_cues(
+    conn: sqlite3.Connection, household_id: UUID, resident_id: UUID, since: datetime
+) -> list[PresenceEvent]:
+    rows = conn.execute(
+        "SELECT payload_json FROM domain_event WHERE type = 'presence.cue_recorded'"
+        " AND household_id = ? AND json_extract(payload_json, '$.resident_id') = ?"
+        " AND ts >= ? ORDER BY seq",
+        (str(household_id), str(resident_id), since.isoformat()),
+    ).fetchall()
+    return [PresenceEvent.model_validate_json(r[0]) for r in rows]
+
+
+def load_doors(conn: sqlite3.Connection, household_id: UUID, since: datetime) -> list[DoorCrossed]:
+    rows = conn.execute(
+        "SELECT payload_json FROM domain_event WHERE type = 'presence.door_crossed'"
+        " AND household_id = ? AND ts >= ? ORDER BY seq",
+        (str(household_id), since.isoformat()),
+    ).fetchall()
+    return [DoorCrossed.model_validate_json(r[0]) for r in rows]
+
+
+def cue_exists(conn: sqlite3.Connection, event_id: UUID) -> bool:
+    return (
+        conn.execute("SELECT 1 FROM domain_event WHERE id = ?", (str(event_id),)).fetchone()
+        is not None
+    )
+
+
+# --- moradores -------------------------------------------------------------------------------
+
+
+def active_tenants(conn: sqlite3.Connection, household_id: UUID, now: datetime) -> list[UUID]:
+    house = conn.execute(
+        "SELECT timezone FROM household WHERE id = ?", (str(household_id),)
+    ).fetchone()
+    if house is None:
+        return []
+    today = now.astimezone(ZoneInfo(house["timezone"])).date().isoformat()
+    rows = conn.execute(
+        "SELECT resident_id FROM membership WHERE household_id = ? AND role = 'tenant'"
+        " AND status = 'active' AND starts_on <= ? AND (ends_on IS NULL OR ends_on >= ?)"
+        " ORDER BY starts_on, resident_id",
+        (str(household_id), today, today),
+    ).fetchall()
+    return [UUID(r[0]) for r in rows]
+
+
+def membership_start(conn: sqlite3.Connection, household_id: UUID, resident_id: UUID) -> datetime:
+    row = conn.execute(
+        "SELECT starts_on FROM membership WHERE household_id = ? AND resident_id = ?"
+        " AND status = 'active'",
+        (str(household_id), str(resident_id)),
+    ).fetchone()
+    day = datetime.fromisoformat(row[0]) if row else datetime.min
+    return day.replace(tzinfo=UTC)
+
+
+# --- estado fundido --------------------------------------------------------------------------
+
+
+def get_state(
+    conn: sqlite3.Connection, household_id: UUID, resident_id: UUID
+) -> PersonPresence | None:
+    r = conn.execute(
+        "SELECT * FROM presence_state WHERE household_id = ? AND resident_id = ?",
+        (str(household_id), str(resident_id)),
+    ).fetchone()
+    if r is None:
+        return None
+    return PersonPresence(
+        resident_id=UUID(r["resident_id"]),
+        state=PresenceState(r["state"]),
+        since=datetime.fromisoformat(r["since"]),
+        confidence=r["confidence"],
+        provenance=Provenance(origin=r["origin"], kind=r["kind"]),
+        sources=[PresenceSource(x) for x in json.loads(r["sources_json"])],
+        reason=UncertainReason(r["reason"]) if r["reason"] else None,
+    )
+
+
+def upsert_state(
+    conn: sqlite3.Connection, household_id: UUID, p: PersonPresence, now: datetime
+) -> None:
+    conn.execute(
+        "INSERT INTO presence_state (household_id, resident_id, state, since, confidence, origin,"
+        " kind, sources_json, reason, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)"
+        " ON CONFLICT (household_id, resident_id) DO UPDATE SET state = excluded.state,"
+        " since = excluded.since, confidence = excluded.confidence, origin = excluded.origin,"
+        " kind = excluded.kind, sources_json = excluded.sources_json, reason = excluded.reason,"
+        " updated_at = excluded.updated_at",
+        (
+            str(household_id), str(p.resident_id), p.state.value, p.since.isoformat(),
+            p.confidence, p.provenance.origin.value, p.provenance.kind.value,
+            json.dumps([x.value for x in p.sources]),
+            p.reason.value if p.reason else None, now.isoformat(),
+        ),
+    )  # fmt: skip
+
+
+def others_in(conn: sqlite3.Connection, household_id: UUID, resident_id: UUID) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) FROM presence_state WHERE household_id = ? AND resident_id != ?"
+        " AND state = 'in'",
+        (str(household_id), str(resident_id)),
+    ).fetchone()[0]
+
+
+def tracked_residents(conn: sqlite3.Connection) -> list[tuple[UUID, UUID]]:
+    rows = conn.execute("SELECT household_id, resident_id FROM presence_state").fetchall()
+    return [(UUID(r[0]), UUID(r[1])) for r in rows]
+
+
+def last_confirmation_at(
+    conn: sqlite3.Connection, household_id: UUID, resident_id: UUID
+) -> datetime | None:
+    r = conn.execute(
+        "SELECT MAX(created_at) FROM presence_confirmation WHERE household_id = ?"
+        " AND resident_id = ?",
+        (str(household_id), str(resident_id)),
+    ).fetchone()
+    return datetime.fromisoformat(r[0]) if r and r[0] else None
