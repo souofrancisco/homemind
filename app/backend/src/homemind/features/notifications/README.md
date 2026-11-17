@@ -7,13 +7,13 @@ Refs #95 (APP-02) e #96 (APP-03); não as fecha (faltam UI, WebSocket e os produ
 
 | Ficheiro | Papel |
 |---|---|
-| `router.py` | Rotas por casa (abaixo) e `lifespan` que subscreve o consumidor no barramento. |
+| `router.py` | Rotas por casa (abaixo) e `lifespan` que subscreve os consumidores no barramento. |
 | `service.py` | `NotificationService` síncrono: criar (com deduplicação), votar/responder (CAS com releitura), ler, listar e expirar. Devolve os eventos de domínio a gravar (`Outcome.events`). |
-| `compose.py` | Pedido de confirmação e aviso de orçamento -> `Notification`; ids determinísticos (uuid5). |
+| `compose.py` | Pedido de confirmação, aviso de orçamento, «estás em casa?», alertas de conforto/fumo e informações pessoais de faturação -> `Notification`; ids determinísticos (uuid5, por evento ou por referência e destinatário). |
 | `repository.py` | Protocolo `NotificationRepository` + versão em memória (referência e testes). |
 | `sqlite.py` | `SqliteNotificationRepository` (compare-and-set real sobre estado e n.º de votos), recibos de leitura e preferências. |
-| `directory.py` | `SqliteResidentDirectory`: papel de um residente numa casa e data (cópia de `core.access.find_membership`, por `resident_id`; pedir à P5 um helper). |
-| `handlers.py` | `CONFIRMATION_CONSUMER = "notifications.confirmation_needed"` e `make_confirmation_handler`. |
+| `directory.py` | `SqliteResidentDirectory`: papel de um residente numa casa e data (cópia de `core.access.find_membership`, por `resident_id`; pedir à P5 um helper), `room` (nome e tipo da divisão) e `room_tenants` (inquilinos ativos do quarto). |
+| `handlers.py` | Os cinco consumidores (nomes permanentes) e `CONSUMERS`, que o lifespan subscreve: `notifications.confirmation_needed`, `notifications.presence_check`, `notifications.safety_alert`, `notifications.attribution_changed`, `notifications.allocation_published`. `alerts.*` não tem consumidor de propósito. |
 | `preferences.py` | `delivery_for`: `now`/`deferred`/`suppressed` (só afeta o push, ainda inexistente). |
 | `core/migrations/0300_notifications_core.sql` | Tabelas `notification`, `notification_read`, `notification_preferences` (por residente e casa; dono P3; nunca editar depois do merge: `0301_...`). |
 

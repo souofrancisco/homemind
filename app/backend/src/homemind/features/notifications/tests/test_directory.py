@@ -5,7 +5,7 @@ import pytest
 from homemind.contracts import fixtures as fx
 from homemind.contracts import household as hh
 from homemind.contracts.common import stable_id
-from homemind.contracts.household import MembershipRole
+from homemind.contracts.household import MembershipRole, RoomKind
 from homemind.features.households.repo import insert_membership, insert_resident, insert_room
 from homemind.features.notifications.directory import SqliteResidentDirectory
 from homemind.features.notifications.tests.conftest import (
@@ -94,3 +94,42 @@ def test_fim_inclusivo_e_dia_no_fuso_da_casa(seeded):
     assert role(seeded, HOUSE_B, EVA, datetime(2026, 11, 17, 6, 0, tzinfo=UTC)) is (
         MembershipRole.tenant
     )
+
+
+def test_room_devolve_nome_e_tipo_da_divisao_da_casa(seeded):
+    assert db_room(seeded, fx.HOUSEHOLD, fx.ROOM_SALA) == ("Sala", RoomKind.common)
+    assert db_room(seeded, fx.HOUSEHOLD, fx.ROOM_ANA) == ("Quarto Ana", RoomKind.bedroom)
+
+
+def test_room_de_outra_casa_ou_inexistente_e_none(seeded):
+    assert db_room(seeded, HOUSE_B, fx.ROOM_SALA) is None  # a sala é da casa demo
+    assert db_room(seeded, fx.HOUSEHOLD, stable_id("room", "nao-existe")) is None
+
+
+def tenants_of(db, house, room, at=NOW):
+    return db.run_sync(lambda c: SqliteResidentDirectory(c).room_tenants(house, room, at))
+
+
+def db_room(db, house, room):
+    return db.run_sync(lambda c: SqliteResidentDirectory(c).room(house, room))
+
+
+def test_room_tenants_so_inquilinos_ativos(seeded):
+    assert tenants_of(seeded, fx.HOUSEHOLD, fx.ROOM_BRUNO) == [fx.BRUNO]
+    assert tenants_of(seeded, fx.HOUSEHOLD, fx.ROOM_SALA) == []  # zona comum: ninguém lá dorme
+    assert tenants_of(seeded, HOUSE_B, fx.ROOM_BRUNO) == []  # divisão de outra casa
+
+
+def test_room_tenants_respeita_membership_terminada_e_datas(seeded):
+    # Fred (casa B, quarto B1) terminou; Eva ocupa o mesmo quarto.
+    from homemind.features.notifications.tests.conftest import ROOM_B1
+
+    assert tenants_of(seeded, HOUSE_B, ROOM_B1) == [EVA]
+    seeded.run_sync(
+        lambda c: c.execute(
+            "UPDATE membership SET ends_on = '2026-11-17' WHERE id = ?", (str(M_EVA),)
+        )
+    )
+    assert tenants_of(seeded, HOUSE_B, ROOM_B1) == [EVA]  # `ends_on` inclusivo
+    assert tenants_of(seeded, HOUSE_B, ROOM_B1, datetime(2026, 11, 18, 0, 30, tzinfo=UTC)) == []
+    assert tenants_of(seeded, HOUSE_B, ROOM_B1, datetime(2026, 8, 1, tzinfo=UTC)) == []

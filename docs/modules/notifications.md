@@ -1,6 +1,6 @@
 # Módulo `notifications` — centro de notificações
 
-**Dono: P3 (RafaelMat0s-Dev).** UI: páginas desenhadas por P5 com P3. **Estado: IMPLEMENTADO (backend parcial)**: persistência SQLite, lista, leitura, votação/resposta, preferências e o consumidor de `billing.confirmation_needed` (ver «Estado de implementação»); UI, WebSocket, limiares/picos, varrimento de expiração e push são **PLANEADO**.
+**Dono: P3 (RafaelMat0s-Dev).** UI: páginas desenhadas por P5 com P3. **Estado: IMPLEMENTADO (backend parcial)**: persistência SQLite, lista, leitura, votação/resposta, preferências e os consumidores de `billing.confirmation_needed`, `presence.confirmation_needed`, `safety.alert_raised`, `billing.attribution_changed` e `billing.allocation_published` (ver «Estado de implementação»); UI, WebSocket, limiares/picos (`alerts.*`), varrimento de expiração e push são **PLANEADO**.
 
 > **REGRA B = VOTAÇÃO (D-32, prevalece):** em `confirmation_request` cada inquilino vota uma vez; um «É minha» fecha; atribuir a outro exige ≥ metade dos elegíveis com o mesmo alvo (fecha antes se o próprio assumir); todos votaram sem decisão ou 24 h → por todos. Fonte única: `confirmation_outcome` em `contracts/notification.py`. **Quem fizer merge (pessoa ou agente) adapta o código de P3/P5/billing a esta regra; não reintroduzir «primeira resposta vence» nas confirmações.** Substitui todas as interações que o PDF previa no Telegram (D-01 em [decisions.md](../decisions.md)).
 
@@ -16,11 +16,13 @@ Ser o **único canal de comunicação com o utilizador**: avisos, perguntas inte
 | `budget_alert` | `alerts.threshold_crossed` | Pessoal | Não | «Já gastaste 20 € dos teus 25 € (80 %). Ao ritmo atual chegas aos 31 €.» |
 | `peak_alert` | `alerts.alert_raised` | Casa | Opcional | «Pico na sala: 2 kW há 40 min.» |
 | `forgotten_appliance` | `alerts.alert_raised` | Pessoal (dono) | Sim | «Saíste há 1 h e o aquecedor continua ligado. Desligo?» [Desliga] [Deixa estar] |
-| `security_alert` | `presence` (P2) | Casa | Não | «Entrada com a casa vazia.» |
+| `security_alert` | `safety.alert_raised` (fumo; P2) | Casa | Não | «Detetor de fumo em alarme. Se houver perigo, sai de casa e liga 112. Este sistema não substitui um detetor de fumo certificado.» |
+| `comfort_alert` | `safety.alert_raised` (janela aberta com aquecimento; P2) | Pessoal (inquilino do quarto) ou casa | Não | «A janela do teu quarto está aberta há mais de 5 minutos com o aquecimento ligado.» |
+| `presence_check` | `presence.confirmation_needed` (P2) | Pessoal | Sim | «Não temos a certeza se estás em casa. Podes confirmar?» [Estou em casa] [Estou fora] |
 | `saving_tip` | `alerts`/agente | Pessoal | Não | Recomendação de poupança |
 | `automation_proposal` | `automations` | Casa | Sim | Proposta de regra para aprovar |
 | `agent_action` | agente | Pessoal | Sim | Ação sugerida com confirmação |
-| `info` | qualquer | Ambos | Não | Fatura publicada, atribuição registada |
+| `info` | `billing.attribution_changed`, `billing.allocation_published` | Pessoal | Não | «Registado na tua conta», «Dividido por todos», «Recibo disponível» |
 
 Um aviso «da casa» é o que o PDF punha no grupo; um aviso «pessoal» é o que punha em privado.
 
@@ -28,7 +30,7 @@ Um aviso «da casa» é o que o PDF punha no grupo; um aviso «pessoal» é o qu
 
 | Recebe | Produz |
 |---|---|
-| `billing.confirmation_needed` (**IMPLEMENTADO**, consumidor `notifications.confirmation_needed`); `alerts.*`, `billing.bill_*`, `automation.proposed`, `agent.action_proposed` (PLANEADO) | `Notification`, `notification.created` (→ WebSocket, PLANEADO) |
+| **IMPLEMENTADO:** `billing.confirmation_needed` (`notifications.confirmation_needed`), `presence.confirmation_needed` (`notifications.presence_check`), `safety.alert_raised` (`notifications.safety_alert`), `billing.attribution_changed` (`notifications.attribution_changed`), `billing.allocation_published` (`notifications.allocation_published`). PLANEADO: `alerts.*`, `billing.bill_*`, `automation.proposed`, `agent.action_proposed` | `Notification`, `notification.created` (→ WebSocket, PLANEADO) |
 | `POST /api/households/{household_id}/notifications/{id}/respond` (**IMPLEMENTADO**) | `notification.responded` (→ billing/agente/automações) |
 | `PUT /api/households/{household_id}/notification-preferences` (**IMPLEMENTADO**) | Preferências guardadas (a aplicação ao push é PLANEADO) |
 
@@ -62,7 +64,7 @@ Rotas por casa (o papel e o `resident_id` vêm de `core/access`): `GET …/notif
 
 ## Ficheiros (backend IMPLEMENTADO; frontend PLANEADO)
 
-`features/notifications/` (`router`, `service`, `sqlite`, `handlers`, `directory`, `compose`, `preferences`, `tests`) e `core/migrations/0300_notifications_core.sql` já existem; falta o frontend: `pages/NotificationsPage.tsx`, `components/notifications/*`, `hooks/useNotifications.ts`.
+`features/notifications/` (`router`, `service`, `sqlite`, `handlers`, `directory`, `compose`, `ports`, `repository`, `preferences`, `tests`) e `core/migrations/0300_notifications_core.sql` já existem; falta o frontend: `pages/NotificationsPage.tsx`, `components/notifications/*`, `hooks/useNotifications.ts`.
 
 ## Dependências
 
@@ -92,17 +94,28 @@ Refs #95 (APP-02) e #96 (APP-03); não as fecham (faltam UI, WebSocket e os prod
 | Leitura | `POST …/read`: recibo por residente; o estado partilhado só muda nas pessoais |
 | Resposta / voto | `POST …/respond` (corpo `NotificationRespondIn`: `action_id` e, com `other`, `target_resident_id`). Confirmações: um voto por inquilino (409 `already_responded` ao repetir ou depois de fechada), fecha segundo `confirmation_outcome` (D-32); alvo inválido 400 `invalid_request`; 409 `notification_expired`. Outros tipos: a primeira resposta vence. `notification.responded` **por voto**, com `outcome`, gravado na mesma transação; se o CAS perde, relê e reaplica a regra |
 | Preferências | `GET|PUT …/notification-preferences` (por casa; `security_alert` não se desliga: 400) |
-| Consumidor | `notifications.confirmation_needed` (nome permanente) sobre `billing.confirmation_needed`; idempotente por evento; deduplicação por pedido aberto (índice único parcial) |
+| Consumidores | Nomes permanentes (chave de `processed_event`), subscritos no lifespan (`handlers.CONSUMERS`); todos idempotentes (ids derivados e `processed_event`). Ver a tabela seguinte |
+
+| Consumidor | Evento | Efeito |
+|---|---|---|
+| `notifications.confirmation_needed` | `billing.confirmation_needed` | `confirmation_request` da casa (votação); deduplicação por pedido aberto (índice único parcial) |
+| `notifications.presence_check` | `presence.confirmation_needed` | `presence_check` **pessoal** para `resident_id`, só se for inquilino ativo; ações `in` («Estou em casa») e `out` («Estou fora») de `PRESENCE_CONFIRMATION_ACTIONS`; `expires_at` do pedido; `ref = presence_check`; um pedido aberto de cada vez; saltado se já expirou; texto por `UncertainReason`, sempre pergunta, sem horas nem aparelhos. A resposta volta em `notification.responded` e a presença trata-a (PRES-03) |
+| `notifications.safety_alert` | `safety.alert_raised` | Ativo: `window_open_heating` -> `comfort_alert` (pessoal ao inquilino ativo do quarto, se a divisão for um quarto; senão da casa); `smoke` -> `security_alert` crítico da casa com o aviso «não substitui um detetor certificado»; sem botões; id derivado de `alert.id` e destinatário. Resolvido: as notificações abertas com esse `ref` passam a `expired` (CAS, sem evento). O nome da divisão só entra no texto se for zona comum (o de um quarto identifica a pessoa) |
+| `notifications.attribution_changed` | `billing.attribution_changed` | Só atribuições `active` de um consumo que a P3 perguntou (existe um `confirmation_request` com esse `ref`); alvo morador -> info pessoal «Registado na tua conta» ao pagador; alvo comum -> info pessoal «Dividido por todos» a cada votante ainda inquilino ativo. Nunca da casa; sem nomes de terceiros (P-18) |
+| `notifications.allocation_published` | `billing.allocation_published` | info pessoal «Recibo disponível» (`ref = allocation`) ao inquilino ativo; o valor fica na app |
+
+Todos: membership terminada ou papel que não seja inquilino -> nada; origem simulada -> «(SIMULADO)»; o senhorio continua a ver só `info` (allow-list), e as informações são pessoais, por isso não lhe chegam.
 
 | Adiado (**PLANEADO**) | Porquê |
 |---|---|
 | WebSocket | só existe o `/api/ws` do ObjectOS, sem hook para notificações |
 | Limiar de orçamento (`alerts.threshold_crossed`) | `BudgetThreshold` sem destinatário nem limite; subscrever marcaria eventos como processados e perdê-los-ia |
-| Picos e aparelho esquecido (`alerts.alert_raised`) | `AlertRaisedData` sem potência, duração nem divisão |
+| Picos e aparelho esquecido (`alerts.alert_raised`) | `AlertRaisedData` sem potência, duração nem divisão; **continua sem consumidor** |
+| Botões nos alertas de conforto e `notify_landlord` do fumo | sem executor físico (P1) nem decisão de audiência; o senhorio continua sem ver `security_alert` |
 | Varrimento de expiração | `expire_due` existe no serviço mas nada o agenda; o estado expirado deduz-se do tempo na leitura |
 | Push, aplicação das preferências, dispensar, histórico | sem serviço de push; sem operação de dispensar |
 | Acordar consumidores após o commit | `_publish` na rota só acorda consumidores (os eventos já estão na outbox); falta um `bus.wake()` público (pedido à P5) em vez de `publish` |
-| Produtor/seed de demonstração | `seed_demo` só existe em testes; nada produz `billing.confirmation_needed` em runtime (P4) |
+| Produtores | `safety.alert_raised` (SAFE-01/03) e `presence.confirmation_needed` (PRES-04) já produzem na `main`; `billing.confirmation_needed`, `billing.attribution_changed` e `billing.allocation_published` ainda não (P4): os consumidores estão prontos e só testados com eventos das fixtures |
 
 ## Pedidos pendentes (ver issue a criar)
 
@@ -122,5 +135,8 @@ Estado: **PROPOSTA** (o contrato da `main` não mudou): pedidos da P3 à P4/P5 s
 12. **Audiência das notificações de casa.** Não há campo que diga quem as vê: `GET` devolve «pessoais + da casa» a T e L. Proposta: regra explícita por `kind` (ou lista de papéis) no contrato. **Parte P3 RESOLVIDA:** o serviço aplica uma allow-list ao senhorio (só `info`; os restantes tipos, da casa ou pessoais, ficam escondidos: derivam de presença, consumo ou hábitos). **Pedido mantido:** o contrato deve tornar a audiência explícita (por `kind` ou papéis) em vez de depender do filtro de P3.
 13. **Operador.** `PERMISSIONS[notification]` não inclui `operator`. Confirmar que é intencional (sem alertas técnicos para o operador no MVP).
 14. **Idempotência do `notification.created`.** O barramento entrega «pelo menos uma vez» e `EventBase.id` é aleatório por omissão. Proposta: documentar que o id da notificação e o do evento derivam do evento de origem (`stable_id`), para a reentrega não duplicar. **P3 já aplica:** ids `uuid5` derivados do evento de origem e `processed_event` por consumidor.
+15. **Alerta resolvido antes do ativo.** O barramento admite chegadas fora de ordem em *retry*; se `resolved` chegar antes do `active`, o aviso nasce sem nunca expirar. Proposta: `SafetyAlert` ativo já resolvido (ou o consumidor consultar o estado) ou um `expires_at` no aviso. Aceite como risco baixo.
+16. **Destinatários de «dividido por todos».** Só avisa quem votou; quem não votou (e paga na mesma) fica sem aviso. Proposta: a P4 diz quem é afetado (campo no evento) ou avisar os `responder_ids` ainda ativos.
+17. **`notify_landlord`.** Sem decisão de produto sobre o que o senhorio pode saber de um alarme de fumo, o `security_alert` continua escondido (allow-list). Decidir antes de o ligar.
 
 Resolvido pelo contrato da `main` (sem pedido): a regra B como votação (D-32: `Notification.respond`, `confirmation_outcome`, `VotingView`, `notification.responded` por voto com `outcome`; sem evento de expiração: billing divide por todos pelo seu prazo), as regras de resposta, erros e transições são de `Notification.respond`; os limiares de orçamento (50/80/100) são `Budget.thresholds`, da P4, e não preferências da P3.

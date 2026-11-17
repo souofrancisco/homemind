@@ -90,6 +90,25 @@ class SqliteNotificationRepository:
         ).fetchone()
         return _notification(row) if row else None
 
+    def find_by_ref(
+        self,
+        *,
+        household_id: UUID,
+        ref: NotificationRef,
+        kind: NotificationKind | None = None,
+        open_only: bool = False,
+    ) -> list[Notification]:
+        sql = "SELECT json FROM notification WHERE household_id = ? AND ref_type = ? AND ref_id = ?"
+        args: list[str] = [str(household_id), ref.type.value, str(ref.id)]
+        if kind is not None:
+            sql += " AND kind = ?"
+            args.append(kind.value)
+        if open_only:
+            sql += " AND status IN (?, ?)"
+            args += _OPEN
+        rows = self._conn.execute(sql + " ORDER BY created_at, id", args).fetchall()
+        return [_notification(r) for r in rows]
+
     def compare_and_set(self, new: Notification, *, expected: Notification) -> bool:
         cur = self._conn.execute(
             "UPDATE notification SET status = ?, json = ?, updated_at = ?"

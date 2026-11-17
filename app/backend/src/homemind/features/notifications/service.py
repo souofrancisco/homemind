@@ -12,21 +12,31 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from homemind.contracts import domain_events as de
+from homemind.contracts.billing import Attribution, AttributionStatus, AttributionTarget
 from homemind.contracts.common import Provenance, ValueKind, replace
-from homemind.contracts.household import MembershipRole
+from homemind.contracts.household import MembershipRole, RoomKind
 from homemind.contracts.notification import (
     AlreadyRespondedError,
     ConfirmationRequest,
     Notification,
     NotificationKind,
     NotificationPreferences,
+    NotificationRef,
     NotificationScope,
     NotificationStatus,
     NotificationView,
+    RefType,
 )
+from homemind.contracts.presence import PresenceConfirmationRequest
+from homemind.contracts.safety import SafetyAlert, SafetyAlertKind, SafetyAlertStatus
 from homemind.features.notifications.compose import (
+    compose_attribution_info,
     compose_budget_alert,
     compose_confirmation,
+    compose_presence_check,
+    compose_receipt_info,
+    compose_smoke_alert,
+    compose_window_alert,
     event_id_for,
 )
 from homemind.features.notifications.ports import Clock, ResidentDirectory
@@ -139,6 +149,172 @@ class NotificationService:
             now=now,
         )
         return self._create(n, provenance, dedupe=False)
+
+    def on_presence_check(
+        self,
+        req: PresenceConfirmationRequest,
+        *,
+        household_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
+    ) -> Outcome:
+        """`presence.confirmation_needed` -> «estás em casa?» pessoal, só para um inquilino ativo.
+
+        Deduplica por pedido aberto; a resposta volta em `notification.responded`
+        (`ref.type = presence_check`) e é a presença que a trata.
+        """
+        now = self._clock()
+        if req.expires_at <= now:
+            return Outcome(None)  # já caducou: perguntar agora seria ruído
+        if self._directory.role_in(household_id, req.resident_id, now) != MembershipRole.tenant:
+            return Outcome(None)
+        n = compose_presence_check(
+            request_id=req.id,
+            resident_id=req.resident_id,
+            reason=req.reason,
+            expires_at=req.expires_at,
+            household_id=household_id,
+            origin=provenance.origin,
+            correlation_id=correlation_id,
+            now=now,
+        )
+        return self._create(n, provenance, dedupe=True)
+
+    def on_safety_alert(
+        self,
+        alert: SafetyAlert,
+        *,
+        household_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
+    ) -> Outcome:
+        """`safety.alert_raised`: ativo -> aviso; resolvido -> as notificações abertas do alerta
+        passam a `expired` (sem evento: a notificação só deixou de ser relevante).
+
+        O senhorio continua sem ver estes tipos (allow-list); `notify_landlord` fica pendente.
+        """
+        now = self._clock()
+        ref = NotificationRef(type=RefType.safety_alert, id=alert.id)
+        if alert.status is SafetyAlertStatus.resolved:
+            self._expire_open(household_id, ref)
+            return Outcome(None)
+        room = self._directory.room(household_id, alert.room_id) if alert.room_id else None
+        if alert.kind is SafetyAlertKind.smoke:
+            n = compose_smoke_alert(
+                alert_id=alert.id,
+                household_id=household_id,
+                room=room,
+                origin=provenance.origin,
+                correlation_id=correlation_id,
+                now=now,
+            )
+        else:
+            tenants = (
+                self._directory.room_tenants(household_id, alert.room_id, now)
+                if alert.room_id and room and room[1] is RoomKind.bedroom
+                else []
+            )
+            n = compose_window_alert(
+                alert_id=alert.id,
+                household_id=household_id,
+                recipient_resident_id=tenants[0] if tenants else None,
+                room=room,
+                severity=alert.severity,
+                origin=provenance.origin,
+                correlation_id=correlation_id,
+                now=now,
+            )
+        return self._create(n, provenance, dedupe=False)
+
+    def on_attribution_changed(
+        self,
+        attribution: Attribution,
+        *,
+        household_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
+    ) -> Outcome:
+        """`billing.attribution_changed` -> informação pessoal sobre um «De quem é esta conta?».
+
+        Só para atribuições ativas de consumos que a P3 perguntou (existe um pedido com esse
+        `consumption_event_id`); as outras são da P4 e ignoram-se. Nunca é da casa (o senhorio
+        vê `info`) e nunca nomeia ninguém: «registado na tua conta» ao pagador; «dividido por
+        todos» a quem votou.
+        """
+        if attribution.status is not AttributionStatus.active:
+            return Outcome(None)
+        requests = self._repo.find_by_ref(
+            household_id=household_id,
+            ref=NotificationRef(
+                type=RefType.consumption_event, id=attribution.consumption_event_id
+            ),
+            kind=NotificationKind.confirmation_request,
+        )
+        if not requests:
+            return Outcome(None)
+        if attribution.target_type is AttributionTarget.resident:
+            assert attribution.target_resident_id is not None  # invariante do contrato
+            recipients = [attribution.target_resident_id]
+        else:  # comum: quem votou foi quem foi perguntado e participou
+            recipients = list(dict.fromkeys(r.resident_id for n in requests for r in n.responses))
+        now = self._clock()
+        created: list[Notification] = []
+        events: list[de.DomainEvent] = []
+        for resident_id in recipients:
+            if self._directory.role_in(household_id, resident_id, now) != MembershipRole.tenant:
+                continue  # saiu da casa (ou nunca foi inquilino): nada
+            out = self._create(
+                compose_attribution_info(
+                    attribution_id=attribution.id,
+                    consumption_event_id=attribution.consumption_event_id,
+                    household_id=household_id,
+                    resident_id=resident_id,
+                    on_my_account=attribution.target_type is AttributionTarget.resident,
+                    origin=provenance.origin,
+                    correlation_id=correlation_id,
+                    now=now,
+                ),
+                provenance,
+                dedupe=False,
+            )
+            if out.notification is not None:
+                created.append(out.notification)
+            events += out.events
+        return Outcome(created[0] if created else None, tuple(events))
+
+    def on_allocation_published(
+        self,
+        data: de.AllocationPublished,
+        *,
+        household_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
+    ) -> Outcome:
+        """`billing.allocation_published` -> «o teu recibo está disponível» (pessoal, info)."""
+        now = self._clock()
+        if self._directory.role_in(household_id, data.resident_id, now) != MembershipRole.tenant:
+            return Outcome(None)
+        n = compose_receipt_info(
+            allocation_id=data.allocation_id,
+            household_id=household_id,
+            resident_id=data.resident_id,
+            origin=provenance.origin,
+            correlation_id=correlation_id,
+            now=now,
+        )
+        return self._create(n, provenance, dedupe=False)
+
+    def _expire_open(self, household_id: UUID, ref: NotificationRef) -> None:
+        """Passa a `expired` as notificações abertas com essa referência (CAS; relê se perder)."""
+        for _ in range(3):
+            pending = self._repo.find_by_ref(household_id=household_id, ref=ref, open_only=True)
+            if not pending:
+                return
+            for n in pending:
+                n.transition(NotificationStatus.expired)
+                self._repo.compare_and_set(
+                    replace(n, status=NotificationStatus.expired), expected=n
+                )
 
     def _create(self, n: Notification, provenance: Provenance, *, dedupe: bool) -> Outcome:
         now = self._clock()
