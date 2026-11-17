@@ -3,6 +3,7 @@
 O caminho só é configurável por código para testes (DemoStore(tmp_path)); o CLI
 usa sempre a pasta privada app/.demo-data, nunca uma base de desenvolvimento/produção.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -122,9 +123,11 @@ class DemoStore:
         db = Database(self.path)
         try:
             db.open()
+
             def publish(conn: sqlite3.Connection) -> None:
                 for event in events():
                     append_event(conn, event)  # F0 deduplica por id, conflito é erro
+
             db.run_sync(publish)
         finally:
             db.close()
@@ -142,12 +145,16 @@ class DemoStore:
                 raise AssertionError("o replay divergiu do cenário oficial")
             if [item.seq for item in actual] != list(range(1, len(expected) + 1)):
                 raise AssertionError("ordem/duplicação de eventos inesperada")
+
             def check(conn: sqlite3.Connection) -> tuple[int, int, int]:
                 return (
-                    conn.execute("SELECT count(*) FROM membership WHERE role='tenant'").fetchone()[0],
+                    conn.execute("SELECT count(*) FROM membership WHERE role='tenant'").fetchone()[
+                        0
+                    ],
                     conn.execute("SELECT count(*) FROM demo_reference").fetchone()[0],
                     conn.execute("SELECT count(*) FROM household").fetchone()[0],
                 )
+
             tenants, catalog, houses = db.run_sync(check)
             if (tenants, catalog, houses) != (4, len(references()), 1):
                 raise AssertionError("seed/catálogo inesperado")
