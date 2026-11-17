@@ -10,7 +10,12 @@ from homemind.contracts.billing import AttributionMethod, AttributionTarget, ass
 from homemind.contracts.common import Audit, replace, stable_id
 from homemind.contracts.domain_events import EnergyConsumptionClosed
 from homemind.contracts.energy import LocationKind
-from homemind.contracts.household import CommonAreaRule, Membership, MembershipRole, MembershipStatus
+from homemind.contracts.household import (
+    CommonAreaRule,
+    Membership,
+    MembershipRole,
+    MembershipStatus,
+)
 from homemind.contracts.notification import NotificationRef, NotificationResponse, RefType
 from homemind.contracts.policy import PolicyReason, PolicyStatus, PolicyVersion
 from homemind.core.db import Database, migrate
