@@ -1,5 +1,2 @@
-# Frontend
-Regras gerais em `../../AGENTS.md` (MVP simples, sem testes, UI = Mantine, sem CSS próprio desnecessário).
-- Código por feature em `src/features/<feature>/` (componentes, hooks, `api.ts`); `src/shared/` só para o realmente reutilizável; `src/app/` = shell. Chamadas à API só no `api.ts` da feature (proxy `/api`). Tipos: `shared/api/schema.d.ts` (`make contracts`).
-- Mostrar sempre o essencial: loading, erro/401/403, vazio e REAL vs SIMULATION (`SourceBadge`); STALE/UNSUPPORTED/VERIFIED/UNVERIFIED onde o fluxo os usa.
-- Mobile-first (hóspede), desktop-first (gestor).
+# Frontend ObjectOS
+Ler `../../AGENTS.md`, `CLAUDE.md` da raiz e `docs/objectos-plano.md`. Reutilizar `app/frontend/src/`, React/Vite/TypeScript, Mantine, router, OIDC e contratos OpenAPI existentes; não reiniciar o projeto. Construir painel do ObjectOS: vídeo MJPEG, WS estado, presença, modo, saúde câmara/MCP, registo, poupança, regras com confirmação e botão desligar tudo. Indicador de processamento local e REAL/FakeHome visível. Não aceder diretamente ao MCP nem carregar frames em cloud.
