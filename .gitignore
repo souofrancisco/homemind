@@ -11,6 +11,7 @@ app/.mcp-tokens.json
 .vscode/mcp.json
 app/.mcp-auth/
 # data
+app/.demo-data/
 *.db
 *.sqlite
 *.sqlite3
