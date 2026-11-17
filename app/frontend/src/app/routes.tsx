@@ -5,6 +5,7 @@ const HomePage = lazy(() => import("../pages/HomePage"));
 const CameraPage = lazy(() => import("../pages/CameraPage"));
 const EventsPage = lazy(() => import("../pages/EventsPage"));
 const AutomationsPage = lazy(() => import("../pages/AutomationsPage"));
+const NewAutomationPage = lazy(() => import("../pages/NewAutomationPage"));
 const AutomationDetailsPage = lazy(() => import("../pages/AutomationDetailsPage"));
 const SuggestionDetailsPage = lazy(() => import("../pages/SuggestionDetailsPage"));
 const ProfilePage = lazy(() => import("../pages/ProfilePage"));
@@ -22,6 +23,7 @@ export const navPages: { path: string; label: string; icon: typeof IconHome; Pag
 
 // Páginas de detalhe, sem entrada na navegação.
 export const detailPages: { path: string; Page: Page }[] = [
+  { path: "/automations/new", Page: NewAutomationPage },
   { path: "/automations/suggestions/:id", Page: SuggestionDetailsPage },
   { path: "/automations/:id", Page: AutomationDetailsPage },
 ];
