@@ -323,8 +323,13 @@ class McpHome:
         self,
         settings: Settings | None = None,
         session_factory: SessionFactory | None = None,
+        *,
+        simulated: bool = False,
     ) -> None:
         self._settings = settings or get_settings()
+        # Sessão do simulador (FakeKit, MCP-05): o estado sai como `backend="fake"` (a UI já o
+        # mostra como SIMULADO) e, como manda o contrato, `mcp_ok` é sempre False nesse modo.
+        self._simulated = simulated
         self._con = _Conexao(session_factory or altice_session, self._reabriu)
         # Definido pelo motor: ao_estado(casa, mudou). Chamado sem locks; `mudou` só em
         # alterações relevantes (estado, consumo, disponibilidade), não por timestamps.
@@ -495,8 +500,8 @@ class McpHome:
     def _casa(self) -> EstadoCasa:
         w, lido_em = self._consumo_atual()
         return EstadoCasa(
-            backend="mcp",
-            mcp_ok=self._mcp_ok,
+            backend="fake" if self._simulated else "mcp",
+            mcp_ok=False if self._simulated else self._mcp_ok,
             lampada=self._lampada,
             tomada=self._tomada.model_copy(update={"consumo_w": w, "consumo_lido_em": lido_em}),
             atualizado_em=datetime.now(UTC),

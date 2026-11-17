@@ -47,6 +47,7 @@ def reading_from_device(
     now: datetime,
     unit_override: PowerUnit = PowerUnit.unknown,
     stale_after: timedelta = timedelta(seconds=90),
+    origin: Origin = Origin.real,
 ) -> EnergyReading:
     """Converte os dados MCP, tratando payloads inválidos como leituras em falta."""
     observed_at = observed_at_from_device(device, now)
@@ -90,7 +91,7 @@ def reading_from_device(
                 status = ReadingStatus.ok
 
     provenance = Provenance(
-        origin=Origin.real,
+        origin=origin,
         kind=ValueKind.measured if status is ReadingStatus.ok else ValueKind.estimated,
     )
     return EnergyReading(

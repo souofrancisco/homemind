@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from homemind.connectors.mcp_energy import reading_from_device
+from homemind.contracts.common import Origin
 from homemind.contracts.devices import PowerUnit
 from homemind.contracts.domain_events import EnergyReadingRecorded
 from homemind.contracts.energy import EnergyReading
@@ -24,6 +25,7 @@ class EnergyCollector:
         publish: Callable[[EnergyReadingRecorded], object],
         stale_after: timedelta = timedelta(seconds=90),
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        origin: Origin = Origin.real,
     ) -> None:
         self._household_id = household_id
         self._device_id = device_id
@@ -32,6 +34,7 @@ class EnergyCollector:
         self._publish = publish
         self._stale_after = stale_after
         self._clock = clock
+        self._origin = origin
         self._last_reading: EnergyReading | None = None
         self._fingerprint: tuple | None = None
 
@@ -48,6 +51,7 @@ class EnergyCollector:
             now=self._clock(),
             unit_override=self._unit,
             stale_after=self._stale_after,
+            origin=self._origin,
         )
         self._last_reading = reading
         fingerprint = (reading.observed_at, reading.status, reading.raw_value)
