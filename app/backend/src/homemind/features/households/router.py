@@ -201,7 +201,9 @@ class CreateRoom(ContractModel):
 
 class CreateInvitation(ContractModel):
     display_name: Annotated[str, Field(min_length=1, max_length=80)]
-    email: Annotated[str, Field(min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
+    email: Annotated[
+        str, Field(min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    ]
     room_id: UUID
     starts_on: date
     ends_on: date | None = None
