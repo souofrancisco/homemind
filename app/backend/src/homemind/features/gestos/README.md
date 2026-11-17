@@ -1,6 +1,6 @@
 # Gestos e presença (P2)
 
-Lógica pura, sem router e sem I/O. `DetetorGesto` (#5) e `DetetorPresenca` (#6). Ponte e afinador vêm nas issues #7–#8.
+Lógica pura, sem router e sem I/O. `DetetorGesto` (#5) e `DetetorPresenca` (#6). Ponte (#7), processador e afinador offline (#8).
 
 ```python
 from homemind.core.config import get_settings
@@ -72,3 +72,40 @@ publicador = PublicadorFila(asyncio.get_running_loop(), fila)
 - **Só se regista o tipo do evento**; nunca hora, classe, frames ou pessoas.
 - **Pendente (integração):** thread de visão real (P1) com `ProcessadorObjectOS` (#8) e consumidor/lifespan (P4). Medição «atraso do WS com inferência real» só com o Detetor real; os testes usam inferência SIMULADA (300 ms).
 - Sem `uv`, `make check` não foi corrido; usados venv local, `ruff` e `pytest`.
+
+## Processador e afinador offline (#8)
+
+`ProcessadorObjectOS` (`processador.py`) implementa `ProcessadorEventos`: presença primeiro, depois gesto, devolve um tuplo ordenado. Ignora frames com `indice` repetido ou anterior. `ha_alguem` só leitura. Construção: `ProcessadorObjectOS.de_settings(get_settings())`.
+
+`repeticao.py`: `ler_jsonl(caminho)` (ignora linhas vazias; `ValueError` com nº da linha se inválida) e `escrever_jsonl(frames, caminho) -> int`. Formato: uma `FrameDeteccoes` por linha (`model_dump_json()`), só metadados (caixas, keypoints, tempos); nunca imagens.
+
+```bash
+cd app/backend
+.venv/bin/python -m homemind.features.gestos.afinador --jsonl data/clip.jsonl \
+  --esperar caneca=4,livro=3,comando=3 --gesto-janela-s 1.2 --gesto-cooldown-s 3
+```
+
+- Fontes exclusivas: `--jsonl FICHEIRO` (funcional) ou `--video CLIP` (**pendente**: sai com código 2 e «Detetor real ainda não disponível (P1)»; ponto de extensão `_frames_de_video` em `afinador.py`). `--gravar-jsonl SAIDA` só com `--video`.
+- Overrides por flag para todos os campos: `--gesto-*` (`distancia-max-ombros`, `confianca-min`, `janela-s`, `fracao-min`, `min-frames`, `cooldown-s`, `intervalo-max-s`) e `--presenca-*` (`ausencia-s`, `frames-regresso`, `intervalo-max-s`), partindo de `core/config.py`.
+- Imprime cada evento (`t` relativo ao 1.º frame, `hora` ISO, tipo, classe/`ha_alguem`) e um resumo: frames, duração, fps médio e mínimo (pior intervalo), gestos por classe, transições de presença, parâmetros.
+- `--esperar caneca=4,livro=3,comando=3[,presenca=N]`: código 1 com a diferença impressa se não bater; 0 se bater. Erro de leitura/fonte: código 2. `presenca=N` conta **todas** as transições (a 1.ª, a entrada inicial, incluída).
+- Sem rede, sem dependências novas, nunca grava imagens.
+
+### Privacidade
+JSONL de clips reais pode conter keypoints de pessoas: manter fora do Git em `data/` (já no `.gitignore`, confirmado) ou noutro caminho local. No Git só fixtures sintéticas geradas nos testes.
+
+### Assunções (#8)
+- `ProcessadorObjectOS` é partilhado por thread de visão e afinador; sem lock (uma só thread chama).
+- Frames ignorados por `indice` não contam para o resumo de eventos, mas contam para frames/fps do afinador.
+- `--esperar` só compara as chaves indicadas.
+- `--video`: o afinador chamará o `Detetor` real de P1 sobre o clip e passará as `FrameDeteccoes` ao mesmo processador; assume `Detetor.detetar(FrameVideo) -> FrameDeteccoes` do contrato.
+
+### Pendente de integração
+| Pendente | Quem |
+|---|---|
+| `Detetor` real + `FonteVideo` de clip -> implementar `_frames_de_video` / `--video` | P1 |
+| Validar 10/10 gestos e 0 «beber» no clip MEARI real (gravar JSONL com `--gravar-jsonl`, afinar limiares) | P1 + P2 |
+| Instanciar `ProcessadorObjectOS.de_settings(get_settings())` na thread de visão e chamar `publicar` por evento | P1 |
+| Criar `PublicadorFila(asyncio.get_running_loop(), fila)` no lifespan e entregá-lo a P1 | P4 |
+
+Os testes (10 levantamentos + 3 «beber» + saída/regresso) usam dados SIMULADOS; **não** validam o clip real.
