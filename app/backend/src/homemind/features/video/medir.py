@@ -8,7 +8,7 @@ import argparse
 import time
 
 from homemind.core.config import get_settings
-from homemind.features.video.fonte import FonteRtsp
+from homemind.features.video.fonte import criar_fonte
 
 
 def main() -> None:
@@ -22,7 +22,7 @@ def main() -> None:
     if not settings.video_source:
         raise SystemExit("VIDEO_SOURCE não está definido.")
 
-    fonte = FonteRtsp(settings.video_source, sem_frame_s=settings.video_sem_frame_s)
+    fonte = criar_fonte(settings)
     fonte.iniciar()
     inicio = time.monotonic()
     fim = inicio + args.minutos * 60
@@ -58,7 +58,7 @@ def main() -> None:
                     f"[{args.rotulo}] t={agora - inicio:6.0f}s  "
                     f"fps={janela / args.intervalo:5.1f}  "
                     f"maior_intervalo={maior_intervalo_janela * 1000:6.0f}ms  "
-                    f"camara_ok={ok}  resolucao={resolucao}",
+                    f"camara_ok={ok}  reconexoes={fonte.reconexoes}  resolucao={resolucao}",
                     flush=True,
                 )
                 janela, maior_intervalo_janela = 0, 0.0
@@ -73,7 +73,7 @@ def main() -> None:
     print(
         f"RESUMO [{args.rotulo}] duracao={duracao:.0f}s  frames={total}  "
         f"fps_medio={total / duracao:.1f}  maior_intervalo={maior_intervalo * 1000:.0f}ms  "
-        f"quedas={quedas}  resolucao={resolucao}"
+        f"quedas={quedas}  reconexoes={fonte.reconexoes}  resolucao={resolucao}"
     )
 
 
