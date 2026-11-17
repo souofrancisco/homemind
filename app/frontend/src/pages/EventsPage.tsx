@@ -1,56 +1,135 @@
-import { Badge, Card, Code, Group, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { Button, Card, Group, Pagination, Select, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
+import { EventItem, type EventGroup } from "../components/events/EventItem";
 import { useHome } from "../hooks/useHome";
-import type { EventCategory, EventLogItem } from "../types/home";
+import type { EventLogItem } from "../types/home";
 
 const categories: { value: string; label: string }[] = [
-  { value: "presence", label: "Presença" }, { value: "object", label: "Objeto detetado" }, { value: "gesture", label: "Gesto confirmado" },
-  { value: "mode", label: "Modo ativado" }, { value: "rule", label: "Regra executada" }, { value: "device", label: "Dispositivo atualizado" },
-  { value: "energy", label: "Energia" }, { value: "system", label: "Sistema / erro" },
+  { value: "presence", label: "Presença" }, { value: "object", label: "Objeto" }, { value: "gesture", label: "Gesto" },
+  { value: "mode", label: "Modo" }, { value: "rule", label: "Regra" }, { value: "device", label: "Dispositivo" },
+  { value: "energy", label: "Energia" }, { value: "system", label: "Outros" },
 ];
-const categoryLabels: Record<EventCategory, string> = Object.fromEntries(categories.map(({ value, label }) => [value, label])) as Record<EventCategory, string>;
 const levels = [{ value: "info", label: "Informação" }, { value: "warning", label: "Aviso" }, { value: "error", label: "Erro" }];
+const periods = [{ value: "24h", label: "Últimas 24 horas" }, { value: "7d", label: "Últimos 7 dias" }, { value: "all", label: "Todos os eventos carregados" }];
 const pageLoadedAt = Date.now();
-const dateLabel = (value: string) => new Intl.DateTimeFormat("pt-PT", { dateStyle: "medium", timeStyle: "medium" }).format(new Date(value));
-
-function OperationCard({ events }: { events: EventLogItem[] }) {
-  const ordered = [...events].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
-  const timestamps = ordered.map((event) => Date.parse(event.timestamp));
-  const valid = timestamps.every(Number.isFinite);
-  const duration = valid && timestamps.length > 1 ? Math.max(...timestamps) - Math.min(...timestamps) : null;
-  const label = (ms: number) => ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
-  return <Card withBorder radius="lg">
-    <Group justify="space-between" mb="sm"><div><Text fw={600}>Sequência de operação</Text><Text size="xs" c="dimmed">Correlação {events[0]?.correlation_id}</Text></div>{duration != null ? <Badge variant="light">Duração {label(duration)}</Badge> : null}</Group>
-    <Stack gap="sm">{ordered.map((event) => <Group key={event.id} align="flex-start" wrap="nowrap"><Badge size="xs" variant="light">{categoryLabels[event.category ?? "system"]}</Badge><div style={{ flex: 1 }}><Text size="sm">{event.message}</Text><Text size="xs" c="dimmed">{dateLabel(event.timestamp)}</Text>{event.details ? <Code block mt={6}>{JSON.stringify(event.details, null, 2)}</Code> : null}</div><Badge size="xs" color={event.source === "fake" ? "yellow" : "teal"}>{event.source === "fake" ? "SIM" : "REAL"}</Badge></Group>)}</Stack>
-  </Card>;
-}
+const eventTime = (event: EventLogItem) => Date.parse(event.timestamp);
+const categoryOf = (event: EventLogItem) => event.category ?? "system";
+const eventGroups = (items: EventLogItem[]): EventGroup[] => {
+  const groups = new Map<string, EventLogItem[]>();
+  for (const event of items) {
+    const key = event.correlation_id ? `operation:${event.correlation_id}` : `event:${event.id}`;
+    const group = groups.get(key);
+    if (group) group.push(event);
+    else groups.set(key, [event]);
+  }
+  return [...groups.values()].map((events) => ({
+    events: [...events].sort((a, b) => eventTime(a) - eventTime(b)),
+    newest: Math.max(...events.map(eventTime).filter(Number.isFinite)),
+  })).sort((a, b) => b.newest - a.newest);
+};
 
 export default function EventsPage() {
-  const { events, source } = useHome();
+  const { events, online } = useHome();
+  const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [level, setLevel] = useState<string | null>(null);
   const [period, setPeriod] = useState<string | null>("7d");
+  const [pageSize, setPageSize] = useState("10");
+  const [page, setPage] = useState(1);
+  const pageLimit = Number(pageSize) || 10;
+
   const filtered = useMemo(() => {
-    const cutoff = period === "24h" ? pageLoadedAt - 86400000 : period === "7d" ? pageLoadedAt - 7 * 86400000 : 0;
-    return events.filter((event) => (!category || (event.category ?? "system") === category)
-      && (!level || event.level === level)
-      && Number.isFinite(Date.parse(event.timestamp)) && Date.parse(event.timestamp) >= cutoff);
-  }, [events, category, level, period]);
-  const groups = useMemo(() => {
-    const grouped = new Map<string, EventLogItem[]>();
-    for (const event of filtered) {
-      const key = event.correlation_id ? `operation:${event.correlation_id}` : `event:${event.id}`;
-      grouped.set(key, [...(grouped.get(key) ?? []), event]);
+    const now = pageLoadedAt;
+    const cutoff = period === "24h" ? now - 86400000 : period === "7d" ? now - 7 * 86400000 : 0;
+    const needle = search.trim().toLocaleLowerCase("pt-PT");
+    return events.filter((event) => {
+      const timestamp = eventTime(event);
+      return (!needle || event.message.toLocaleLowerCase("pt-PT").includes(needle))
+        && (!category || categoryOf(event) === category)
+        && (!level || event.level === level)
+        && Number.isFinite(timestamp) && timestamp >= cutoff;
+    });
+  }, [events, search, category, level, period]);
+
+  const groups = useMemo(() => eventGroups(filtered), [filtered]);
+  const pages = useMemo(() => {
+    const result: EventGroup[][] = [];
+    let current: EventGroup[] = [];
+    let count = 0;
+    for (const group of groups) {
+      const size = group.events.length;
+      if (current.length && count + size > pageLimit) {
+        result.push(current);
+        current = [];
+        count = 0;
+      }
+      current.push(group);
+      count += size;
     }
-    return [...grouped.values()];
-  }, [filtered]);
-  const simulated = source === "mock";
+    if (current.length) result.push(current);
+    return result;
+  }, [groups, pageLimit]);
+  const pageCount = Math.max(1, pages.length);
+  const safePage = Math.min(page, pageCount);
+  const currentGroups = pages[safePage - 1] ?? [];
+  const currentEvents = currentGroups.flatMap((group) => group.events);
+  const first = currentEvents.length ? (pages.slice(0, safePage - 1).reduce((sum, entry) => sum + entry.reduce((n, group) => n + group.events.length, 0), 0) + 1) : 0;
+  const last = first ? first + currentEvents.length - 1 : 0;
+  const hasFilters = Boolean(search.trim() || category || level || period !== "all");
+  const updateFilter = (update: () => void) => {
+    update();
+    setPage(1);
+  };
+  const clearFilters = () => {
+    setSearch("");
+    setCategory(null);
+    setLevel(null);
+    setPeriod("all");
+    setPage(1);
+  };
 
   return <Stack gap="lg">
-    <Group justify="space-between" align="flex-start" wrap="wrap"><div><Text c="dimmed" size="sm">REGISTO EXPLICÁVEL</Text><Title order={2}>Eventos</Title><Text c="dimmed">Cada decisão mostra a origem e a evidência disponível.</Text></div><Badge size="lg" color={simulated ? "yellow" : "teal"}>{simulated ? "DADOS SIMULADOS" : "ORIGEM API"}</Badge></Group>
-    <SimpleGrid cols={{ base: 1, sm: 3 }}><Select label="Categoria" placeholder="Todas" clearable data={categories} value={category} onChange={setCategory} /><Select label="Período" value={period} onChange={setPeriod} data={[{ value: "24h", label: "Últimas 24 horas" }, { value: "7d", label: "Últimos 7 dias" }, { value: "all", label: "Todo o histórico" }]} /><Select label="Gravidade" placeholder="Todas" clearable data={levels} value={level} onChange={setLevel} /></SimpleGrid>
-    {events.some((event) => !event.category) ? <Text size="xs" c="dimmed">Os eventos atuais não incluem categoria estruturada; surgem como Sistema. O filtro por categoria depende da validação do contrato.</Text> : null}
-    <Text size="sm" c="dimmed">{filtered.length} eventos · até 50 carregados</Text>
-    {groups.length ? groups.map((group) => group[0]?.correlation_id ? <OperationCard key={group[0].correlation_id} events={group} /> : <Card key={group[0]?.id} withBorder radius="lg"><Group align="flex-start" wrap="nowrap"><Badge color={group[0]?.level === "error" ? "red" : group[0]?.level === "warning" ? "yellow" : "teal"}>{categoryLabels[group[0]?.category ?? "system"]}</Badge><div style={{ flex: 1 }}><Text>{group[0]?.message}</Text><Text size="xs" c="dimmed">{group[0] ? dateLabel(group[0].timestamp) : ""}</Text>{group[0]?.details ? <Code block mt="xs">{JSON.stringify(group[0].details, null, 2)}</Code> : null}</div><Badge color={group[0]?.source === "fake" ? "yellow" : "teal"}>{group[0]?.source === "fake" ? "SIMULADO" : "REAL"}</Badge></Group></Card>) : <Card withBorder radius="lg"><Text ta="center" c="dimmed" py="lg">Não há eventos para estes filtros.</Text></Card>}
+    <Group justify="space-between" align="flex-start" wrap="wrap">
+      <Title order={2}>Eventos</Title>
+    </Group>
+
+    <Card withBorder radius="lg" p="md">
+      <Stack gap="sm">
+        <TextInput label="Pesquisar mensagens" placeholder="Ex.: modo leitura" value={search} onChange={(event) => updateFilter(() => setSearch(event.currentTarget.value))} />
+        <SimpleGrid cols={{ base: 1, xs: 2, sm: 3 }}>
+          <Select label="Categoria" placeholder="Todas" clearable data={categories} value={category} onChange={(value) => updateFilter(() => setCategory(value))} />
+          <Select label="Tipo" placeholder="Todos" clearable data={levels} value={level} onChange={(value) => updateFilter(() => setLevel(value))} />
+          <Select label="Período" value={period} onChange={(value) => updateFilter(() => setPeriod(value))} data={periods} />
+        </SimpleGrid>
+        {hasFilters ? <Group justify="flex-end"><Button variant="subtle" size="compact-sm" leftSection={<IconX size={14} />} onClick={clearFilters}>Limpar filtros</Button></Group> : null}
+      </Stack>
+    </Card>
+
+    <Group justify="space-between" align="center" wrap="wrap">
+      <Text size="sm" c="dimmed">{first}–{last} de {filtered.length} eventos</Text>
+      <Select aria-label="Eventos por página" w={130} value={pageSize} onChange={(value) => { setPageSize(value ?? "10"); setPage(1); }} data={[{ value: "10", label: "10 por página" }, { value: "20", label: "20 por página" }, { value: "50", label: "50 por página" }]} />
+    </Group>
+
+    {currentGroups.length ? <Stack gap="md">{dateGroups(currentGroups).map(({ label, groups: dateEvents }) => <Stack key={label} gap="xs"><Text size="sm" fw={600} c="dimmed">{label}</Text>{dateEvents.map((group) => <EventItem key={group.events[0]?.correlation_id ?? group.events[0]?.id} group={group} />)}</Stack>)}</Stack>
+      : <Card withBorder radius="lg"><Text ta="center" c="dimmed" py="lg">{events.length ? `Nenhum evento corresponde aos filtros${filterSummary(search, category, level, period)}.` : online ? "Ainda não há eventos disponíveis." : "Não foi possível carregar eventos. Verifica a ligação e tenta novamente mais tarde."}</Text>{hasFilters ? <Group justify="center"><Button variant="subtle" onClick={clearFilters}>Limpar filtros</Button></Group> : null}</Card>}
+
+    {pageCount > 1 ? <Group justify="space-between" align="center"><Button variant="default" disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Anterior</Button><Pagination total={pageCount} value={safePage} onChange={setPage} size="sm" siblings={0} boundaries={1} /><Button variant="default" disabled={safePage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>Seguinte</Button></Group> : null}
+    <Text size="xs" c="dimmed">A lista mostra até 50 eventos recentes.</Text>
   </Stack>;
+}
+
+function dateGroups(groups: EventGroup[]) {
+  const byDate = new Map<string, EventGroup[]>();
+  for (const group of groups) {
+    const timestamp = group.newest;
+    const key = Number.isFinite(timestamp) ? new Intl.DateTimeFormat("pt-PT", { dateStyle: "full" }).format(timestamp) : "Data desconhecida";
+    byDate.set(key, [...(byDate.get(key) ?? []), group]);
+  }
+  return [...byDate].map(([label, dateEvents]) => ({ label, groups: dateEvents }));
+}
+
+function filterSummary(search: string, category: string | null, level: string | null, period: string | null) {
+  const active = [search.trim() ? `pesquisa “${search.trim()}”` : "", category ? categories.find((item) => item.value === category)?.label : "", level ? levels.find((item) => item.value === level)?.label : "", period && period !== "all" ? periods.find((item) => item.value === period)?.label : ""].filter(Boolean);
+  return active.length ? ` (${active.join(", ")})` : "";
 }
