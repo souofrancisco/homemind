@@ -4,7 +4,8 @@ import {
 import { IconAlertCircle, IconChevronDown, IconChevronUp } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
-import ReceiptExplanationView from "../components/billing/ReceiptExplanationView";
+import { LandlordContestations, TenantContest, type ContestTarget } from "../components/billing/Contestations";
+import ReceiptExplanationView, { type Own } from "../components/billing/ReceiptExplanationView";
 import {
   createBill, finalizeBill, getBillSummary, getMyReceipt, getMyReceiptExplanation, listBills, previewBill,
   type BillAllocation, type BillIn, type BillPreview, type BillView, type LandlordBillView, type ReceiptExplanation,
@@ -22,8 +23,17 @@ function Provenance({ p }: { p: BillView["provenance"] }) {
   return <Badge variant="light" color={p.origin === "simulated" ? "orange" : "teal"}>{originLabel[p.origin]} · {kindLabel[p.kind]}</Badge>;
 }
 
+const when = new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" });
+
 function Receipt({ householdId, bill }: { householdId: string; bill: BillView }) {
   const [state, setState] = useState<{ status: "loading" | "error" | "ready"; data?: BillAllocation }>({ status: "loading" });
+  const [target, setTarget] = useState<ContestTarget | null>(null);
+  // BILL-06: só a revisão em vigor se contesta; uma substituída já foi corrigida.
+  const canContest = bill.status === "finalized";
+  const contest = (item: Own) => setTarget({
+    consumptionEventId: item.consumption_event_id,
+    label: `${item.appliance_name ?? "aparelho não identificado"}, ${when.format(new Date(item.started_at))}`,
+  });
   useEffect(() => {
     let active = true;
     getMyReceipt(householdId, bill.id)
@@ -49,13 +59,14 @@ function Receipt({ householdId, bill }: { householdId: string; bill: BillView })
       </Table>
       <Group justify="space-between"><Text fw={700}>O teu total</Text><Text fw={700}>{eur(r.amount_cents)}</Text></Group>
       <Text size="xs" c="dimmed">Fixa {eur(r.fixed_share_cents)} · resíduo comum {eur(r.residual_share_cents)} · individual {eur(r.individual_cents)}. Calculado no servidor.</Text>
-      <Explanation householdId={householdId} billId={bill.id} />
+      <Explanation householdId={householdId} billId={bill.id} onContest={canContest ? contest : undefined} />
+      <TenantContest householdId={householdId} billId={bill.id} canContest={canContest} target={target} onClearTarget={() => setTarget(null)} />
     </Stack>
   );
 }
 
 /** «Porque pago isto?» (BILL-05): só se pede ao servidor quando o morador abre. */
-function Explanation({ householdId, billId }: { householdId: string; billId: string }) {
+function Explanation({ householdId, billId, onContest }: { householdId: string; billId: string; onContest?: (item: Own) => void }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<{ status: "idle" | "loading" | "error" | "ready"; data?: ReceiptExplanation }>({ status: "idle" });
   const load = () => {
@@ -79,7 +90,7 @@ function Explanation({ householdId, billId }: { householdId: string; billId: str
           <Alert color="red" variant="light" icon={<IconAlertCircle />} title="Não foi possível carregar a explicação">
             <Button size="xs" color="red" variant="light" onClick={load}>Tentar novamente</Button>
           </Alert>
-        ) : state.data ? <ReceiptExplanationView data={state.data} /> : null)}
+        ) : state.data ? <ReceiptExplanationView data={state.data} onContest={onContest} /> : null)}
     </Stack>
   );
 }
@@ -180,6 +191,7 @@ export default function BillsContent() {
 
   return (
     <Stack gap="md">
+      {role === "landlord" && <LandlordContestations householdId={householdId} reload={reload} onDecided={() => load()} />}
       {role === "landlord" && <BillForm householdId={householdId} origin={session.house?.source_kind === "real" ? "real" : "simulated"} onCreated={() => load()} />}
       {!current ? <Group role="status"><Loader size="sm" /><Text>A carregar faturas…</Text></Group>
         : current.error ? (

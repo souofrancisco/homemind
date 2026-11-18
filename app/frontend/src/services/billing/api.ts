@@ -21,3 +21,15 @@ export const getMyReceipt = (householdId: string, billId: string) => api<BillAll
 export const getBillSummary = (householdId: string, billId: string) => api<LandlordBillView>(`${base(householdId)}/bills/${billId}/summary`);
 export const getMyReceiptExplanation = (householdId: string, billId: string) =>
   api<ReceiptExplanation>(`${base(householdId)}/bills/${billId}/receipt/explanation`);
+
+// BILL-06: contestar (inquilino) e decidir (senhorio).
+export type Contestation = Schemas["Contestation"];
+export type ContestationIn = Schemas["ContestationIn"];
+export type ContestationDecisionIn = Schemas["ContestationDecisionIn"];
+export type LandlordContestationView = Schemas["LandlordContestationView"];
+export const contestBill = (householdId: string, billId: string, body: ContestationIn) =>
+  post<Contestation>(`${base(householdId)}/bills/${billId}/contestations`, body);
+export const listMyContestations = (householdId: string) => api<Contestation[]>(`${base(householdId)}/contestations/mine`);
+export const listContestations = (householdId: string) => api<LandlordContestationView[]>(`${base(householdId)}/contestations`);
+export const decideContestation = (householdId: string, contestationId: string, body: ContestationDecisionIn) =>
+  post<LandlordContestationView>(`${base(householdId)}/contestations/${contestationId}/decision`, body);

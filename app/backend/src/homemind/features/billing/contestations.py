@@ -240,37 +240,48 @@ def mine(conn: sqlite3.Connection, household_id: UUID, resident_id: UUID) -> lis
     return [Contestation.model_validate_json(r["json"]) for r in rows]
 
 
+def _room_names(conn: sqlite3.Connection, household_id: UUID) -> dict[str, str]:
+    rows = conn.execute("SELECT id, name FROM room WHERE household_id = ?", (str(household_id),))
+    return {r["id"]: r["name"] for r in rows}
+
+
+def _landlord_view(
+    conn: sqlite3.Connection, c: Contestation, names: dict[str, str]
+) -> LandlordContestationView:
+    allocation = _allocation_of(conn, c.bill_id, c.resident_id)
+    room = allocation.room_id if allocation else None
+    return LandlordContestationView(
+        id=c.id,
+        bill_id=c.bill_id,
+        room_id=room,
+        room_name=names.get(str(room)) if room else None,
+        reason=c.reason,
+        contests_consumption=c.consumption_event_id is not None,
+        status=c.status,
+        created_at=c.created_at,
+        resolved_at=c.resolved_at,
+        resolution=c.resolution,
+        revision_bill_id=c.revision_bill_id,
+        before_cents=c.before_cents,
+        after_cents=c.after_cents,
+    )
+
+
+def landlord_view(
+    conn: sqlite3.Connection, household_id: UUID, c: Contestation
+) -> LandlordContestationView:
+    """Uma contestação vista pelo senhorio (resposta à decisão): sem consumo nem morador."""
+    return _landlord_view(conn, c, _room_names(conn, household_id))
+
+
 def for_landlord(conn: sqlite3.Connection, household_id: UUID) -> list[LandlordContestationView]:
     """Quarto em vez de pessoa; nunca o consumo contestado (aparelho, horas) nem presença."""
-    names = {
-        r["id"]: r["name"]
+    names = _room_names(conn, household_id)
+    return [
+        _landlord_view(conn, Contestation.model_validate_json(r["json"]), names)
         for r in conn.execute(
-            "SELECT id, name FROM room WHERE household_id = ?", (str(household_id),)
-        )
-    }
-    out = []
-    for r in conn.execute(
-        "SELECT json FROM billing_contestation WHERE household_id = ? ORDER BY created_at DESC, id",
-        (str(household_id),),
-    ).fetchall():
-        c = Contestation.model_validate_json(r["json"])
-        allocation = _allocation_of(conn, c.bill_id, c.resident_id)
-        room = allocation.room_id if allocation else None
-        out.append(
-            LandlordContestationView(
-                id=c.id,
-                bill_id=c.bill_id,
-                room_id=room,
-                room_name=names.get(str(room)) if room else None,
-                reason=c.reason,
-                contests_consumption=c.consumption_event_id is not None,
-                status=c.status,
-                created_at=c.created_at,
-                resolved_at=c.resolved_at,
-                resolution=c.resolution,
-                revision_bill_id=c.revision_bill_id,
-                before_cents=c.before_cents,
-                after_cents=c.after_cents,
-            )
-        )
-    return out
+            "SELECT json FROM billing_contestation WHERE household_id = ?"
+            " ORDER BY created_at DESC, id",
+            (str(household_id),),
+        ).fetchall()
+    ]

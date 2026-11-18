@@ -380,17 +380,19 @@ async def decide_contestation(
     db: DbDep,
     clock: ClockDep,
     request: Request,
-) -> Contestation:
+) -> LandlordContestationView:
     """Senhorio decide com justificação. Aceitar reemite a fatura (nova revisão) com antes/depois;
-    já decidida: `409 contestation_resolved`."""
+    já decidida: `409 contestation_resolved`. Devolve a vista do senhorio (sem consumo nem
+    morador), a mesma da lista."""
     now, new_bill = clock(), new_id()
 
     def work(conn):
         if body.bill is not None:
             _validate(conn, access, body.bill, now)
-        return contestations.decide(
+        events, decided = contestations.decide(
             conn, access.household_id, contestation_id, access.resident_id, body, new_bill, now
         )
+        return events, contestations.landlord_view(conn, access.household_id, decided)
 
     return await _commit(request, db, work)
 
