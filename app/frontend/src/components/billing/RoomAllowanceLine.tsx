@@ -1,6 +1,6 @@
 import { Button, Group, NumberInput, Stack, Text } from "@mantine/core";
 import { useState } from "react";
-import { setRoomAllowance, type RoomAllowanceView } from "../../services/billing/api";
+import { setRoomAllowance, type RoomAllowanceView } from "../../services/billing/allowances";
 
 // Plafond solidário de um quarto (BILL-03). O servidor decide quando a mudança vale (dia 1 do mês
 // seguinte); aqui só se mostra e, para o senhorio, se agenda.

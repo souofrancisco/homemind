@@ -10,7 +10,7 @@ import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { useAuth } from "../app/providers/AuthProvider";
 import BillsContent from "./BillsPage";
 import RoomAllowanceLine from "../components/billing/RoomAllowanceLine";
-import { listRoomAllowances, type RoomAllowanceView } from "../services/billing/api";
+import { listRoomAllowances, type RoomAllowanceView } from "../services/billing/allowances";
 import HouseRulesCard from "../components/billing/HouseRulesCard";
 import Dashboard from "./DashboardPage";
 import AppliancesContent from "./AppliancesPage";
