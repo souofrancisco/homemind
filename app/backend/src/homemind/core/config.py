@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     mcp_write_max_minutes: int = 60
     mcp_lamp_id: str = ""
     mcp_plug_id: str = ""
+    # ALERT-06: divisão (`room.id`) onde está a lâmpada do kit, na casa ENERGY_HOUSEHOLD_ID. Sem
+    # ela a lâmpada não tem divisão conhecida e nunca recebe a cor do orçamento (mais restritivo).
+    mcp_lamp_room_id: UUID | None = None
     # Unidade de `instantPower` quando o MCP não a declara (o kit real não declara). Vazio =
     # desconhecida: consumo_w fica null. Confirmar com carga conhecida (docs/mcp-capabilities.md).
     mcp_instantpower_unit: Literal["", "W", "dW", "mW"] = ""
