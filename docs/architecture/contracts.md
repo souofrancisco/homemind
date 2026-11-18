@@ -163,7 +163,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | `GET` | `/api/households/{id}/bills/{bill_id}/summary` | L (totais por quarto) | **IMPLEMENTADO** (`LandlordBillView`) |
 | `GET` | `/api/households/{id}/bills/{bill_id}/receipt` | T | **IMPLEMENTADO**: `BillAllocation` própria (recibo por linhas) |
 | `POST` | `/api/allocations/{id}/contest` | T | |
-| `GET` `PUT` | `/api/me/budget?period` | T | Orçamento pessoal |
+| `GET` `PUT` | `/api/households/{id}/budgets/me?period` | T | **IMPLEMENTADO (ALERT-01):** `BudgetIn` → `BudgetStatus` |
 | `GET` `PUT` | `/api/households/{id}/room-allowances` | L | Plafond por quarto |
 
 ### Notificações (P3)
