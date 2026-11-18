@@ -146,8 +146,11 @@ def events() -> list[ev.EventBase]:
         138,
         billing.BudgetThreshold(
             budget_id=fx.budget().id,
+            resident_id=fx.budget().resident_id,
+            period=fx.budget().period,
             pct=80,
             spent_cents=2000,
+            limit_cents=fx.budget().limit_cents,
             forecast_cents=3100,
         ),
         fx.SIM_ESTIMATED,
