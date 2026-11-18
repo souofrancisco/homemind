@@ -26,7 +26,6 @@ from homemind.core.access import (
     require_access,
 )
 from homemind.core.events import Handler
-from homemind.features.appliances.repo import SqliteApplianceCatalog
 from homemind.features.energy.consumer import make_step_consumer
 from homemind.features.energy.steps import StepTracker
 
@@ -34,19 +33,23 @@ CONSUMER = "energy.steps"
 EVENT_TYPES = ["energy.reading_recorded"]
 
 
-def make_dispatcher() -> Handler:
+def make_dispatcher(app: FastAPI) -> Handler:
     """Um `StepTracker` por casa, criado à primeira leitura.
 
     shortcut: o estado dos trackers vive só em memória; após reinício a sessão em curso perde-se
     e recomeça na próxima leitura. Persistir o estado quando houver medição real contínua.
     """
-    catalog = SqliteApplianceCatalog()
     handlers: dict[UUID, Handler] = {}
 
     def handle(conn: sqlite3.Connection, stored: StoredEvent):
         house = stored.event.household_id
         if house not in handlers:
-            handlers[house] = make_step_consumer(StepTracker(household_id=house), catalog=catalog)
+            handlers[house] = make_step_consumer(
+                StepTracker(household_id=house),
+                # Publicado por `appliances` em app.state (sem importar a feature); lido tarde
+                # para não depender da ordem de arranque. Sem catálogo: nada é identificado.
+                catalog=getattr(app.state, "appliance_catalog", None),
+            )
         return handlers[house](conn, stored)
 
     return handle
@@ -54,7 +57,7 @@ def make_dispatcher() -> Handler:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    app.state.bus.subscribe(CONSUMER, make_dispatcher(), EVENT_TYPES)
+    app.state.bus.subscribe(CONSUMER, make_dispatcher(app), EVENT_TYPES)
     yield
 
 

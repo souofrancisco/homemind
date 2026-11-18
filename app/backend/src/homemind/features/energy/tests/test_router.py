@@ -61,3 +61,7 @@ def test_other_household_is_denied(app, client):
 
 def test_unauthenticated(client):
     assert client.get(URL.format(_house())).status_code == 401
+
+
+def test_catalog_vem_de_app_state_sem_import_cruzado(app):
+    assert app.state.appliance_catalog is not None
