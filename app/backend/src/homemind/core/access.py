@@ -36,6 +36,7 @@ class Resource(StrEnum):
     presence = "presence"  # quem está em casa
     camera_status = "camera_status"  # diagnóstico da câmara (sem imagens)
     attribution = "attribution"
+    house_rules = "house_rules"  # regra da sala versionada (HOUSE-04)
     bill = "bill"
     receipt = "receipt"  # alocações e recibos
     budget = "budget"
@@ -74,6 +75,7 @@ PERMISSIONS: dict[Resource, dict[Operation, dict[MembershipRole, Grant]]] = {
     Resource.presence: {R: {TT: OWN}, W: {TT: OWN}},  # nem co-moradores recebem estados individuais
     Resource.camera_status: {R: {OP: DIAG}},
     Resource.attribution: {R: {TT: OWN}},
+    Resource.house_rules: {R: {LL: HH, TT: HH}, W: {TT: HH}},  # a casa escolhe; senhorio lê
     Resource.bill: {R: {LL: AGG, TT: OWN}, W: {LL: HH}},
     Resource.receipt: {R: {LL: AGG, TT: OWN}, W: {TT: OWN}},  # W: contestar
     Resource.budget: {R: {TT: OWN}, W: {TT: OWN}},

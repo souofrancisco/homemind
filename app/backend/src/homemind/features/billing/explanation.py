@@ -32,7 +32,7 @@ from homemind.contracts.billing import (
 )
 from homemind.contracts.common import Origin, Provenance, ValueKind
 from homemind.contracts.energy import ConsumptionEvent, LocationKind, MatchOutcome
-from homemind.features.billing import bills, closing
+from homemind.features.billing import bills, closing, rules
 from homemind.features.billing.allocation import draw_order, largest_remainder
 
 
@@ -60,7 +60,7 @@ def explain(conn: sqlite3.Connection, row: sqlite3.Row, mine: BillAllocation) ->
     draw = draw_order(bill)
     items = _items(conn, bill.id)
     house = conn.execute(
-        "SELECT timezone, common_area_rule FROM household WHERE id = ?", (str(bill.household_id),)
+        "SELECT timezone FROM household WHERE id = ?", (str(bill.household_id),)
     ).fetchone()
     names = _Names(conn, bill.household_id, ZoneInfo(house["timezone"]), mine.room_id)
     limit_row = conn.execute(
@@ -68,6 +68,7 @@ def explain(conn: sqlite3.Connection, row: sqlite3.Row, mine: BillAllocation) ->
         (str(bill.id), str(mine.room_id)),
     ).fetchone()
     limit = limit_row["limit_wh"] if limit_row else None
+    rule = rules.policy_on(conn, bill.household_id, bill.period.start).common_area_rule
 
     try:
         own, common, pool = _reconcile(mine, items, ids, equal, draw)
@@ -88,7 +89,7 @@ def explain(conn: sqlite3.Connection, row: sqlite3.Row, mine: BillAllocation) ->
         equal_split_cents=largest_remainder(bill.total_cents, equal, draw)[me],
         fixed_cents=mine.fixed_share_cents,
         price_millicents_per_kwh=view.price_millicents_per_kwh,
-        common_area_rule=house["common_area_rule"],
+        common_area_rule=rule,
         evidence_available=evidence,
         own=[
             _explain_own(item, cents, me, names, view.price_millicents_per_kwh, limit)

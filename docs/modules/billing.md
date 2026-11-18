@@ -93,7 +93,7 @@ O recibo mostra **cada linha** com a proveniência dos kWh (`measured` / `estima
 
 **IMPLEMENTADO (app):** no recibo do morador (página de faturas da APP-06), «Porque pago isto?» abre a explicação, que só é pedida ao servidor nesse momento: comparação com a divisão igual, os meus consumos com a linha temporal e a proveniência, a conta comum por aparelho e o não atribuído (`components/billing/ReceiptExplanationView.tsx`; a app não faz contas).
 
-**PLANEADO:** política versionada por data (HOUSE-04: hoje mostra-se a regra da sala em vigor); contagem de votos por consumo. Contestação: ver BILL-06 abaixo (IMPLEMENTADO).
+`common_area_rule` é a regra da sala em vigor no 1.º dia do período da fatura (HOUSE-04, abaixo). **PLANEADO:** contagem de votos por consumo. Contestação: ver BILL-06 abaixo (IMPLEMENTADO).
 
 ### Exemplos de aceitação (valores do PDF; fatura de 120 € = 24 € fixos + 600 kWh × 0,16 €)
 
@@ -147,7 +147,7 @@ Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `
 | Votação da regra B (D-32) | IMPLEMENTADO no contrato (`confirmation_outcome`) e consumido pelo atribuidor |
 | Atribuidor persistente (`features/billing/attributor.py`, consumidor `billing.attributor`, migração `0101`): `energy.consumption_*` → atribuição direta ou `billing.confirmation_needed`; `notification.responded` decidido → atribuição por confirmação; prazo esgotado (tarefa a cada 60 s) → conta comum. Emite `billing.attribution_changed`; nada se apaga (`superseded`) | IMPLEMENTADO |
 | Completar o consumo enquanto energy não localiza nem estima custo (BILL-02 #90, `attributor.locate` / `with_cost_estimate`): localização `unknown` → divisão configurada da tomada (`device.room_id`; quarto → `room`, zona comum → `common`; sem divisão, tomada desconhecida ou `main_meter` → fica `unknown`); a localização dada por energy nunca é substituída e a versão localizada é a que billing guarda (recibos e explicação coerentes). Sem `cost_estimate` → energia × preço de referência da casa ou preço médio da última fatura fechada, só para decidir se se pergunta (não se grava); sem preço não se pergunta. Limitação: `device.room_id` não tem histórico, por isso reprocessar consumos antigos usa a configuração atual da tomada | IMPLEMENTADO (provisório até ENERGY-05 #83) |
-| Regra da sala por data (política versionada, HOUSE-04 #87) | PLANEADO: hoje nenhum endpoint muda `common_area_rule`; o atribuidor lê a regra atual |
+| Regra da sala por data (política versionada, HOUSE-04 #87, `features/billing/rules.py`, migração `0108`): o atribuidor decide cada consumo com a versão do dia em que começou | IMPLEMENTADO (ver «Regras da casa versionadas») |
 | Entrada da fatura (BILL-01): `BillIn` → pré-visualização → rascunho em `billing_bill` (migração `0100`), `billing.bill_created`, leitura por papel | IMPLEMENTADO (`features/billing/{bills,router}.py`) |
 | Fecho do mês (BILL-04, `features/billing/closing.py`, migração `0102`): finalizar (parcelas imutáveis, Σ = total ao cêntimo, `409` ao repetir), correções por revisão (a anterior fica `superseded`), resumo do senhorio por quarto e recibo do inquilino | IMPLEMENTADO |
 | Orçamento pessoal e avisos 50/80/100 % (ALERT-01, `features/billing/budgets.py`, migração `0103`): gasto com todos os custos (D-31), desconhecido sem preço, um aviso por limiar e ciclo (ao saltar vários avisa só o mais alto), reset explícito ao redefinir; reavaliado em cada atribuição, fecho de fatura e a cada 60 s. `alerts.threshold_crossed` → aviso pessoal (consumidor `notifications.budget_threshold`) | IMPLEMENTADO |
@@ -158,7 +158,7 @@ Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `
 | Quartos frios (ALERT-06, `features/billing/comfort.py`, migração `0120`): consumidor `billing.cold_rooms` de `sensor.reading_recorded` (só temperatura `ok` com quarto `bedroom`; `unknown`/`stale`/sem quarto/sala ignorados). Guarda só o agregado da noite (22:00–08:00, fuso da casa); noite fria = média < 18 °C; ≥ 3 noites frias nas últimas 7 completas → `alerts.cold_room` para o inquilino do quarto, uma vez por janela. Consumidor P3 `notifications.cold_room` → `comfort_alert` pessoal (nunca senhorio), sem valores de plafond (aviso «ainda tens X kWh do plafond»: PLANEADO) | IMPLEMENTADO |
 | Plafond solidário de aquecimento (BILL-03, `features/billing/allowance.py`, migração `0106`): ver «Plafond solidário» abaixo | IMPLEMENTADO |
 | Contestar e reemitir (BILL-06, `features/billing/contestations.py`, migração `0130`): o inquilino contesta o **próprio** recibo (opcionalmente um consumo atribuído a si; uma aberta por fatura); só o senhorio decide, sempre com justificação. Rejeitar não muda nada. Aceitar passa o consumo contestado para a conta comum (`manual`, auditado com o senhorio como autor; nunca pior do que a divisão igual), corrige opcionalmente os dados da fatura e **reemite sempre como nova revisão** (a anterior fica `superseded`), guardando o antes/depois da parcela. Correções diretas (`/revisions`) levam as contestações abertas para a nova revisão. O senhorio vê quarto, motivo e decisão, nunca o consumo nem presença. `billing.contestation_changed` → consumidor P3 `notifications.contestation` (aberta: aviso aos senhorios sem o motivo; decidida: aviso a quem contestou com justificação e antes/depois). Respostas tardias a «de quem é esta conta?» não mudam faturas fechadas (o atribuidor ignora-as após o prazo). **App (página Faturas):** o inquilino contesta o recibo («Não concordo com este recibo») ou um consumo na explicação («Este consumo não é meu») e vê o estado e a decisão; o senhorio vê a lista e aceita/rejeita com justificação. Corrigir os dados da fatura ao aceitar (`bill`) só pela API | IMPLEMENTADO |
-| Previsão do fim do mês e tarifário simples/bi-horário (ALERT-02, `features/billing/{budgets,tariff}.py`, migração `0107`): ver «Previsão e tarifário» abaixo | IMPLEMENTADO (API; a página do orçamento ainda não mostra a previsão) |
+| Previsão do fim do mês e tarifário simples/bi-horário (ALERT-02, `features/billing/{budgets,tariff}.py`, migração `0108`): ver «Previsão e tarifário» abaixo | IMPLEMENTADO (API; a página do orçamento ainda não mostra a previsão) |
 | Fecho valorizado à hora (bi-horário na repartição da fatura real) | PLANEADO: o fecho reparte o total real por kWh, sem preço por hora |
 
 ## Previsão e tarifário (ALERT-02)
@@ -223,3 +223,20 @@ Exemplo do PDF (v5.1 §20, teste `test_exemplo_do_pdf_excesso_de_330_kwh`): fatu
 
 **PLANEADO:** o aviso privado «ainda tens X kWh do plafond» junto do alerta de quarto frio; e quem pode alterar `included_wh` depois de criado o quarto, e com que efeito (só nas faturas seguintes).
 
+
+## Regras da casa versionadas (HOUSE-04)
+
+**IMPLEMENTADO** (`features/billing/rules.py`, migração `0108_billing_policy_versions.sql`, cartão «Regras da casa» na página da casa). Estende o atribuidor (BILL-02); não há um segundo motor de decisão. Premissas:
+
+| Premissa | Regra |
+|---|---|
+| O que se versiona | A política da sala: `common_area_rule` (A `equal` / B `ask`), `ask_threshold_cents` (só se pergunta acima deste custo estimado; 0,50 € por omissão) e `ask_timeout_hours` (prazo da votação; 24 h por omissão). O quarto é sempre do morador do contrato, em qualquer versão. |
+| Política inicial | A de `household`, definida na criação da casa. Vale até à primeira versão datada. `HouseholdView.policy` continua a mostrar esta política inicial; a regra de cada dia está em `GET …/rules`. |
+| Quando vale | Uma mudança vale **a partir do dia 1 do mês seguinte** (fuso da casa), nunca no mês em curso. Assim nunca muda consumos já decididos nem faturas fechadas: «alterações só valem para períodos acordados». |
+| Quem muda | Qualquer morador (a casa escolhe, v5.1 §6.2); o senhorio lê; o operador não vê. Todos os moradores veem a mudança agendada antes de começar, com o autor. Até lá pode ser substituída ou cancelada; uma versão que já começou nunca muda nem se apaga. |
+| Regra de cada consumo | A versão do **dia em que o consumo começou**, como o contrato de quarto. Um consumo às 23:59 de 30/11 segue a regra de novembro. O prazo da pergunta (`expires_at`) fica fixado no momento em que se pergunta. |
+| Sem resposta | Nunca há cobrança individual incerta: o prazo termina na conta comum por igual (D-32). O v5.1 diz «sem resposta em 24 h → opção A ou C»; como C não existe, é sempre A. |
+| Regra C (presença) | Ainda não existe (BILL-07): agendá-la dá `400`. Uma casa que já a tenha na política inicial comporta-se como A. |
+| Simulável | `rules.version_on` e `attribution.decide` são puros: dada uma lista de versões e um dia, decidem sem base de dados (testes com relógio fixo em `test_rules.py`). |
+
+**PLANEADO:** aprovação da mudança por maioria dos moradores (hoje basta um morador, mas todos a veem e qualquer um a pode cancelar antes de começar); notificação da mudança agendada (P3); simular «quanto pagaria com a outra regra» sobre uma fatura fechada.

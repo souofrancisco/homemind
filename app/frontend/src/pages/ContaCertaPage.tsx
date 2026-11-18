@@ -9,6 +9,7 @@ import type { AppRole, SectionId } from "../app/routes";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { useAuth } from "../app/providers/AuthProvider";
 import BillsContent from "./BillsPage";
+import HouseRulesCard from "../components/billing/HouseRulesCard";
 import Dashboard from "./DashboardPage";
 import AppliancesContent from "./AppliancesPage";
 import EnergyContent from "./EnergyPage";
@@ -209,6 +210,9 @@ function HouseContent() {
           </SimpleGrid>
         ) : <Text c="dimmed">Ainda não existem divisões registadas nesta casa.</Text>}
       </section>
+      {(role === "tenant" || role === "landlord") && (
+        <HouseRulesCard householdId={session.house.id} canEdit={role === "tenant"} />
+      )}
       {role === "landlord" && (
         <Alert color="blue" variant="light">
           A vista de senhorio limita-se à gestão e aos totais autorizados. Não inclui presença, horários nem aparelhos pessoais dos moradores.

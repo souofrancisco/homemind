@@ -49,7 +49,7 @@ erDiagram
 ## Entidades
 
 ### Household
-Casa gerida por um senhorio. **IMPLEMENTADA.** `id`, `name`, `settings` (`timezone`, `energy_price_millicents_per_kwh?` — preço de referência para estimativas, nunca para a fatura —, `source_kind` `demo` \| `real`) e `policy` (`common_area_rule` `equal` \| `ask` \| `presence`, omissão `ask`; `ask_threshold_cents` 50; `ask_timeout_hours` 24). Uma casa `real` **recusa eventos simulados**; a `demo` aceita ambos (o MVP mistura tomada real e quartos simulados). **Responsável:** P5.
+Casa gerida por um senhorio. **IMPLEMENTADA.** `id`, `name`, `settings` (`timezone`, `energy_price_millicents_per_kwh?` — preço de referência para estimativas, nunca para a fatura —, `source_kind` `demo` \| `real`) e `policy` (`common_area_rule` `equal` \| `ask` \| `presence`, omissão `ask`; `ask_threshold_cents` 50; `ask_timeout_hours` 24) — a política **inicial**; as mudanças posteriores são versões datadas em `billing_policy_version` (HOUSE-04, [billing.md](../modules/billing.md#regras-da-casa-versionadas-house-04)). Uma casa `real` **recusa eventos simulados**; a `demo` aceita ambos (o MVP mistura tomada real e quartos simulados). **Responsável:** P5.
 
 ### Room
 `id`, `household_id`, `name`, `kind` (`bedroom` \| `common`), `included_wh` (plafond solidário de aquecimento por mês, só em quartos; BILL-03, ver [billing.md](../modules/billing.md)). A zona comum (sala, cozinha) é uma `Room` com `kind=common`. **P5.**
