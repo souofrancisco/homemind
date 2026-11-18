@@ -32,6 +32,7 @@ from homemind.contracts.safety import SafetyAlert, SafetyAlertKind, SafetyAlertS
 from homemind.features.notifications.compose import (
     compose_attribution_info,
     compose_budget_alert,
+    compose_cold_room,
     compose_confirmation,
     compose_peak_alert,
     compose_presence_check,
@@ -184,6 +185,33 @@ class NotificationService:
             origin=provenance.origin,
             correlation_id=correlation_id,
             now=self._clock(),
+        )
+        return self._create(n, provenance, dedupe=False)
+
+    def on_cold_room(
+        self,
+        d: de.ColdRoomData,
+        *,
+        source_event_id: UUID,
+        household_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
+    ) -> Outcome:
+        """`alerts.cold_room` (ALERT-06) -> aviso privado ao morador do quarto (nunca senhorio)."""
+        now = self._clock()
+        if self._directory.role_in(household_id, d.resident_id, now) is not MembershipRole.tenant:
+            return Outcome(None)
+        n = compose_cold_room(
+            household_id=household_id,
+            resident_id=d.resident_id,
+            cold_nights=d.cold_nights,
+            window_nights=d.window_nights,
+            threshold_c=d.threshold_c,
+            coldest_night_c=d.coldest_night_c,
+            origin=provenance.origin,
+            correlation_id=correlation_id,
+            source_event_id=source_event_id,
+            now=now,
         )
         return self._create(n, provenance, dedupe=False)
 

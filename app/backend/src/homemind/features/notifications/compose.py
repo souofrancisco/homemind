@@ -141,6 +141,41 @@ def compose_budget_alert(
     )
 
 
+def compose_cold_room(
+    *,
+    household_id: UUID,
+    resident_id: UUID,
+    cold_nights: int,
+    window_nights: int,
+    threshold_c: float,
+    coldest_night_c: float,
+    origin: Origin,
+    correlation_id: UUID,
+    source_event_id: UUID,
+    now: datetime,
+) -> Notification:
+    """Quarto frio (ALERT-06): pessoal, privado e sem ações. Não promete valores de plafond."""
+    t, c = f"{threshold_c:.0f}".replace(".", ","), f"{coldest_night_c:.1f}".replace(".", ",")
+    body = (
+        f"O teu quarto esteve abaixo de {t} °C em {cold_nights} das últimas {window_nights}"
+        f" noites (a mais fria em média: {c} °C). Não deixes de aquecer por causa da conta;"
+        " se precisares, fala com a casa sobre o plafond solidário."
+    )
+    return Notification(
+        id=notification_id_for(source_event_id, NotificationKind.comfort_alert),
+        household_id=household_id,
+        scope=NotificationScope.personal,
+        recipient_resident_id=resident_id,
+        kind=NotificationKind.comfort_alert,
+        severity=NotificationSeverity.info,
+        title="O teu quarto tem estado frio",
+        body=_tag(body, origin),
+        origin=origin,
+        correlation_id=correlation_id,
+        created_at=now,
+    )
+
+
 def _tag(body: str, origin: Origin) -> str:
     return body + (_SIMULATED if origin is Origin.simulated else "")
 

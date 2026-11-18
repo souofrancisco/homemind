@@ -82,6 +82,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `notification.responded` | P3 | `NotificationRespondedData` (resposta + `ref` + `outcome` nas confirmações: um evento por voto; P4 só atribui com `outcome.decided`) | P4 | idem |
 | `alerts.threshold_crossed` | P4 | `BudgetThreshold` | P3 | idem |
 | `alerts.alert_raised` | P4 | `AlertRaisedData` | P3 | idem |
+| `alerts.cold_room` | P4 | `ColdRoomData` (ALERT-06: quarto do morador várias noites < 18 °C; privado) | P3 | idem |
 | `agent.action_proposed` | P3 | `ProposedAction` | P3 | idem |
 | `automation.proposed` | P3 | `AutomationRule` | P3 | idem |
 | `automation.executed` | P1 | `AutomationExecutedData` | P3 | idem |

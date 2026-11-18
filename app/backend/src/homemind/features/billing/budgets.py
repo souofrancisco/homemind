@@ -31,6 +31,7 @@ from homemind.contracts.billing import (
     BudgetKind,
     BudgetStatus,
     BudgetThreshold,
+    budget_light,
 )
 from homemind.contracts.common import Origin, Provenance, ValueKind, cost_cents, stable_id
 from homemind.features.billing import bills
@@ -246,6 +247,7 @@ def status(
     budget = found[0] if found else None
     spend = month_spend(conn, household_id, resident_id, period, now)
     total = spend.total_cents if spend else None
+    pct = pct_of(total, budget.limit_cents) if budget and total is not None else None
     return BudgetStatus(
         period=period,
         budget=budget,
@@ -253,7 +255,8 @@ def status(
         confirmed_cents=spend.confirmed_cents if spend else None,
         shared_cents=spend.shared_cents if spend else None,
         base_cents=spend.base_cents if spend else None,
-        pct=pct_of(total, budget.limit_cents) if budget and total is not None else None,
+        pct=pct,
+        light=budget_light(pct),
         final=spend.final if spend else False,
         provenance=spend.provenance if spend else None,
         as_of=now,

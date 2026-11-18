@@ -13,6 +13,7 @@ Semântica (ver docs/architecture/event-flow.md):
 
 from __future__ import annotations
 
+from datetime import date
 from enum import StrEnum
 from typing import Annotated, Literal, Self, get_args
 from uuid import UUID
@@ -129,6 +130,19 @@ class AlertRaisedData(ContractModel):
     appliance_id: UUID | None = None
     power_w: PowerW | None = None
     since: UtcDatetime | None = None
+
+
+class ColdRoomData(ContractModel):
+    """ALERT-06: o quarto do morador esteve várias noites abaixo do limiar (média da noite,
+    só leituras `ok` do sensor de clima). Aviso PRIVADO ao morador; o senhorio nunca o vê."""
+
+    resident_id: UUID
+    room_id: UUID
+    cold_nights: Annotated[int, Field(strict=True, ge=1)]
+    window_nights: Annotated[int, Field(strict=True, ge=1)]
+    threshold_c: float
+    coldest_night_c: float  # média da noite mais fria da janela
+    last_night: date  # data (local) do início da última noite contada
 
 
 class AutomationExecutedData(ContractModel):
@@ -267,6 +281,11 @@ class AlertsAlertRaised(EventBase):
     data: AlertRaisedData
 
 
+class AlertsColdRoom(EventBase):
+    type: Literal["alerts.cold_room"] = "alerts.cold_room"
+    data: ColdRoomData
+
+
 # --- agente e automações --------------------------------------------------------------------
 
 
@@ -306,6 +325,7 @@ DomainEvent = Annotated[
     | NotificationResponded
     | AlertsThresholdCrossed
     | AlertsAlertRaised
+    | AlertsColdRoom
     | AgentActionProposed
     | AutomationProposed
     | AutomationExecuted,
