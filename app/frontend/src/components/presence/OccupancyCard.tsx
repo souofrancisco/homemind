@@ -27,6 +27,7 @@ export default function OccupancyCard({ householdId }: { householdId: string }) 
     );
   }
   const uncertain = data.state === "uncertain";
+  const empty = data.state === "likely_empty";
   return (
     <Card withBorder radius="lg" p="lg" aria-labelledby="occupancy-title">
       <Stack gap="md">
@@ -35,7 +36,9 @@ export default function OccupancyCard({ householdId }: { householdId: string }) 
           <Group gap="xs">
             {data.provenance.origin === "simulated" && <Badge color="yellow" variant="light">SIMULADO</Badge>}
             {offline && <Badge color="gray" variant="light">Sem ligação: últimos dados</Badge>}
-            <Badge color={uncertain ? "gray" : "teal"} variant="light">{uncertain ? "Incerto" : "Em casa"}</Badge>
+            <Badge color={uncertain ? "gray" : empty ? "blue" : "teal"} variant="light">
+              {uncertain ? "Incerto" : empty ? "Casa vazia (provável)" : "Em casa"}
+            </Badge>
           </Group>
         </Group>
         <SimpleGrid cols={{ base: 1, xs: 3 }}>
@@ -46,7 +49,9 @@ export default function OccupancyCard({ householdId }: { householdId: string }) 
         <Text size="sm" c="dimmed">
           {uncertain
             ? "A contagem na porta não é fiável neste momento (câmara parada, evento perdido ou números que não batem). Em dúvida, não se assume nada."
-            : "Contagem anónima na soleira da porta. As visitas são só um número: não geram contas nem pistas de ninguém."}
+            : empty
+              ? "A contagem na porta chegou a zero e nenhum telemóvel registado está em casa. É só uma indicação: não ativa nem desliga nada."
+              : "Contagem anónima na soleira da porta. As visitas são só um número: não geram contas nem pistas de ninguém."}
         </Text>
       </Stack>
     </Card>
