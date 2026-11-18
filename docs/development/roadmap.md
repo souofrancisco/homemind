@@ -1,6 +1,6 @@
 # Roadmap, fases e prioridades
 
-**PLANEADO.** Fonte viva: issue [#129](https://github.com/souofrancisco/homemind/issues/129) («Plano mestre») e, quando for criado (D-22, **pendente**), o GitHub Project «Conta Certa — Desenvolvimento». Este ficheiro é o espelho estável; se divergir do GitHub, vale a issue e corrige-se aqui. Âmbito de produto: [decisions.md](../decisions.md) D-14 (MVP e fase 2). **Datas não confirmadas** (P-11).
+**Roadmap histórico / fases de referência.** O [GitHub Project «Conta Certa — Desenvolvimento»](https://github.com/users/souofrancisco/projects/1/views/1) foi criado em 18/11/2026, mas a importação de itens, campos e vistas ainda necessita de confirmação. Consultar o [guia de ativação e triagem](github-project.md), a [issue mestre #129](https://github.com/souofrancisco/homemind/issues/129) e as issues individuais para o estado real. As fases F0–F3 abaixo refletem o plano original, **não** o progresso atualizado após os merges de 18/11. Âmbito de produto: [decisions.md](../decisions.md) D-14. **Datas não confirmadas** (P-11).
 
 Cada issue de implementação tem um código estável (`ENERGY-03`, `APP-02`…), um responsável, prioridade (P0 essencial · P1 aprofundamento · P2 extensão) e fase. Mapa completo: [backlog.md](backlog.md).
 
