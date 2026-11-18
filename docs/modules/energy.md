@@ -77,6 +77,25 @@ Código: `features/energy/classifier.py` (`classify`, `explain`; puro) integrado
 
 A explicação completa por candidato (componentes e pontuação) fica disponível em `explain()` para o recibo.
 
+## Aprendizagem automática de assinaturas (ENERGY-01) — **IMPLEMENTADO**
+
+Código: `features/energy/learning.py` (puro), `learning_consumer.py` (subscrito no arranque da energia como `energy.learning`) e `signatures.py` (rotas incluídas no router da energia). Valores **decididos pelo utilizador (17–18/11/2026)**:
+
+| Regra | Valor |
+|---|---|
+| Sem cliques | uma sessão fechada só é atribuída a um aparelho pela **tomada associada** (`appliance_meter_link`) ou, numa tomada partilhada, se a potência bate com a `typical_watts` de **um único** aparelho; empate ou nenhum → não aprende |
+| Assinatura | uma por aparelho (`stable_id("energy.signature", appliance_id)`), média acumulada, `samples` + 1, `origin=learned` |
+| Tolerância | `max(50 W, 10 % da média)` |
+| Padrão | `patterns.infer_pattern` (curto / cíclico / decrescente / contínuo); fica o mais frequente; o morador pode corrigir e a correção fica travada |
+| Horas habituais | hora local de início (fuso da casa) |
+| API | `GET /api/households/{id}/energy/signatures` e `PATCH …/signatures/{appliance_id}` (padrão); senhorio sem acesso, operador sem `typical_hours` |
+
+O contrato do catálogo ganhou `appliances_for_household(conn, household_id, at)` (só leitura; implementado em `features/appliances/repo.py`). Contagens por padrão e travões em `energy_signature_stats` / `energy_signature_lock` (migração `0400`).
+
+## Kit real → barramento — **IMPLEMENTADO** (só com `ENERGY_HOUSEHOLD_ID`)
+
+`features/energy/kit.py` (`attach_kit_collectors`), chamado no arranque do `engine` logo depois de iniciar o `McpHome`, **só** com `HOME_BACKEND=mcp` e `ENERGY_HOUSEHOLD_ID` de uma casa existente (senão não liga nada e regista um aviso sem IDs). Na primeira leitura, a tomada (`main_meter`) e os sensores de contacto e clima são registados no catálogo (`register_device`, idempotente; o id do MCP fica só em `external_ref`), e passam a publicar `energy.reading_recorded` e `sensor.reading_recorded` reais. A cadeia completa na app: kit → leituras → degraus e identificação (`energy.steps`) → aprendizagem (`energy.learning`).
+
 ## O que não se promete
 
 Com **uma só tomada de medição** o sistema separa cargas com potências bem distintas (aquecedor ~2000 W vs secador ~600 W), mas **não** garante a identificação de aparelhos pequenos (< 100 W), de dois aparelhos em simultâneo com potências próximas, nem a distinção de dois aparelhos iguais em quartos diferentes. O resultado tem sempre `confidence` e pode ser `unknown`; o resíduo divide-se por igual. Os próprios autores do PDF dizem que o NILM «funciona para cargas grandes» (§15.1).

@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from uuid import UUID
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
@@ -29,6 +30,7 @@ class Settings(BaseSettings):
     # Unidade de `instantPower` quando o MCP não a declara (o kit real não declara). Vazio =
     # desconhecida: consumo_w fica null. Confirmar com carga conhecida (docs/mcp-capabilities.md).
     mcp_instantpower_unit: Literal["", "W", "dW", "mW"] = ""
+    energy_household_id: UUID | None = None
     enable_physical_writes: bool = False
     # SQLite partilhado (eventos, casas, memberships). Ficheiro local; ":memory:" nos testes.
     db_path: str = "data/homemind.sqlite3"

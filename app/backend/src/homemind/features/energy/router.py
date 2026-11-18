@@ -27,9 +27,13 @@ from homemind.core.access import (
 )
 from homemind.core.events import Handler
 from homemind.features.energy.consumer import make_step_consumer
+from homemind.features.energy.learning_consumer import INPUT_TYPES as LEARNING_TYPES
+from homemind.features.energy.learning_consumer import make_learning_consumer
+from homemind.features.energy.signatures import signatures_router
 from homemind.features.energy.steps import StepTracker
 
 CONSUMER = "energy.steps"
+LEARNING_CONSUMER = "energy.learning"
 EVENT_TYPES = ["energy.reading_recorded"]
 
 
@@ -55,9 +59,31 @@ def make_dispatcher(app: FastAPI) -> Handler:
     return handle
 
 
+def make_learning_dispatcher(app: FastAPI) -> Handler:
+    """Aprendizagem (ENERGY-01) com o catálogo publicado por `appliances` em `app.state`.
+
+    Lido tarde, como o dispatcher dos degraus, para não depender da ordem de arranque. Sem
+    catálogo não há nada a aprender: o evento é dado como tratado sem efeitos.
+    """
+    handler: Handler | None = None
+
+    def handle(conn: sqlite3.Connection, stored: StoredEvent):
+        nonlocal handler
+        if handler is None:
+            catalog = getattr(app.state, "appliance_catalog", None)
+            if catalog is None:
+                return []
+            handler = make_learning_consumer(catalog)
+        return handler(conn, stored)
+
+    return handle
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.bus.subscribe(CONSUMER, make_dispatcher(app), EVENT_TYPES)
+    # ENERGY-01: aprendizagem automática de assinaturas a partir das sessões fechadas.
+    app.state.bus.subscribe(LEARNING_CONSUMER, make_learning_dispatcher(app), LEARNING_TYPES)
     yield
 
 
@@ -65,6 +91,7 @@ router = APIRouter(
     prefix="/api/households/{household_id}/energy", tags=["energy"], lifespan=lifespan
 )
 Read = Annotated[HouseholdAccess, Depends(require_access(Resource.consumption))]
+router.include_router(signatures_router)  # ENERGY-01: /signatures
 
 SESSIONS_LIMIT = 20
 SCAN_LIMIT = 500

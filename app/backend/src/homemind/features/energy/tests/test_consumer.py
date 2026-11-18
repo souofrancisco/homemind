@@ -175,6 +175,9 @@ class MemoryCatalog:
     def context_for_consumption(self, conn, event):
         raise AssertionError("unexpected context lookup")
 
+    def appliances_for_household(self, conn, household_id, at):  # ENERGY-01 (contrato)
+        raise AssertionError("unexpected appliance listing")
+
 
 @pytest.mark.parametrize(
     "duration,personal,ambiguous", [(180, False, False), (7200, True, False), (180, False, True)]
