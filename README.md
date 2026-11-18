@@ -64,4 +64,3 @@ Como trabalhamos (issue → worktree → PR; Claude Code e Codex): [`CLAUDE.md`]
 - Tudo na demo é **SIMULADO**; nada foi validado com hardware real nesta fase.
 - O código ObjectOS (motor de regras, gestos) ainda existe até à BASE-04 (#74); não faz parte da app.
 - Sem CI ativa (GitHub Actions desligado); a verificação é `make check` local.
-- A página de login do Authentik ainda se chama «ObjectOS».

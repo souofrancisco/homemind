@@ -40,7 +40,7 @@ entries:
     identifiers:
       slug: homemind
     attrs:
-      name: ObjectOS
+      name: Conta Certa
       provider: !KeyOf provider
       meta_launch_url: !Env [HOMEMIND_WEB_URL, "http://localhost:5173"]
   # Flow de login próprio (o default-authentication-flow é gerido pelo blueprint do sistema, que repõe o título "Welcome to authentik!").
@@ -53,10 +53,10 @@ entries:
   - model: authentik_flows.flow
     id: login-flow
     identifiers:
-      slug: objectos-authentication
+      slug: conta-certa-authentication
     attrs:
-      name: ObjectOS authentication
-      title: Iniciar sessão no ObjectOS
+      name: Conta Certa authentication
+      title: Iniciar sessão na Conta Certa
       designation: authentication
       authentication: none
   - model: authentik_flows.flowstagebinding
@@ -97,14 +97,14 @@ entries:
       policy: !Find [authentik_policies_expression.expressionpolicy, [name, default-authentication-flow-authenticator-validate-stage]]
     attrs:
       failure_result: true
-  # Brand ObjectOS: tokens espelham o tema Mantine do frontend (indigo-6, dark-7, radius md, fonte do sistema).
+  # Brand Conta Certa: tokens espelham o tema Mantine do frontend (indigo-6, dark-7, radius md, fonte do sistema).
   - model: authentik_brands.brand
     identifiers:
       default: true  # edita o brand por defeito; um 2.º default é rejeitado e invalida o blueprint todo
     attrs:
-      branding_title: ObjectOS
-      branding_logo: objectos-logo.svg
-      branding_favicon: objectos-icon.svg
+      branding_title: Conta Certa
+      branding_logo: conta-certa-logo.svg
+      branding_favicon: conta-certa-icon.svg
       flow_authentication: !KeyOf login-flow
       branding_custom_css: |
         :root {

@@ -95,7 +95,7 @@ Caminhos relativos a `app/backend/src/homemind/` (backend) e `app/frontend/src/`
 | `components/automations/*`, `pages/Automations*`, `NewAutomationPage`, `hooks/useRules.ts`, `useNewRule.ts` | **ADAPT** | Fluxo «texto → proposta → confirmar» reaproveitado para `AutomationRule` | P3 + P5 |
 | `pages/Suggestion*`, `hooks/useSuggestions.ts`, `mocks/suggestions.ts`, `utils/memoryMarkdown.ts` | **REMOVE** | Sugestões de rotinas/Memory (#30, #31, #51) fora de âmbito | P5 |
 | `pages/HomePage.tsx`, `ProfilePage.tsx` | **ADAPT** | Início por papel; perfil passa a incluir preferências de notificação | P5 |
-| `mocks/home.ts` (`VITE_OBJECTOS_SOURCE=mock`) | **ADAPT** | Mantém-se como fallback de desenvolvimento, sempre rotulado SIMULADO; dados novos de consumo | P5 |
+| `mocks/home.ts` (`VITE_OBJECTOS_SOURCE=mock`) | **REMOVIDO** (BASE-04 #74) | Já ninguém o usava: o stack ObjectOS do frontend estava inalcançável; a variável saiu também do Compose | P5 |
 | Novas páginas (Consumo, Notificações, Faturas e recibos, Orçamento, Casa, Assistente) | novo | Ver [team.md](../development/team.md) | P5 / P3 / P4 |
 
 ### Autenticação, infraestrutura e ferramentas
