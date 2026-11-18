@@ -19,7 +19,12 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request,
 from pydantic import Field
 
 from homemind.contracts.common import ContractModel, Origin, ShortText
-from homemind.contracts.presence import CameraStatus, PersonPresence, PresenceDeviceView
+from homemind.contracts.presence import (
+    CameraStatus,
+    HouseOccupancy,
+    PersonPresence,
+    PresenceDeviceView,
+)
 from homemind.core.access import (
     HouseholdAccess,
     Operation,
@@ -69,6 +74,15 @@ def _scanner_for(mode: str, s) -> WifiScanner | None:
     return None  # off, ou ingest (o varrimento corre no anfitrião)
 
 
+def _camera_state() -> tuple[bool, Origin]:
+    """Câmara ativa e origem (clip/telemóvel = SIMULADO). Fonte em falha ou ausente: inativa."""
+    fonte = video.fonte_atual()
+    return (
+        fonte is not None and fonte.camara_ok,
+        origin_of(resolve_kind(get_settings())),
+    )
+
+
 async def _ticker(service: PresenceService, interval_s: float) -> None:
     while True:
         await asyncio.sleep(interval_s)
@@ -105,6 +119,7 @@ async def _wifi_lifespan(app: FastAPI):
         appliance_fresh_s=s.presence_appliance_fresh_s,
         wifi_enabled=wifi_on,
         wifi_interval_s=s.presence_wifi_interval_s,
+        camera_state=_camera_state,
     )
     app.state.presence = service
     bus.subscribe("presence.answers", on_notification_responded, types=["notification.responded"])
@@ -268,6 +283,15 @@ async def export_my_data(access: Read, service: Service) -> PresenceExport:
     return await service.db.run(
         lambda c: export_own(c, access.household_id, access.resident_id, now, days)
     )
+
+
+@router.get("/occupancy")
+async def get_occupancy(access: Read, service: Service) -> HouseOccupancy:
+    """Quantas pessoas estão em casa e quantas são visitas: só números, sem identidade nem
+    horários. O senhorio e o operador recebem 403. Sem câmara a funcionar, ou com contagem que
+    diverge dos telemóveis, o estado é `uncertain` (nunca «casa vazia», nunca negativo)."""
+    camera_ok, origin = _camera_state()
+    return await service.occupancy(access.household_id, camera_ok=camera_ok, camera_origin=origin)
 
 
 class PresenceDeviceIn(ContractModel):

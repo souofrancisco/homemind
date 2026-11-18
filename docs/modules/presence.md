@@ -1,6 +1,6 @@
 # Módulo `presence` — câmara na porta e presença
 
-**Dono: P2 (1Mii).** **IMPLEMENTADO** (PRES-03 #107, PRES-04 #108): telemóveis com opt-in, pistas Wi-Fi, resposta a «estás em casa?» e fusão em casa/fora/incerto. **Não há check-in manual «cheguei/saí»**: a presença regista-se só pela câmara (porta) e pelo telemóvel no Wi-Fi (decisão do dono). **PLANEADO**: câmara na porta (PRES-01/02; a fusão já consome `presence.door_crossed`, hoje só com fixtures), ocupação (PRES-05). Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
+**Dono: P2 (1Mii).** **IMPLEMENTADO** (PRES-03 #107, PRES-04 #108, PRES-05 #109 ocupação e visitas anónimas): telemóveis com opt-in, pistas Wi-Fi, resposta a «estás em casa?» e fusão em casa/fora/incerto. **Não há check-in manual «cheguei/saí»**: a presença regista-se só pela câmara (porta) e pelo telemóvel no Wi-Fi (decisão do dono). **PLANEADO**: câmara na porta (PRES-01/02; a fusão já consome `presence.door_crossed`, hoje só com fixtures). Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
 
 ## Responsabilidade
 
@@ -24,7 +24,7 @@ Saber **quando alguém entra ou sai** e, a partir daí, **quem está em casa** �
 | `energy.consumption_detected` com `appliance_owner_resident_id` (P1) | idem, `source=appliance` (só `in`) |
 | Resposta a «estás em casa?» (`notification.responded`, `ref.type=presence_check`, P3) — consumidor **IMPLEMENTADO**; o produtor (`notifications.presence_check`, APP-02) **IMPLEMENTADO** (backend; UI PLANEADA) | pista manual |
 | `sensor.reading_recorded` (contacto, fumo; P1) | `SafetyAlert` em `safety.alert_raised` (SAFE-01/03) |
-| — | `presence.changed` por pessoa; `presence.confirmation_needed` (pistas em conflito); `presence.occupancy_changed` (anónimo; «casa possivelmente vazia» só na fase 2) |
+| — | `presence.changed` por pessoa; `presence.confirmation_needed` (pistas em conflito); `presence.occupancy_changed` (anónimo, só quando o estado muda; `likely_empty` = PRES-06, **IMPLEMENTADO**) |
 
 Contratos novos (`PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`, `PresenceDevice`, `CameraStatus`, `SensorReading`, `SafetyAlert`): **PROPOSTA** (D-31), em `contracts/{presence,sensors,safety}.py`.
 
@@ -48,7 +48,7 @@ Contratos novos (`PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`
 | 1 | ~~Registo manual «cheguei/saí»~~ — **removido** (decisão do dono); eventos simulados de porta + Wi-Fi permitem à P4 testar a regra C | — |
 | 2 | Detetor de pessoas na soleira (`DetetorYolo` só com a classe «pessoa» + ByteTrack) e linha virtual → `DoorCrossed` | P0 (PRES-02 #106) |
 | 3 | Fusão de pistas por pessoa: em casa / fora / incerto, com tolerância de 20–30 min para ausências e confirmação pela porta (PDF §6.8) | P0 (PRES-04 #108) |
-| 4 | Estado «casa vazia» e alerta de entrada com casa vazia — **fase 2** | P2 (F3: PRES-06 #131, SAFE-02 #115) |
+| 4 | Estado «casa vazia» (**IMPLEMENTADO**, PRES-06 #131) e alerta de entrada com casa vazia (**PLANEADO**, SAFE-02 #115) — fase 2 | P2 (F3) |
 | 5 | Sinal de presença por Wi-Fi (opt-in) e resposta à pergunta «estás em casa?» | P0 (PRES-03 #107) |
 
 Regras de fusão (PDF §6.8): presença no Wi-Fi conta muito, ausência conta pouco; só se considera que alguém saiu se houver uma saída pela porta e passarem 20–30 min; um aparelho a continuar ligado não prova presença, só um a **ligar** prova; contradição (entrada + aparelho a ligar sem ninguém «em casa») → `uncertain` e pergunta na aplicação.
@@ -91,7 +91,7 @@ ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` →
   duas pessoas coladas contam como uma: **limitação conhecida, aceite para a demo**: preferimos contar a menos a inventar entradas).
 - A soleira configura-se só por variáveis de ambiente, sem UI: **aceite para a demo**.
 - `track_id` vive só em memória e é esquecido; pistas sem ID confirmado não contam. Visitas não são
-  distinguidas aqui: são só mais passagens anónimas (o número de visitas é da PRES-05).
+  distinguidas aqui: são só mais passagens anónimas (o número de visitas sai da ocupação agregada, ver «Ocupação e visitas (PRES-05)»).
 - `confidence` é a média da confiança do detetor nessa pessoa, **não** uma precisão medida.
 - Sem frames novos não há eventos e nada daqui conclui «casa vazia». O código ObjectOS (`visao`,
   gestos) fica intacto e deixa de ser necessário neste caminho (remoção: BASE-04 #74).
@@ -143,6 +143,26 @@ ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` →
 **Consentimento.** Todas as pistas individuais (Wi-Fi, aparelho a ligar, resposta à pergunta) exigem `Membership.presence_opt_in`; o Wi-Fi exige também `wifi_opt_in`. `apply_fusion` não grava estado de quem não tem opt-in. **Câmara em baixo:** caso por tratar (decisão do dono); a fusão limita-se a não inventar «fora» sem saída pela porta.
 
 **Provenance.** `simulated` se qualquer entrada for simulada; `inferred` quando decide a porta ou o tempo; `measured` só quando o estado vem só de uma resposta do morador (P-19).
+
+## Ocupação e visitas (PRES-05 #109)
+
+**IMPLEMENTADO** (`occupancy.py` puro + `GET /api/presence/occupancy?household_id=`, só morador; senhorio e operador `403 forbidden_role`; cartão «Quem está em casa» em «A minha casa», com SIMULADO). Não grava nada: calcula-se em cada pedido a partir do registo `presence.door_crossed` das últimas 24 h e dos estados dos moradores.
+- **Contagem** = saldo da porta (entradas − saídas). Nunca negativa: uma saída sem entrada anterior (entrada perdida) reinicia o saldo a 0 e deixa a contagem *dessincronizada* (`uncertain`, `people_inside=null`) até haver nova prova coerente.
+- **Reconciliação** com os moradores em casa (telemóvel com opt-in, estado `in`): saldo da porta inferior ao número de moradores em casa, saldo > 20, câmara sem frames/em falha ou nenhuma passagem na janela → `uncertain`, sem número inventado.
+- **Visitas** = pessoas dentro − moradores em casa, **só** quando todos os moradores ativos têm opt-in e estado conhecido; senão `visitors=null`. Zero fiável na porta com nenhum telemóvel com opt-in em casa é `likely_empty` (PRES-06, abaixo).
+- Uma visita é só um número: não gera pista individual, notificação nem conta. Proveniência `simulated` se a câmara ou qualquer passagem da janela o for.
+- **Limitações:** não deteta eventos perdidos que o saldo e os telemóveis não denunciem (ex.: visita que entra sem ser contada e sai contada); só reconcilia moradores, nunca visitas; janela fixa de 24 h para contar passagens (o zero fiável de uma casa vazia mantém-se para lá dela, ver PRES-06).
+
+## Casa vazia (PRES-06 #131) — IMPLEMENTADO (prova de conceito)
+
+Decisão do dono: «casa vazia é casa vazia; conta-se quem entra e sai». Há **uma só fonte de verdade**: `compute_occupancy` (`occupancy.py`), usado pelo cartão (`GET /api/presence/occupancy`) e pelo evento, que por isso nunca se contradizem.
+
+- `likely_empty` (`people_inside=0`, `visitors=0`, `residents_home=0`): contagem da porta fiável a 0 (sem entrada perdida), câmara ativa e nenhum telemóvel com opt-in em casa. Moradores sem opt-in **não bloqueiam**: decide a porta.
+- `uncertain`: câmara parada ou em falha, entrada perdida, ou porta a 0 com um telemóvel de morador em casa. `occupied` com o número se `people_inside > 0`.
+- **Fim de semana:** o zero fiável mantém-se para lá da janela de 24 h enquanto a câmara estiver ativa, o último estado registado for `likely_empty`, não houver passagens depois e nenhum telemóvel estiver em casa. Se a câmara parar, passa a `uncertain`.
+- **Evento** `presence.occupancy_changed` (`HouseOccupancy`, sem contrato novo) só quando o estado muda (o primeiro `uncertain` só grava); avaliado a cada passagem/pista e no *ticker*. Último estado em `presence_house_state` (migração `0210`). Proveniência herdada das fontes (SIMULADA com o clip). Não há rota nova.
+- **Nunca arma nada** físico, não chama MCP nem cria ações; a SAFE-02 (#115, **PLANEADA**) é que o consumirá. O senhorio e o operador nunca o veem (403 no cartão; o evento não tem rota).
+- **Limitações:** um visitante que fique sozinho em casa conta como pessoa dentro só se a porta o viu entrar; uma entrada perdida deixa a casa `uncertain` até nova prova coerente; sem validação em hardware real.
 
 **Decisões para a demo (aceites pelo dono).** Varrimento Wi-Fi parado (3 intervalos) com telemóvel registado → pergunta (`uncertain/no_recent_cues`), nunca `out`; saída anónima com vários moradores `in` e sem Wi-Fi → pergunta; único `in` → a saída atribui-se-lhe (limite: uma visita a sair engana-o até à PRES-05).
 
@@ -283,7 +303,7 @@ Escalas: gravidade (G) e probabilidade (P) são **antes das correções**; resid
 | Morador consulta presença de terceiro | Alta | Média | grant `own`; membership e `resident_id` vinculados à casa; evento manual compara actor | Baixo no gate; endpoint de leitura continua planeado |
 | Captura/extração de frames por MJPEG | Crítica | Média | `/api/video` sempre 404; nenhuma dependência `Fonte`; factory RTSP rejeitada; ferramentas de medição exigem clip sintético allowlisted | Baixo no serviço; classe RTSP permanece no módulo para testes unitários com capturas falsas |
 | Correlacionar timestamp de passagem com identidade | Alta | Média | nenhum evento de câmara por pessoa; `DoorCrossed` anónimo; sem feed público | Médio se B for criado: timestamps continuam potencialmente pessoais |
-| Reidentificação indireta por contagem, quarto, energia ou rotina | Alta | Média | sem endpoint de ocupação/série temporal; landlord não recebe presença | Médio; minimização e agregação devem ser validadas no desenho PRES-02/05 |
+| Reidentificação indireta por contagem, quarto, energia ou rotina | Alta | Média | `GET /api/presence/occupancy` devolve só o instantâneo agregado (sem série temporal, sem horários); só o morador o lê, o senhorio e o operador recebem 403 | Médio; minimização e agregação devem ser validadas no desenho PRES-02/05 |
 | Segredo RTSP em exceção ou logs | Alta | Baixa | fonte regista apenas tipo da exceção; endpoint responde mensagem genérica; teste injeta URL falsa com credenciais | Baixo para logs FastAPI revistos; observar logs de OpenCV/FFmpeg no deployment antes de piloto |
 | Presença em REST/WS sem autorização por papel | Alta | Média | booleano legado removido do DTO/WS; evento textual explícito removido de `events.jsonl` | Médio: estados e timestamps do motor legado ainda não são DTOs escopados; não ligá-los a fonte real |
 | Persistência por tempo excessivo | Alta | Alta após futura escrita | eventos F0 append-only; PRIV-02 não apaga nem migra eventos. **PRIV-03:** compactação dos brutos em agregados após N dias (30, PROPOSTA) | Médio: prazos por decidir (P-08/P-20); backups sem política |
