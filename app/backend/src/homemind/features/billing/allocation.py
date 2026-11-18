@@ -48,6 +48,7 @@ class EnergyShare:
     energy_wh: int
     provenance: Provenance
     consumption_id: UUID | None = field(default=None, compare=False)  # evidência (BILL-05)
+    solidarity: bool = False  # parte coberta pelo plafond solidário (BILL-03): de todos
 
 
 def shares_from_attributions(
@@ -113,17 +114,19 @@ def allocate(
     # kWh por morador e proveniência: próprios e parte (igual) de cada consumo comum.
     own: dict[UUID, dict[Provenance, int]] = {r: defaultdict(int) for r in ids}
     common: dict[UUID, dict[Provenance, int]] = {r: defaultdict(int) for r in ids}
+    pooled: dict[UUID, dict[Provenance, int]] = {r: defaultdict(int) for r in ids}
     for s in shares:
         if s.energy_wh < 0:
             raise BillInconsistentError("energia negativa")
         if s.resident_id is None:
+            target = pooled if s.solidarity else common
             for r, wh in largest_remainder(s.energy_wh, equal, draw).items():
-                common[r][s.provenance] += wh
+                target[r][s.provenance] += wh
         elif s.resident_id in residents:
             own[s.resident_id][s.provenance] += s.energy_wh
         else:
             raise BillInconsistentError("atribuição a quem não é morador ativo no período")
-    wh = {r: sum(own[r].values()) + sum(common[r].values()) for r in ids}
+    wh = {r: sum(own[r].values()) + sum(common[r].values()) + sum(pooled[r].values()) for r in ids}
     attributed = sum(wh.values())
     if attributed > bill.total_wh:
         raise BillInconsistentError("kWh atribuídos acima do total da fatura")
@@ -154,10 +157,10 @@ def allocate(
                 amount_cents=residual[r],
                 provenance=residual_prov,
             ),
-            *_energy_lines(own[r], common[r], individual[r]),
+            *_energy_lines(own[r], common[r], pooled[r], individual[r]),
         ]
         totals: dict[Provenance, int] = defaultdict(int)
-        for group in (own[r], common[r]):
+        for group in (own[r], common[r], pooled[r]):
             for prov, e in group.items():
                 totals[prov] += e
         out.append(
@@ -185,17 +188,25 @@ def allocate(
 _LABELS = {
     BreakdownKind.room: "Consumo atribuído a ti",
     BreakdownKind.common: "Zonas comuns (parte igual)",
+    BreakdownKind.heating_allowance: "Plafond solidário de aquecimento (parte igual)",
 }
 
 
 def _energy_lines(
-    own: Mapping[Provenance, int], common: Mapping[Provenance, int], cents: int
+    own: Mapping[Provenance, int],
+    common: Mapping[Provenance, int],
+    pooled: Mapping[Provenance, int],
+    cents: int,
 ) -> list[BillBreakdownLine]:
     """Uma linha por (tipo, proveniência); os cêntimos individuais repartem-se pelos Wh."""
     keys = [
         (i, kind, prov, e)
         for i, (kind, group) in enumerate(
-            ((BreakdownKind.room, own), (BreakdownKind.common, common))
+            (
+                (BreakdownKind.room, own),
+                (BreakdownKind.common, common),
+                (BreakdownKind.heating_allowance, pooled),
+            )
         )
         for prov, e in sorted(group.items(), key=lambda g: (g[0].origin, g[0].kind))
         if e

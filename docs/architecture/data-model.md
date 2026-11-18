@@ -52,7 +52,7 @@ erDiagram
 Casa gerida por um senhorio. **IMPLEMENTADA.** `id`, `name`, `settings` (`timezone`, `energy_price_millicents_per_kwh?` — preço de referência para estimativas, nunca para a fatura —, `source_kind` `demo` \| `real`) e `policy` (`common_area_rule` `equal` \| `ask` \| `presence`, omissão `ask`; `ask_threshold_cents` 50; `ask_timeout_hours` 24). Uma casa `real` **recusa eventos simulados**; a `demo` aceita ambos (o MVP mistura tomada real e quartos simulados). **Responsável:** P5.
 
 ### Room
-`id`, `household_id`, `name`, `kind` (`bedroom` \| `common`), `included_wh` (plafond do senhorio, só em quartos). A zona comum (sala, cozinha) é uma `Room` com `kind=common`. **P5.**
+`id`, `household_id`, `name`, `kind` (`bedroom` \| `common`), `included_wh` (plafond solidário de aquecimento por mês, só em quartos; BILL-03, ver [billing.md](../modules/billing.md)). A zona comum (sala, cozinha) é uma `Room` com `kind=common`. **P5.**
 
 ### Resident
 Pessoa. `id`, `display_name`, `auth_subject` (o `sub` do Authentik, distinto de `id`, único, vazio até aceitar o convite; nunca em DTOs). Sem dados biométricos nem fotos. **P5.**

@@ -196,3 +196,39 @@ def test_limiar_a_avisar():
         None, None, 50, 50, 80, 100,
     ]  # fmt: skip
     assert budgets.threshold_to_notify(replace(b, last_threshold_notified=80), 85) is None
+
+
+# --- plafond solidário (BILL-03) -----------------------------------------------------------------
+
+
+def _aquecedor(app):
+    from homemind.features.billing.tests.test_allowance import _aquecedor_registado
+
+    _aquecedor_registado(app)
+
+
+def test_plafond_solidario_conta_no_gasto_do_mes(app, client):
+    _aquecedor(app)
+    _consumo(app, "aquecedor", 40_000)  # 40 kWh no quarto da Ana; plafond de 30 kWh
+    s = _definir(client, 25)
+    # 10 kWh dela (1,60 €) + a sua parte igual dos 30 kWh de todos (7,5 kWh = 1,20 €)
+    assert (s["confirmed_cents"], s["shared_cents"]) == (160, 120)
+
+
+def test_fatura_fechada_com_plafond_bate_com_o_recibo(app, client, now):
+    _aquecedor(app)
+    _consumo(app, "aquecedor", 100_000)
+    now["value"] = now["value"].replace(month=12, day=5)
+    nov = {
+        "period": {"start": "2026-11-01", "end": "2026-11-30"},
+        "total_cents": 12_000,
+        "fixed_cents": 2_400,
+        "total_wh": 600_000,
+        "origin": "simulated",
+    }
+    bill = client.post(f"{H}/bills", json=nov, headers=LANDLORD).json()["id"]
+    client.post(f"{H}/bills/{bill}/finalize", headers=LANDLORD)
+    recibo = client.get(f"{H}/bills/{bill}/receipt", headers=ANA).json()
+    assert any(line["kind"] == "heating_allowance" for line in recibo["breakdown"])
+    s = client.get(ME, params={"period": "2026-11"}, headers=ANA).json()
+    assert s["final"] is True and s["spent_cents"] == recibo["amount_cents"]

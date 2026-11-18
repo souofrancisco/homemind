@@ -101,7 +101,7 @@ Prefixo `/api`. JSON UTF-8, `snake_case`, horas ISO 8601 UTC. Todas as rotas `/a
 | `GET` | `/api/mcp/tools` | `tools/list` do MCP (diagnóstico); `502` se indisponível |
 | `GET` | `/api/me/context` | `MeContext`: o residente ligado ao `sub` e as suas memberships ativas (**Conta Certa, F0**) |
 | `GET` | `/api/households/{id}` | `HouseholdView` · `404 household_not_found` (não-membro ou casa inexistente) · `403 forbidden_role` |
-| `GET` | `/api/households/{id}/rooms` | `[RoomView]` |
+| `GET` | `/api/households/{id}/rooms` | `[RoomView]` (inclui `included_wh`: plafond solidário mensal do quarto, BILL-03) |
 | `GET` | `/api/households/{id}/members` | `[MemberView]`: senhorio vê todos os estados, inquilino só ativos; operador `403`; nunca `presence_opt_in` nem `sub` |
 | `PATCH` | `/api/households/{id}/memberships/{mid}` | corpo `{ "presence_opt_in": bool }` (`extra=forbid`) → `MembershipSelfView`; só a própria membership de um inquilino (`403` a de outro, `404` se não é desta casa) |
 | `GET` | `/api/presence?household_id=` | `PersonPresence` **só do próprio** (**PRES-04**); sem pistas: `uncertain/no_recent_cues`; senhorio/operador `403`, não-membro `404` |

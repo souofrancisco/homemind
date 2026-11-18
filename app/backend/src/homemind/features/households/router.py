@@ -110,7 +110,7 @@ async def get_household(access: Access, db: DbDep) -> HouseholdView:
 async def list_rooms(access: RoomAccess, db: DbDep) -> list[RoomView]:
     rows = await db.run(
         lambda c: c.execute(
-            "SELECT id, name, kind FROM room WHERE household_id = ? ORDER BY name",
+            "SELECT id, name, kind, included_wh FROM room WHERE household_id = ? ORDER BY name",
             (str(access.household_id),),
         ).fetchall()
     )

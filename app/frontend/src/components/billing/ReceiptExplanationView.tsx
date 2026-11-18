@@ -1,6 +1,6 @@
 import { Accordion, Alert, Badge, Group, Stack, Text, ThemeIcon, Timeline, Title } from "@mantine/core";
 import {
-  IconAlertCircle, IconBolt, IconCoin, IconGavel, IconHistory, IconMapPin, IconSearch,
+  IconAlertCircle, IconBolt, IconCoin, IconFlame, IconGavel, IconHistory, IconMapPin, IconSearch,
 } from "@tabler/icons-react";
 import type { ReceiptExplanation } from "../../services/billing/api";
 
@@ -44,6 +44,7 @@ const stageIcon = {
   location: IconMapPin,
   decision: IconGavel,
   correction: IconHistory,
+  allowance: IconFlame,
   share: IconCoin,
 } as const;
 
@@ -74,6 +75,7 @@ function OwnItem({ item }: { item: Own }) {
             <ProvBadge p={item.provenance} />
             <Badge size="sm" variant="outline">{methodLabel[item.method]} · {actorLabel[item.decided_by]}</Badge>
             {item.corrections > 0 && <Badge size="sm" variant="outline" color="yellow">corrigido</Badge>}
+            {item.covered_wh > 0 && <Badge size="sm" variant="light" color="teal">plafond solidário · {kwh(item.covered_wh)}</Badge>}
           </Group>
           <Timeline bulletSize={24} lineWidth={2}>
             {item.steps.map((step, i) => {
@@ -113,6 +115,29 @@ function CommonList({ groups }: { groups: Group_[] }) {
   );
 }
 
+function AllowanceSection({ a }: { a: NonNullable<ReceiptExplanation["allowance"]> }) {
+  return (
+    <Stack gap="xs">
+      <Title order={4} size="h5">Plafond solidário de aquecimento · {eur(a.amount_cents)}</Title>
+      <Text size="sm">
+        O aquecimento básico de cada quarto é pago por todos. Na casa, {kwh(a.house_covered_wh)} de aquecimento foram cobertos;
+        a tua parte igual é {kwh(a.my_share_wh)}.
+      </Text>
+      {a.limit_wh > 0 && (
+        <Text size="sm">
+          No teu quarto: {kwh(a.heating_wh)} de aquecimento reconhecido, {kwh(a.covered_wh)} cobertos (limite {kwh(a.limit_wh)} nesta fatura)
+          {a.heating_wh > a.covered_wh ? `; os ${kwh(a.heating_wh - a.covered_wh)} acima do limite são teus.` : "."}
+        </Text>
+      )}
+      {a.unproven_consumptions > 0 && (
+        <Text size="xs" c="dimmed">
+          {a.unproven_consumptions} {a.unproven_consumptions === 1 ? "consumo" : "consumos"} ({kwh(a.unproven_wh)}) no teu quarto sem aparelho identificado não contam para o plafond: sem prova de que é aquecimento, o benefício não se aplica. Registar o aquecedor no catálogo ajuda a reconhecê-lo.
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
 export default function ReceiptExplanationView({ data }: { data: ReceiptExplanation }) {
   const diff = data.amount_cents - data.equal_split_cents;
   const r = data.residual;
@@ -143,6 +168,8 @@ export default function ReceiptExplanationView({ data }: { data: ReceiptExplanat
         <Text size="xs" c="dimmed">A tua parte igual. Regra da sala em vigor: {ruleLabel[data.common_area_rule]}. Não se mostram horas nem quem usou.</Text>
         {data.common.length ? <CommonList groups={data.common} /> : <Text size="sm" c="dimmed">Sem consumos comuns identificados.</Text>}
       </Stack>
+
+      {data.allowance && <AllowanceSection a={data.allowance} />}
 
       <Stack gap="xs">
         <Title order={4} size="h5">Não atribuído · {eur(r.amount_cents)}</Title>

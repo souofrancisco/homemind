@@ -59,6 +59,7 @@ def _reconcilia(e):
         + e["residual"]["amount_cents"]
         + sum(i["amount_cents"] for i in e["own"])
         + sum(g["amount_cents"] for g in e["common"])
+        + (e["allowance"]["amount_cents"] if e["allowance"] else 0)
     )
     assert total == e["amount_cents"]
 
@@ -76,14 +77,19 @@ def test_quarto_e_sala_explicados_ao_centimo(app, client):
     _reconcilia(e)
     assert e["residents"] == 4 and e["equal_split_cents"] == 3000
     [mine] = e["own"]
-    assert mine["energy_wh"] == 100_000 and mine["amount_cents"] == 1600
+    # aquecedor provado no quarto da Ana: 30 kWh do plafond solidário (BILL-03) são de todos
+    assert mine["energy_wh"] == 100_000 and mine["covered_wh"] == 30_000
+    assert mine["heating"] and mine["amount_cents"] == 1120
     assert mine["appliance_name"] == "Aquecedor" and mine["device_name"] == "Tomada Ana"
     assert mine["match_outcome"] == "identified" and mine["match_confidence"] == 0.9
     assert mine["method"] == "room_rule" and mine["decided_by"] == "system"
     stages = [s["stage"] for s in mine["steps"]]
-    assert stages == ["measurement", "identification", "location", "decision", "share"]
+    assert stages == ["measurement", "identification", "location", "decision", "allowance", "share"]
     assert "SIMULADO" in mine["steps"][0]["text"] and "teu quarto" in mine["steps"][2]["text"]
-    assert "16,00 €" in mine["steps"][-1]["text"]
+    assert "11,20 €" in mine["steps"][-1]["text"] and "70,00 kWh" in mine["steps"][-1]["text"]
+    plafond = e["allowance"]
+    assert plafond["limit_wh"] == 30_000 and plafond["covered_wh"] == 30_000
+    assert plafond["house_covered_wh"] == 30_000 and plafond["my_share_wh"] == 7_500
 
     [sala] = e["common"]
     assert sala["consumptions"] == 1 and sala["energy_wh"] == 2_000

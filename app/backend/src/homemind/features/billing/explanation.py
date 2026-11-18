@@ -17,6 +17,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from homemind.contracts.billing import (
+    AllowanceExplanation,
     Attribution,
     AttributionMethod,
     BillAllocation,
@@ -41,6 +42,8 @@ class _Item:
     attribution: Attribution | None  # None: sem decisão no fecho (resíduo)
     target: UUID | None
     corrections: int
+    heating: bool = False  # aquecimento provado (BILL-03)
+    covered_wh: int = 0  # parte paga por todos pelo plafond solidário
 
 
 class _Mismatch(Exception):
@@ -60,12 +63,17 @@ def explain(conn: sqlite3.Connection, row: sqlite3.Row, mine: BillAllocation) ->
         "SELECT timezone, common_area_rule FROM household WHERE id = ?", (str(bill.household_id),)
     ).fetchone()
     names = _Names(conn, bill.household_id, ZoneInfo(house["timezone"]), mine.room_id)
+    limit_row = conn.execute(
+        "SELECT limit_wh FROM billing_allowance WHERE bill_id = ? AND room_id = ?",
+        (str(bill.id), str(mine.room_id)),
+    ).fetchone()
+    limit = limit_row["limit_wh"] if limit_row else None
 
     try:
-        own, common = _reconcile(mine, items, ids, equal, draw)
+        own, common, pool = _reconcile(mine, items, ids, equal, draw)
         evidence = True
     except _Mismatch:
-        own, common, evidence = {}, {}, False
+        own, common, pool, evidence = {}, {}, {}, False
 
     attributed_wh = sum(a.attributed_total_wh for a in everyone)
     residual_line = next(b for b in mine.breakdown if b.kind is BreakdownKind.residual_share)
@@ -83,7 +91,7 @@ def explain(conn: sqlite3.Connection, row: sqlite3.Row, mine: BillAllocation) ->
         common_area_rule=house["common_area_rule"],
         evidence_available=evidence,
         own=[
-            _explain_own(item, cents, me, names, view.price_millicents_per_kwh)
+            _explain_own(item, cents, me, names, view.price_millicents_per_kwh, limit)
             for item, cents in sorted(own.values(), key=lambda v: v[0].consumption.started_at)
         ],
         common=_groups(common, names),
@@ -98,13 +106,15 @@ def explain(conn: sqlite3.Connection, row: sqlite3.Row, mine: BillAllocation) ->
             provenance=residual_line.provenance
             or Provenance(origin=Origin.real, kind=ValueKind.estimated),
         ),
+        allowance=_allowance(conn, bill.id, mine, items, pool) if evidence else None,
     )
 
 
 def _items(conn: sqlite3.Connection, bill_id: UUID) -> list[_Item]:
     rows = conn.execute(
-        "SELECT target_resident_id, superseded_count, consumption_json, attribution_json"
-        " FROM billing_allocation_item WHERE bill_id = ? ORDER BY consumption_event_id",
+        "SELECT target_resident_id, superseded_count, consumption_json, attribution_json,"
+        " heating, covered_wh FROM billing_allocation_item WHERE bill_id = ?"
+        " ORDER BY consumption_event_id",
         (str(bill_id),),
     ).fetchall()
     return [
@@ -115,51 +125,96 @@ def _items(conn: sqlite3.Connection, bill_id: UUID) -> list[_Item]:
             else None,
             target=UUID(r["target_resident_id"]) if r["target_resident_id"] else None,
             corrections=r["superseded_count"],
+            heating=bool(r["heating"]),
+            covered_wh=r["covered_wh"],
         )
         for r in rows
     ]
 
 
 def _reconcile(mine, items, ids, equal, draw):
-    """Reparte os cêntimos de cada linha `room`/`common` (por proveniência) pelos seus consumos.
+    """Reparte os cêntimos de cada linha `room`/`common`/`heating_allowance` (por proveniência)
+    pelos seus consumos.
 
-    Devolve `own[id] = (item, cents)` e `common[id] = (item, my_wh, cents)`. Se os Wh da
+    Devolve `own[id] = (item, cents)`, `common[id] = (item, my_wh, cents)` e
+    `pool[id] = (item, my_wh, cents)` (a minha parte do plafond solidário). Se os Wh da
     evidência não batem certo com os do recibo, `_Mismatch` (nunca se inventa uma repartição).
     """
     me = mine.resident_id
     weights: dict[tuple[BreakdownKind, Provenance], dict[UUID, int]] = defaultdict(dict)
     share_of: dict[UUID, int] = {}
+    pool_of: dict[UUID, int] = {}
+    mine_ids: list[UUID] = []
     for i in items:
         if i.attribution is None:
             continue
         c = i.consumption
+        if i.covered_wh:
+            pool_of[c.id] = largest_remainder(i.covered_wh, equal, draw)[me]
+            if pool_of[c.id]:
+                weights[(BreakdownKind.heating_allowance, c.provenance)][c.id] = pool_of[c.id]
         if i.target == me:
-            weights[(BreakdownKind.room, c.provenance)][c.id] = c.energy_wh
+            mine_ids.append(c.id)
+            if c.energy_wh - i.covered_wh:
+                weights[(BreakdownKind.room, c.provenance)][c.id] = c.energy_wh - i.covered_wh
         elif i.target is None:
             share_of[c.id] = largest_remainder(c.energy_wh, equal, draw)[me]
             if share_of[c.id]:
                 weights[(BreakdownKind.common, c.provenance)][c.id] = share_of[c.id]
-    lines = {
-        (b.kind, b.provenance): b
-        for b in mine.breakdown
-        if b.kind in (BreakdownKind.room, BreakdownKind.common)
-    }
+    kinds = (BreakdownKind.room, BreakdownKind.common, BreakdownKind.heating_allowance)
+    lines = {(b.kind, b.provenance): b for b in mine.breakdown if b.kind in kinds}
     if set(lines) != set(weights):
         raise _Mismatch
-    cents: dict[UUID, int] = {}
+    cents: dict[tuple[BreakdownKind, UUID], int] = {}
     for key, line in lines.items():
         if sum(weights[key].values()) != line.energy_wh:
             raise _Mismatch
-        cents |= largest_remainder(line.amount_cents, weights[key])
+        for cid, v in largest_remainder(line.amount_cents, weights[key]).items():
+            cents[(key[0], cid)] = v
     by_id = {i.consumption.id: i for i in items}
-    own = {
-        cid: (by_id[cid], cents[cid])
-        for (kind, _), w in weights.items()
-        if kind is BreakdownKind.room
-        for cid in w
+    own = {cid: (by_id[cid], cents.get((BreakdownKind.room, cid), 0)) for cid in mine_ids}
+    common = {
+        cid: (by_id[cid], wh, cents.get((BreakdownKind.common, cid), 0))
+        for cid, wh in share_of.items()
     }
-    common = {cid: (by_id[cid], wh, cents.get(cid, 0)) for cid, wh in share_of.items()}
-    return own, common
+    pool = {
+        cid: (by_id[cid], wh, cents.get((BreakdownKind.heating_allowance, cid), 0))
+        for cid, wh in pool_of.items()
+    }
+    return own, common, pool
+
+
+def _allowance(
+    conn, bill_id: UUID, mine: BillAllocation, items, pool
+) -> AllowanceExplanation | None:
+    """O plafond do meu quarto (como estava no fecho) e a minha parte do da casa."""
+    row = conn.execute(
+        "SELECT limit_wh FROM billing_allowance WHERE bill_id = ? AND room_id = ?",
+        (str(bill_id), str(mine.room_id)),
+    ).fetchone()
+    if row is None and not pool:
+        return None
+    me = mine.resident_id
+    in_my_room = [
+        i
+        for i in items
+        if i.attribution is not None
+        and i.target == me
+        and i.consumption.location is LocationKind.room
+        and i.consumption.room_id == mine.room_id
+    ]
+    proven = [i for i in in_my_room if i.heating]
+    unproven = [i for i in in_my_room if i.consumption.match.appliance_id is None]
+    return AllowanceExplanation(
+        limit_wh=row["limit_wh"] if row else 0,
+        heating_wh=sum(i.consumption.energy_wh for i in proven),
+        covered_wh=sum(i.covered_wh for i in proven),
+        unproven_consumptions=len(unproven),
+        unproven_wh=sum(i.consumption.energy_wh for i in unproven),
+        house_covered_wh=sum(i.covered_wh for i in items),
+        my_share_wh=sum(wh for _, wh, _ in pool.values()),
+        amount_cents=sum(c for _, _, c in pool.values()),
+    )
 
 
 # --- textos --------------------------------------------------------------------------------------
@@ -240,7 +295,7 @@ def _decision_text(a: Attribution, actor: DecisionActor) -> str:
 
 
 def _explain_own(
-    item: _Item, cents: int, me: UUID, names: _Names, price: int
+    item: _Item, cents: int, me: UUID, names: _Names, price: int, limit: int | None
 ) -> ExplainedConsumption:
     c, a = item.consumption, item.attribution
     assert a is not None and c.energy_wh is not None
@@ -268,11 +323,14 @@ def _explain_own(
                 "conta só a mais recente.",
             )
         )
+    note = _allowance_text(item, names, limit)
+    if note:
+        steps.append(ExplanationStep(stage=ExplanationStage.allowance, text=note))
     steps.append(
         ExplanationStep(
             stage=ExplanationStage.share,
-            text=f"{money(cents)} no teu recibo: {kwh(c.energy_wh)} ao preço médio da fatura "
-            f"({price_per_kwh(price)}, sem termo fixo).",
+            text=f"{money(cents)} no teu recibo: {kwh(c.energy_wh - item.covered_wh)} ao preço "
+            f"médio da fatura ({price_per_kwh(price)}, sem termo fixo).",
         )
     )
     return ExplainedConsumption(
@@ -291,9 +349,31 @@ def _explain_own(
         decided_by=actor,
         decided_at=a.decided_by.at,
         corrections=item.corrections,
+        heating=item.heating,
+        covered_wh=item.covered_wh,
         amount_cents=cents,
         steps=steps,
     )
+
+
+def _allowance_text(item: _Item, names: _Names, limit: int | None) -> str | None:
+    """Plafond solidário (BILL-03): dito sempre que pode contar, nunca aplicado em silêncio."""
+    c = item.consumption
+    if not limit or c.location is not LocationKind.room or c.room_id != names.my_room:
+        return None
+    if item.covered_wh:
+        return (
+            f"Plafond solidário: {kwh(item.covered_wh)} deste aquecimento são pagos por todos "
+            f"(o teu quarto tem {kwh(limit)} de aquecimento básico nesta fatura)."
+        )
+    if item.heating:
+        return "Aquecimento acima do plafond solidário do teu quarto (já usado): é teu."
+    if c.match.appliance_id is None:
+        return (
+            "Sem prova de que é aquecimento (aparelho não identificado): não conta para o "
+            "plafond solidário."
+        )
+    return None
 
 
 def _identification(c: ConsumptionEvent, appliance: str | None) -> str:

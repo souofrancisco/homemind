@@ -2,7 +2,8 @@
 
 Gasto do mês = TODOS os custos (D-31), o que o morador pagaria se o mês fechasse agora:
 - `confirmed`: consumo atribuído a si (quarto, confirmação) × preço;
-- `shared`: a sua parte igual dos consumos da conta comum × preço;
+- `shared`: a sua parte igual dos consumos da conta comum e do plafond solidário (BILL-03:
+  o aquecimento básico de cada quarto é de todos, como no fecho) × preço;
 - `base`: parte do termo fixo + resíduo, estimada pelo último recibo fechado (por dia) e
   proporcional aos dias já passados; `None` se ainda não há recibo anterior.
 Preço: o de referência da casa; senão o preço médio da última fatura; sem nenhum → gasto
@@ -34,8 +35,14 @@ from homemind.contracts.billing import (
     budget_light,
 )
 from homemind.contracts.common import Origin, Provenance, ValueKind, cost_cents, stable_id
-from homemind.features.billing import bills
-from homemind.features.billing.closing import period_inputs, tenants_in_period
+from homemind.features.billing import allowance, bills
+from homemind.features.billing.allocation import EnergyShare
+from homemind.features.billing.closing import (
+    heating_appliances,
+    period_inputs,
+    room_limits,
+    tenants_in_period,
+)
 
 
 def month_period(period: str) -> BillPeriod:
@@ -85,7 +92,7 @@ def month_spend(
             lines[line.kind] += line.amount_cents
         return Spend(
             confirmed_cents=lines[BreakdownKind.room] + lines[BreakdownKind.appliance],
-            shared_cents=lines[BreakdownKind.common],
+            shared_cents=lines[BreakdownKind.common] + lines[BreakdownKind.heating_allowance],
             base_cents=allocation.fixed_share_cents + allocation.residual_share_cents,
             final=True,
             simulated=simulated,
@@ -98,16 +105,27 @@ def month_spend(
     if not price:
         return None  # sem preço não há custo: desconhecido, nunca 0 €
     attributions, consumptions = period_inputs(conn, household_id, month)
-    own_wh, shared_wh, simulated = 0, Fraction(0), False
+    shares, simulated = [], False
     for a in attributions:
         c = consumptions[a.consumption_event_id]
         if not c.energy_wh:
             continue
         simulated = simulated or c.provenance.simulated
-        if a.target_type is AttributionTarget.resident and a.target_resident_id == resident_id:
-            own_wh += c.energy_wh
-        elif a.target_type is AttributionTarget.common:
-            shared_wh += Fraction(c.energy_wh, len(tenants))
+        target = a.target_resident_id if a.target_type is AttributionTarget.resident else None
+        shares.append(EnergyShare(target, c.energy_wh, c.provenance, c.id))
+    # Plafond solidário (BILL-03) como no fecho: o aquecimento básico do quarto é de todos.
+    shares, _ = allowance.apply(
+        shares,
+        consumptions,
+        tenants,
+        room_limits(conn, household_id, month),
+        heating_appliances(conn, household_id),
+    )
+    own_wh = sum(s.energy_wh for s in shares if s.resident_id == resident_id)
+    shared_wh = sum(
+        (Fraction(s.energy_wh, len(tenants)) for s in shares if s.resident_id is None),
+        Fraction(0),
+    )
     base = None
     if last is not None and resident_id in last["base_per_day"]:
         today = local_today(conn, household_id, now)
