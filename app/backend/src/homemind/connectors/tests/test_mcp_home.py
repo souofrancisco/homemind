@@ -9,7 +9,8 @@ import pytest
 
 from homemind.connectors.altice_auth import OAuthReauthRequired
 from homemind.connectors.fake_home import FakeHome
-from homemind.connectors.mcp_home import McpHome
+from homemind.connectors.mcp_home import McpHome, _rgb_confere, cor_verificavel
+from homemind.connectors.mcp_verify import verify_lamp
 from homemind.connectors.write_grant import read_grant, write_grant
 from homemind.core.config import Settings
 
@@ -31,6 +32,7 @@ class FakeMcp:
         self.down = False
         self.explicit_error = False
         self.ignore_writes = False
+        self.brightness_resets_color = False  # escrever o brilho anula a cor enviada antes
         self.fail_reads = 0  # falhas transitórias de get_device_details (a sessão fecha)
         self.die_after_write = False  # o transporte cai logo após a 1.ª escrita
         self.list_calls = 0
@@ -110,6 +112,9 @@ class FakeMcp:
             dev["base"] = (body["redValue"], body["greenValue"], body["blueValue"])
         else:
             caps[kind].update(body)
+            if kind == "brightness" and self.brightness_resets_color:
+                # observado no kit real (2026-11-18): o brilho repõe a cor anterior
+                dev["base"] = (255, 255, 255)
         if "base" in dev:  # lâmpada real: color_rgb devolvido = cor × brilho/100
             b = caps["brightness"]["value"]
             for k, c in zip(("redValue", "greenValue", "blueValue"), dev["base"], strict=True):
@@ -183,6 +188,65 @@ def test_readback_reflects_device_values(tmp_path):
     lamp = run(home.estado()).lampada
     # RGB devolvido (128,0,0) a 50% normaliza para a cor pedida; o nome é derivado dele
     assert (lamp.ligada, lamp.rgb, lamp.brilho, lamp.cor) == (True, (255, 0, 0), 50, "vermelho")
+
+
+def test_lamp_brightness_is_written_before_color(tmp_path):
+    # Kit real (2026-11-18): escrever o brilho DEPOIS da cor anula a cor e repõe a anterior.
+    home, mcp, _ = make(tmp_path)
+    mcp.brightness_resets_color = True
+    assert run(home.definir_lampada(True, "vermelho", 50)) is True
+    lamp = run(home.estado()).lampada
+    assert (lamp.rgb, lamp.brilho) == ((255, 0, 0), 50)
+    tipos = [a["body"]["type"] for _, a in mcp.writes()]
+    assert tipos.index("brightness") < tipos.index("color_rgb")
+
+
+def _lamp_json(rgb, brilho):
+    r, g, b = rgb
+    return {
+        "type": "bulb",
+        "capabilities": _caps(
+            ("brightness", {"value": brilho}),
+            ("color_rgb", {"redValue": r, "greenValue": g, "blueValue": b}),
+        ),
+    }
+
+
+def test_color_check_is_not_fooled_at_low_brightness():
+    # a 1 % o RGB lido (0–3) cabia todo na tolerância: vermelho passava por branco-azulado
+    vermelho_a_1 = _lamp_json((3, 0, 0), 1)
+    assert cor_verificavel((200, 200, 255), 1) is False
+    assert _rgb_confere(vermelho_a_1, (200, 200, 255)) is False
+    assert _rgb_confere(vermelho_a_1, (255, 0, 0)) is False  # não verificável: nunca «confere»
+    # com brilho suficiente a cor distingue-se
+    assert cor_verificavel((200, 200, 255), 40) is True
+    assert _rgb_confere(_lamp_json((102, 0, 0), 40), (200, 200, 255)) is False
+    assert _rgb_confere(_lamp_json((80, 80, 102), 40), (200, 200, 255)) is True
+
+
+def test_verify_lamp_applies_and_restores_color_in_the_safe_order(tmp_path, monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _="": "AUTORIZO LAMPADA")
+    home, mcp, _ = make(tmp_path, grant=("lamp",))
+    mcp.brightness_resets_color = True
+    mcp.dev["L0"]["capabilities"][0]["value"] = "on"
+    r = run(verify_lamp(home))
+    assert r["applied_confirmed"] is True and r["restored_confirmed"] is True
+    assert r["restored_color_verified"] is True
+    final = r["final"]
+    assert (final["ligada"], final["brilho"]) == (True, 30)
+    assert all(abs(c - 255) <= 3 for c in final["rgb"])  # normalizado a 30 %: arredonda
+    tipos = [a["body"]["type"] for _, a in mcp.writes()]
+    assert tipos == ["power", "brightness", "color_rgb", "brightness", "color_rgb", "power"]
+
+
+def test_verify_lamp_flags_unverifiable_color_when_restoring_to_dim(tmp_path, monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _="": "AUTORIZO LAMPADA")
+    home, mcp, _ = make(tmp_path, grant=("lamp",))
+    mcp.dev["L0"]["capabilities"][0]["value"] = "on"
+    mcp.dev["L0"]["capabilities"][1]["value"] = 1  # brilho inicial 1 %
+    r = run(verify_lamp(home))
+    assert r["restored_color_verified"] is False  # só ligada e brilho foram confirmados
+    assert r["restored_confirmed"] is True
 
 
 def test_explicit_mcp_error_is_failure(tmp_path):

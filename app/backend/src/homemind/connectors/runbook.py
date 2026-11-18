@@ -710,6 +710,8 @@ async def check_escrita(amb: Ambiente, papel: str) -> Check:
     if papel == "lamp":
         final = r.get("final") or {}
         texto += f"; estado final: ligada={final.get('ligada')}, brilho={final.get('brilho')}"
+        if r.get("restored_color_verified") is False:
+            texto += "; cor do restauro não verificável pela leitura (brilho baixo): só o olho"
     else:
         texto += f"; ligada inicial={r.get('initial_on')}, final={r.get('final_on')}"
         restaurado = restaurado and r.get("final_on") == r.get("initial_on")
