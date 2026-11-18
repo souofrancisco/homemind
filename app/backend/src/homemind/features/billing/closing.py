@@ -31,7 +31,11 @@ from homemind.contracts.billing import (
 from homemind.contracts.common import Audit, Provenance, replace, stable_id
 from homemind.contracts.energy import ConsumptionEvent
 from homemind.features.billing import attributor, bills
-from homemind.features.billing.allocation import allocate, shares_from_attributions
+from homemind.features.billing.allocation import (
+    EnergyShare,
+    allocate,
+    shares_from_attributions,
+)
 
 
 class BillStateError(ValueError):
@@ -80,6 +84,69 @@ def period_inputs(
     return attributions, consumptions
 
 
+def undecided_in_period(
+    conn: sqlite3.Connection, household_id: UUID, period: BillPeriod
+) -> list[ConsumptionEvent]:
+    """Consumos fechados do período SEM atribuição ativa: ficam no resíduo (BILL-05 explica)."""
+    tz = ZoneInfo(
+        conn.execute(
+            "SELECT timezone FROM household WHERE id = ?", (str(household_id),)
+        ).fetchone()["timezone"]
+    )
+    lo = (period.start - timedelta(days=1)).isoformat()
+    hi = (period.end + timedelta(days=2)).isoformat()
+    rows = conn.execute(
+        "SELECT c.json FROM billing_consumption c WHERE c.household_id = ?"
+        " AND c.status = 'closed' AND c.energy_wh > 0 AND c.started_at >= ? AND c.started_at < ?"
+        " AND NOT EXISTS (SELECT 1 FROM billing_attribution a"
+        "  WHERE a.consumption_event_id = c.id AND a.status = 'active') ORDER BY c.started_at",
+        (str(household_id), lo, hi),
+    ).fetchall()
+    out = [ConsumptionEvent.model_validate_json(r["json"]) for r in rows]
+    return [c for c in out if period.start <= c.started_at.astimezone(tz).date() <= period.end]
+
+
+def _save_evidence(
+    conn: sqlite3.Connection,
+    bill: ElectricityBill,
+    attributions: list[Attribution],
+    consumptions: dict[UUID, ConsumptionEvent],
+    shares: list[EnergyShare],
+) -> None:
+    """Fotografia do que entrou na fatura (e do que ficou no resíduo), para a explicar depois."""
+    by_consumption = {a.consumption_event_id: a for a in attributions}
+    rows = []
+    for s in shares:
+        a, c = by_consumption[s.consumption_id], consumptions[s.consumption_id]
+        superseded = conn.execute(
+            "SELECT count(*) FROM billing_attribution WHERE consumption_event_id = ?"
+            " AND status = 'superseded'",
+            (str(c.id),),
+        ).fetchone()[0]
+        rows.append((c, 1, s.resident_id, superseded, a.model_dump_json()))
+    for c in undecided_in_period(conn, bill.household_id, bill.period):
+        rows.append((c, 0, None, 0, None))
+    conn.executemany(
+        "INSERT INTO billing_allocation_item (bill_id, consumption_event_id, household_id,"
+        " attributed, target_resident_id, energy_wh, superseded_count, consumption_json,"
+        " attribution_json) VALUES (?,?,?,?,?,?,?,?,?)",
+        [
+            (
+                str(bill.id),
+                str(c.id),
+                str(bill.household_id),
+                attributed,
+                str(resident) if resident else None,
+                c.energy_wh,
+                superseded,
+                c.model_dump_json(),
+                a_json,
+            )
+            for c, attributed, resident, superseded, a_json in rows
+        ],
+    )
+
+
 def _bill(conn: sqlite3.Connection, household_id: UUID, bill_id: UUID) -> sqlite3.Row:
     row = bills.get_bill(conn, household_id, bill_id)
     if row is None:
@@ -115,10 +182,11 @@ def finalize(
     events: list[de.DomainEvent] = list(attributor.expire_pending(conn, now))
     attributions, consumptions = period_inputs(conn, household_id, bill.period)
     residents = tenants_in_period(conn, household_id, bill.period)
+    shares = shares_from_attributions(attributions, consumptions)
     allocations = [
-        replace(a, status=AllocationStatus.published)
-        for a in allocate(bill, residents, shares_from_attributions(attributions, consumptions))
+        replace(a, status=AllocationStatus.published) for a in allocate(bill, residents, shares)
     ]
+    _save_evidence(conn, bill, attributions, consumptions, shares)
     for a in allocations:
         conn.execute(
             "INSERT INTO billing_allocation (id, bill_id, household_id, resident_id, room_id,"

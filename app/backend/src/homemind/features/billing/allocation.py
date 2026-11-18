@@ -19,7 +19,7 @@ e saídas fazem-se no fim do mês; não há repartição por dias).
 import hashlib
 from collections import defaultdict
 from collections.abc import Callable, Hashable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from fractions import Fraction
 from math import floor
 from uuid import UUID
@@ -47,6 +47,7 @@ class EnergyShare:
     resident_id: UUID | None
     energy_wh: int
     provenance: Provenance
+    consumption_id: UUID | None = field(default=None, compare=False)  # evidência (BILL-05)
 
 
 def shares_from_attributions(
@@ -64,7 +65,7 @@ def shares_from_attributions(
         if event.status is not ConsumptionStatus.closed or not event.energy_wh:
             continue
         resident = a.target_resident_id if a.target_type is AttributionTarget.resident else None
-        out.append(EnergyShare(resident, event.energy_wh, event.provenance))
+        out.append(EnergyShare(resident, event.energy_wh, event.provenance, event.id))
     return out
 
 

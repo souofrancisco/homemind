@@ -162,6 +162,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | `POST` | `/api/households/{id}/bills/{bill_id}/finalize` (+ `…/revisions`) | L | **IMPLEMENTADO (BILL-04):** calcula e fixa; `409 bill_finalized` se repetido; correção = nova revisão (`409 bill_not_finalized` num rascunho) |
 | `GET` | `/api/households/{id}/bills/{bill_id}/summary` | L (totais por quarto) | **IMPLEMENTADO** (`LandlordBillView`) |
 | `GET` | `/api/households/{id}/bills/{bill_id}/receipt` | T | **IMPLEMENTADO**: `BillAllocation` própria (recibo por linhas) |
+| `GET` | `/api/households/{id}/bills/{bill_id}/receipt/explanation` | T | **IMPLEMENTADO (BILL-05):** `ReceiptExplanation` (evidência guardada no fecho, `billing_allocation_item`) |
 | `POST` | `/api/allocations/{id}/contest` | T | |
 | `GET` `PUT` | `/api/households/{id}/budgets/me?period` | T | **IMPLEMENTADO (ALERT-01):** `BudgetIn` → `BudgetStatus` |
 | `GET` `PUT` | `/api/households/{id}/room-allowances` | L | Plafond por quarto |

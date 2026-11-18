@@ -31,7 +31,8 @@ from homemind.contracts.common import (
     check_transition,
     replace,
 )
-from homemind.contracts.energy import EnergyTotal
+from homemind.contracts.energy import EnergyTotal, LocationKind, MatchOutcome
+from homemind.contracts.household import CommonAreaRule
 
 # --- atribuição -------------------------------------------------------------------------------
 
@@ -419,3 +420,100 @@ class Contestation(ContractModel):
         if (self.status is ContestationStatus.open) != (self.resolved_at is None):
             raise ValueError("resolved_at exatamente quando já não está aberta")
         return self
+
+
+# --- explicação do recibo (BILL-05) -----------------------------------------------------------
+
+
+class DecisionActor(StrEnum):
+    """Quem decidiu uma atribuição, do ponto de vista de quem lê: nunca o id de outra pessoa."""
+
+    system = "system"  # regra automática (quarto, prazo expirado)
+    me = "me"
+    housemates = "housemates"  # outro(s) morador(es), p. ex. por votação (D-32)
+
+
+class ExplanationStage(StrEnum):
+    measurement = "measurement"  # medição na tomada (ou estimativa/simulação)
+    identification = "identification"  # assinatura do aparelho e confiança
+    location = "location"  # quarto, zona comum ou desconhecida
+    decision = "decision"  # regra/confirmação/votação/prazo
+    correction = "correction"  # decisões anteriores substituídas
+    share = "share"  # parcela no recibo
+
+
+class ExplanationStep(ContractModel):
+    stage: ExplanationStage
+    text: Annotated[str, Field(min_length=1, max_length=300)]
+
+
+class ExplainedConsumption(ContractModel):
+    """Um consumo MEU (atribuído a mim) e porque me foi atribuído, da medição à parcela."""
+
+    consumption_event_id: UUID
+    started_at: UtcDatetime
+    ended_at: UtcDatetime | None = None
+    energy_wh: EnergyWh
+    provenance: Provenance
+    device_name: str | None = None  # tomada onde foi medido
+    appliance_name: str | None = None  # None: aparelho não identificado
+    match_outcome: MatchOutcome
+    match_confidence: Confidence | None = None
+    location: LocationKind
+    room_name: str | None = None
+    method: AttributionMethod
+    decided_by: DecisionActor
+    decided_at: UtcDatetime
+    corrections: Annotated[int, Field(strict=True, ge=0)] = 0
+    amount_cents: Cents
+    steps: list[ExplanationStep]
+
+
+class ExplainedCommonGroup(ContractModel):
+    """Consumos da conta comum agregados por aparelho e decisão: sem horas nem pessoas."""
+
+    appliance_name: str | None = None
+    location: LocationKind
+    method: AttributionMethod
+    provenance: Provenance
+    consumptions: Annotated[int, Field(strict=True, ge=1)]
+    energy_wh: EnergyWh  # total do grupo (toda a casa)
+    my_energy_wh: EnergyWh  # a minha parte igual
+    amount_cents: Cents
+
+
+class ResidualExplanation(ContractModel):
+    """Porque há consumo não atribuído: o que a fatura mede e as tomadas não explicam."""
+
+    bill_wh: EnergyWh
+    attributed_wh: EnergyWh  # Σ consumos com decisão (casa inteira, agregado)
+    residual_wh: EnergyWh
+    undecided_consumptions: Annotated[int, Field(strict=True, ge=0)]  # sem decisão no fecho
+    undecided_wh: EnergyWh
+    my_energy_wh: EnergyWh
+    amount_cents: Cents
+    provenance: Provenance
+
+
+class ReceiptExplanation(ContractModel):
+    """«Porque pago isto?»: o recibo do morador explicado linha a linha.
+
+    Reconcilia ao cêntimo com `BillAllocation`: Σ `own` = linhas `room`, Σ `common` = linhas
+    `common`, `residual` = `residual_share_cents`. `evidence_available=False` quando a fatura foi
+    fechada antes de haver evidência guardada (as listas vêm vazias; o recibo continua válido).
+    """
+
+    bill_id: UUID
+    revision: int
+    period: BillPeriod
+    allocation_id: UUID
+    amount_cents: Cents
+    residents: Annotated[int, Field(strict=True, ge=1)]
+    equal_split_cents: Cents  # o que pagaria com a divisão igual de hoje
+    fixed_cents: Cents
+    price_millicents_per_kwh: int  # preço médio da fatura (sem termo fixo)
+    common_area_rule: CommonAreaRule  # regra em vigor HOJE (a versão por data é HOUSE-04)
+    evidence_available: bool
+    own: list[ExplainedConsumption]
+    common: list[ExplainedCommonGroup]
+    residual: ResidualExplanation

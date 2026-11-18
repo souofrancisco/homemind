@@ -80,6 +80,19 @@ valor_i          = individual_kWh_i × preço + base ÷ N
 
 O recibo mostra **cada linha** com a proveniência dos kWh (`measured` / `estimated` / `inferred` / `simulated`), a percentagem atribuída a alguém e um botão de contestação. Os números do recibo vêm de código; o LLM só os explica ([agent.md](agent.md)).
 
+### Explicação do recibo (BILL-05)
+
+**IMPLEMENTADO (backend):** `GET …/bills/{bill_id}/receipt/explanation` → `ReceiptExplanation`, só para o inquilino (o seu recibo). No fecho (`closing.finalize`) guarda-se em `billing_allocation_item` uma fotografia de cada consumo do período e da decisão ativa (ou da falta dela): a explicação não muda se o consumo ou a decisão mudarem depois; uma correção da fatura é uma nova revisão com a sua própria evidência.
+
+- **Os meus consumos** (`own`): um por consumo, com a linha temporal medição → identificação (aparelho e confiança, ou «não identificado»/ambíguo) → localização → decisão (regra do quarto, «É minha», votação D-32, prazo expirado) → correções → parcela. Os textos são gerados em código a partir dos dados.
+- **Conta comum** (`common`): agregada por aparelho, localização e decisão; **sem horas nem pessoas**.
+- **Resíduo**: kWh da fatura, kWh atribuídos (casa inteira, agregado), consumos sem decisão no fecho.
+- Quem decidiu aparece como `me` / `housemates` / `system`, **nunca** com o id de outro morador. O senhorio e o operador recebem `403` (o senhorio só tem o resumo por quarto).
+- **Reconciliação ao cêntimo:** os cêntimos de cada linha `room`/`common` do recibo repartem-se pelos seus consumos (maior resto pelos Wh), logo `fixa + resíduo + Σ own + Σ common = amount_cents`. Se a evidência não bate certo com o recibo (fatura fechada antes desta versão), `evidence_available=false` e as listas vêm vazias: nunca se inventa uma repartição.
+- Inclui `equal_split_cents` (o que pagaria com a divisão igual) para responder a «porque é que pago mais?».
+
+**PLANEADO:** página na app (APP-06); política versionada por data (HOUSE-04: hoje mostra-se a regra da sala em vigor); contagem de votos por consumo; contestação (BILL-06).
+
 ### Exemplos de aceitação (valores do PDF; fatura de 120 € = 24 € fixos + 600 kWh × 0,16 €)
 
 **Fixture A — modelo do PDF §7.1** (individual = quarto + sala + máquina):
@@ -140,7 +153,7 @@ Validação da fatura (PROPOSTA de limiares, ajustáveis em `bills.py`): preço 
 
 ## Ficheiros novos previstos
 
-`features/billing/{attribution,allocation,receipt,router,tests}`, `features/budgets/`, `features/alerts/`, `contracts/billing.py`.
+`features/billing/{attribution,attributor,allocation,bills,closing,budgets,explanation,router,tests}`, `features/budgets/`, `features/alerts/`, `contracts/billing.py`.
 
 ## Dependências
 
