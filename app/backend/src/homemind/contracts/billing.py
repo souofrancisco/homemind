@@ -381,6 +381,41 @@ class BudgetIn(ContractModel):
         return self
 
 
+class BudgetLight(StrEnum):
+    """Cor do orçamento na lâmpada do PRÓPRIO quarto (ALERT-06, v5.1 §22): âmbar aos 80 %,
+    vermelho aos 100 %. Nunca na lâmpada de uma zona comum: o orçamento é pessoal."""
+
+    green = "green"
+    amber = "amber"
+    red = "red"
+
+
+class BudgetLightCue(ContractModel):
+    """O que a lâmpada mostraria. `color` é um nome de `contracts.home.CORES` (o mesmo
+    vocabulário das escritas MCP); `label` diz o mesmo em texto, para não depender da cor."""
+
+    light: BudgetLight
+    color: str
+    rgb: tuple[int, int, int]
+    label: str
+
+
+_LIGHT = {
+    BudgetLight.green: ("verde", (0, 255, 0), "Dentro do orçamento"),
+    BudgetLight.amber: ("amarelo", (255, 200, 0), "Atenção: perto do limite do orçamento"),
+    BudgetLight.red: ("vermelho", (255, 0, 0), "Orçamento ultrapassado"),
+}
+
+
+def budget_light(pct: int | None) -> BudgetLightCue | None:
+    """Sem orçamento ou sem gasto conhecido não há cor (nunca «verde» por omissão)."""
+    if pct is None:
+        return None
+    light = BudgetLight.red if pct >= 100 else BudgetLight.amber if pct >= 80 else BudgetLight.green
+    color, rgb, label = _LIGHT[light]
+    return BudgetLightCue(light=light, color=color, rgb=rgb, label=f"{label} ({pct} %)")
+
+
 class BudgetStatus(ContractModel):
     """Quanto já gastei este mês face ao meu objetivo (D-31: todos os custos).
 
@@ -395,6 +430,7 @@ class BudgetStatus(ContractModel):
     shared_cents: Cents | None  # a minha parte igual da conta comum (estimada)
     base_cents: Cents | None  # parte do termo fixo + resíduo (estimada do último recibo)
     pct: Annotated[int, Field(strict=True, ge=0)] | None
+    light: BudgetLightCue | None = None  # ALERT-06: cor mostrada na app (lâmpada só com grant)
     final: bool
     provenance: Provenance | None
     as_of: UtcDatetime

@@ -679,6 +679,19 @@ def event_samples() -> list[domain_events.EventBase]:
                 kind=e.AlertKind.peak, severity=notification.NotificationSeverity.warning, ref=ref
             ),
         ),
+        e.AlertsColdRoom(
+            **d,
+            provenance=SIM_MEASURED,
+            data=e.ColdRoomData(
+                resident_id=ANA,
+                room_id=ROOM_ANA,
+                cold_nights=3,
+                window_nights=7,
+                threshold_c=18.0,
+                coldest_night_c=15.5,
+                last_night=date(2026, 11, 16),
+            ),
+        ),
         e.AgentActionProposed(**d, provenance=SIM_INFERRED, data=proposed_action()),
         e.AutomationProposed(**d, provenance=SIM_INFERRED, data=automation()),
         e.AutomationExecuted(

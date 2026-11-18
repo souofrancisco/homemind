@@ -42,7 +42,15 @@ from homemind.core.access import (
 )
 from homemind.core.db import Database
 from homemind.core.events import EventBus, append_event
-from homemind.features.billing import attributor, bills, budgets, closing, explanation, peaks
+from homemind.features.billing import (
+    attributor,
+    bills,
+    budgets,
+    closing,
+    comfort,
+    explanation,
+    peaks,
+)
 
 log = logging.getLogger(__name__)
 EXPIRY_INTERVAL_S = 60.0
@@ -70,6 +78,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.bus.subscribe(attributor.CONSUMER, attributor.handle, attributor.EVENT_TYPES)
     app.state.bus.subscribe(budgets.CONSUMER, budgets.handle, budgets.EVENT_TYPES)
     app.state.bus.subscribe(peaks.CONSUMER, peaks.handle, peaks.EVENT_TYPES)
+    app.state.bus.subscribe(comfort.CONSUMER, comfort.handle, comfort.EVENT_TYPES)
 
     async def expiry_loop() -> None:
         while True:
