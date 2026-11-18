@@ -14,7 +14,8 @@ Invariantes (todos testados):
   decisivo (`vote_decided` + `status_changed`); rejeitada: `proposed → draft` (uma reativação
   rejeitada deixa a regra `disabled`), só `vote_decided`;
 - qualquer inquilino suspende (`active → disabled`, `status_changed`); reativar abre uma nova
-  ronda de votos limpa (`active` só pela maioria) e não emite evento;
+  ronda de votos limpa (`active` só pela maioria) e reemite `automation.proposed` (regra
+  `disabled`) para avisar os moradores;
 - os eventos entram no outbox na mesma transação (`append_event`, ids estáveis: repetir não
   duplica); o chamador acorda o barramento depois do COMMIT;
 - `automation_log` tem uma linha por acontecimento (só a acrescentar);
@@ -68,6 +69,7 @@ from homemind.core.events import append_event
 from homemind.features.automations import repo
 
 VOTE_WINDOW = timedelta(hours=24)
+MAX_OPEN_PER_PROPOSER = 3  # propostas abertas por morador-proponente (como `agent_action`)
 
 NOT_FOUND = "automation_not_found"
 NOT_ELIGIBLE = "not_eligible"
@@ -78,6 +80,7 @@ ALREADY_VOTED = "already_voted"
 NOT_ACTIVE = "automation_not_active"
 NOT_DISABLED = "automation_not_disabled"
 VOTE_ALREADY_OPEN = "vote_already_open"
+TOO_MANY_OPEN = "too_many_open"
 CONFLICT = "vote_conflict"
 
 
@@ -324,10 +327,19 @@ def propose(
 ) -> Result:
     """Grava a regra `proposed`, o log e `automation.proposed` numa transação. `plugs` são as
     tomadas conhecidas da casa (id → nome): qualquer outro alvo (lâmpada incluída) é recusado.
-    Levanta `pydantic.ValidationError` se o gatilho não cumpre o contrato (ex.: sem limiar)."""
+    Levanta `pydantic.ValidationError` se o gatilho não cumpre o contrato (ex.: sem limiar).
+
+    O proponente vota a favor ao propor (1 voto): com a maioria já atingida (ex.: 1 morador) a
+    regra fecha aprovada no próprio pedido, com os eventos normais. No máximo
+    `MAX_OPEN_PER_PROPOSER` propostas abertas por proponente.
+
+    Alvo e `trigger.device_id` têm de ser tomadas conhecidas da casa (nunca de outra casa nem a
+    lâmpada). Atenção: pode ser a tomada AGREGADA (a extensão, que alimenta vários aparelhos):
+    desligá-la corta tudo o que lá está. A UI (onda 4) tem de o avisar a quem vota."""
+    events = resolve_expired(conn, household_id, now)
     eligible = repo.active_tenants(conn, household_id, now)
     if resident_id not in eligible:
-        return Result(error=NOT_ELIGIBLE)
+        return Result(error=NOT_ELIGIBLE, events=events)
     rule = AutomationRule(
         id=new_id(),
         household_id=household_id,
@@ -344,8 +356,12 @@ def propose(
         status=AutomationStatus.proposed,
         created_by_resident_id=resident_id,
     )
-    if any(a.target_device_id not in plugs for a in rule.actions):
-        return Result(error=INVALID_TARGET)
+    if any(a.target_device_id not in plugs for a in rule.actions) or (
+        rule.trigger.device_id is not None and rule.trigger.device_id not in plugs
+    ):
+        return Result(error=INVALID_TARGET, events=events)
+    if repo.count_open_by(conn, household_id, resident_id) >= MAX_OPEN_PER_PROPOSER:
+        return Result(error=TOO_MANY_OPEN, events=events)
     names = ", ".join(dict.fromkeys(plugs[a.target_device_id] for a in rule.actions))
     repo.insert_rule(
         conn, rule, origin=origin.value, device_name=names, now=now,
@@ -363,7 +379,16 @@ def propose(
         data=rule,
     )
     append_event(conn, event)
-    return Result(view_of(conn, row, resident_id, now), events=(event,))
+    ballot = AutomationVote(resident_id=resident_id, approve=True, at=now)
+    repo.insert_vote(conn, rule.id, ballot)  # o proponente vota a favor
+    repo.log(conn, rule.id, now, "voted", by=resident_id, approve=True)
+    out, n = _outcome(conn, row, expired=False)
+    events += (event,)
+    if out.decided:  # maioria já atingida (ex.: 1 morador)
+        events += _close(conn, row, out, n, now, by=resident_id, expired=False)
+    fresh = repo.get_row(conn, household_id, rule.id)
+    assert fresh is not None
+    return Result(view_of(conn, fresh, resident_id, now), events=events)
 
 
 def vote(
@@ -444,7 +469,18 @@ def reactivate(
     repo.log(conn, rule_id, now, "reactivation_opened", by=resident_id)
     fresh = repo.get_row(conn, household_id, rule_id)
     assert fresh is not None
-    return Result(view_of(conn, fresh, resident_id, now), events=events)
+    # Reutiliza `automation.proposed` (regra `disabled`) para avisar os moradores; id estável por
+    # regra+ronda (a proposta inicial, ronda 1, mantém o seu id).
+    notice = AutomationProposed(
+        id=stable_id("automation.proposed", str(rule_id), str(fresh["vote_round"])),
+        ts=now,
+        household_id=household_id,
+        correlation_id=rule_id,
+        provenance=_prov(fresh),
+        data=repo.rule_of(fresh),
+    )
+    append_event(conn, notice)
+    return Result(view_of(conn, fresh, resident_id, now), events=(*events, notice))
 
 
 def get_view(

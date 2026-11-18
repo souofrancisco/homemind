@@ -7,15 +7,19 @@ import pytest
 
 from homemind.contracts import domain_events as de
 from homemind.contracts import fixtures as fx
-from homemind.contracts.agent import AutomationStatus
-from homemind.contracts.common import Origin, Provenance, ValueKind, replace
+from homemind.contracts.agent import AutomationStatus, RuleVerdict
+from homemind.contracts.common import Origin, Provenance, ValueKind, replace, stable_id
 from homemind.contracts.notification import (
     NotificationKind,
     NotificationScope,
     NotificationSeverity,
+    NotificationStatus,
     RefType,
 )
-from homemind.features.notifications.handlers import AUTOMATION_PROPOSAL_CONSUMER
+from homemind.features.notifications.handlers import (
+    AUTOMATION_DECIDED_CONSUMER,
+    AUTOMATION_PROPOSAL_CONSUMER,
+)
 from homemind.features.notifications.tests._bus import (
     NOW,
     all_notifications,
@@ -35,10 +39,22 @@ def seeded(db):
     return db
 
 
-def _event(status=AutomationStatus.proposed, provenance=SIM):
-    rule = replace(fx.automation(), status=status)
+def _event(status=AutomationStatus.proposed, provenance=SIM, name=None):
+    rule = replace(fx.automation(), status=status, approved_by_resident_id=fx.ANA)
+    extra = {"id": stable_id("automation.proposed", name)} if name else {}
     return de.AutomationProposed(
-        ts=fx.T0, household_id=fx.HOUSEHOLD, provenance=provenance, data=rule
+        ts=fx.T0, household_id=fx.HOUSEHOLD, provenance=provenance, data=rule, **extra
+    )
+
+
+def _decided(verdict=RuleVerdict.approved):
+    return de.AutomationVoteDecided(
+        ts=fx.T0,
+        household_id=fx.HOUSEHOLD,
+        provenance=SIM,
+        data=de.AutomationVoteDecidedData(
+            rule_id=fx.automation().id, verdict=verdict, votes_for=3, votes_against=0, eligible=4
+        ),
     )
 
 
@@ -75,7 +91,27 @@ def test_reentrega_do_mesmo_evento_nao_duplica(seeded):
 
 def test_regra_que_ja_nao_esta_por_votar_e_ignorada(seeded):
     _go(seeded, _event(status=AutomationStatus.draft))
+    _go(seeded, _event(status=AutomationStatus.active))
     assert all_notifications(seeded) == []
+
+
+def test_reativacao_avisa_uma_vez_por_ronda_com_o_texto_de_reativacao(seeded):
+    first, again = _event(name="r1"), _event(status=AutomationStatus.disabled, name="r2")
+    assert _go(seeded, first, again, twice=True) == [True, False, True, False]
+    a, b = sorted(all_notifications(seeded), key=lambda n: "reativação" in n.body)
+    assert "reativação" not in a.body and "reativação" in b.body
+    assert a.id != b.id and a.ref == b.ref  # mesma regra, uma notificação por ronda
+    assert len(created_events(seeded)) == 2
+
+
+def test_a_votacao_decidida_fecha_o_aviso_e_e_idempotente(seeded):
+    _go(seeded, _event())
+    assert [n.status for n in all_notifications(seeded)] == [NotificationStatus.unread]
+    for _ in range(2):
+        deliver(seeded, AUTOMATION_DECIDED_CONSUMER, _decided(), twice=True)
+        (n,) = all_notifications(seeded)
+        assert n.status is NotificationStatus.expired
+    assert visible_to(seeded, fx.LANDLORD) == []
 
 
 def test_so_os_inquilinos_veem_o_senhorio_e_o_operador_nunca(seeded):

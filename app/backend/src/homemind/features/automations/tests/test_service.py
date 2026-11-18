@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from homemind.contracts import fixtures as fx
 from homemind.contracts.agent import AutomationStatus, RuleVerdict, TriggerKind
-from homemind.contracts.common import Origin
+from homemind.contracts.common import Origin, stable_id
 from homemind.core.events import load_events
 from homemind.features.automations import repo, service
 from homemind.features.automations.service import (
@@ -79,11 +79,11 @@ def test_propor_grava_proposed_com_prazo_de_24h_e_emite_o_evento_uma_vez(db):
     v = r.view
     assert v.status is AutomationStatus.proposed and v.vote_open and v.proposed_by_me
     assert v.vote_deadline == NOW + VOTE_WINDOW == NOW + timedelta(hours=24)
-    assert (v.votes_for, v.votes_against, v.eligible, v.majority, v.my_vote) == (0, 0, 4, 3, None)
+    assert (v.votes_for, v.votes_against, v.eligible, v.majority, v.my_vote) == (1, 0, 4, 3, True)
     assert v.origin is Origin.simulated and v.message.startswith("SIMULADO")
     assert types(db, "automation.proposed") == ["automation.proposed"]
-    # nunca se propõe duas vezes o mesmo evento: o id é estável e a regra é nova
     assert types(db, "automation.vote_decided", "automation.status_changed") == []
+    assert [e.type for e in r.events] == ["automation.proposed"]  # com 4 moradores faltam 2 votos
 
 
 def test_so_inquilinos_ativos_propoem(db):
@@ -135,10 +135,10 @@ def test_casa_real_marca_origem_real_sem_etiqueta_simulado(db):
 def test_maioria_absoluta_ativa_a_regra_com_quem_deu_o_voto_decisivo(db, n, needed):
     house, tenants = house_of(db, n)
     rule = propose(db, house, tenants[0]).view.id
-    for i, who in enumerate(tenants[:needed]):
+    for i, who in enumerate(tenants[1:needed]):  # o proponente já votou a favor ao propor
         r = vote(db, rule, who, house=house)
         assert r.error is None
-        if i < needed - 1:
+        if i < needed - 2:
             assert r.view.status is AutomationStatus.proposed and r.events == ()
     v = r.view
     assert v.status is AutomationStatus.active and not v.vote_open
@@ -161,8 +161,7 @@ def test_maioria_absoluta_ativa_a_regra_com_quem_deu_o_voto_decisivo(db, n, need
 
 def test_um_voto_a_favor_nao_chega_com_quatro_moradores(db):
     rule = propose(db).view.id
-    for who in (fx.ANA, fx.BRUNO):
-        r = vote(db, rule, who)
+    r = vote(db, rule, fx.BRUNO)  # a Ana (proponente) já contava: 2 de 3 necessários
     assert (
         r.view.status is AutomationStatus.proposed
         and r.view.votes_for == 2
@@ -173,8 +172,8 @@ def test_um_voto_a_favor_nao_chega_com_quatro_moradores(db):
 def test_maioria_impossivel_rejeita_proposed_para_draft_so_com_vote_decided(db):
     house, tenants = house_of(db, 3)
     rule = propose(db, house, tenants[0]).view.id
-    vote(db, rule, tenants[0], False, house=house)
-    r = vote(db, rule, tenants[1], False, house=house)
+    vote(db, rule, tenants[1], False, house=house)
+    r = vote(db, rule, tenants[2], False, house=house)
     assert r.view.status is AutomationStatus.draft and not r.view.vote_open
     assert r.view.last_verdict is RuleVerdict.rejected
     assert types(db, "automation.vote_decided") == ["automation.vote_decided"]
@@ -183,22 +182,23 @@ def test_maioria_impossivel_rejeita_proposed_para_draft_so_com_vote_decided(db):
         s.event for s in db.run_sync(lambda c: load_events(c, types=["automation.vote_decided"]))
     ]
     assert ev.data.verdict is RuleVerdict.rejected and ev.data.expired is False
-    assert (ev.data.votes_for, ev.data.votes_against, ev.data.eligible) == (0, 2, 3)
+    assert (ev.data.votes_for, ev.data.votes_against, ev.data.eligible) == (1, 2, 3)
 
 
 def test_voto_repetido_e_recusado_e_nao_conta_duas_vezes(db):
     rule = propose(db).view.id
-    assert vote(db, rule, fx.ANA).error is None
-    assert vote(db, rule, fx.ANA, False).error == service.ALREADY_VOTED
-    v = listing(db)[0][0]
-    assert (v.votes_for, v.votes_against, v.my_vote) == (1, 0, True)
+    assert vote(db, rule, fx.ANA).error == service.ALREADY_VOTED  # o proponente já votou
+    assert vote(db, rule, fx.BRUNO).error is None
+    assert vote(db, rule, fx.BRUNO, False).error == service.ALREADY_VOTED
+    v = listing(db, who=fx.BRUNO)[0][0]
+    assert (v.votes_for, v.votes_against, v.my_vote) == (2, 0, True)
 
 
 def test_voto_do_senhorio_ou_de_quem_nao_estava_na_ronda_e_recusado(db):
     rule = propose(db).view.id
     for who in (fx.LANDLORD, fx.OPERATOR):
         assert vote(db, rule, who).error == service.NOT_ELIGIBLE
-    assert listing(db)[0][0].votes_for == 0
+    assert listing(db)[0][0].votes_for == 1  # só o do proponente
 
 
 def test_regra_de_outra_casa_nao_existe(db):
@@ -211,7 +211,6 @@ def test_regra_de_outra_casa_nao_existe(db):
 
 def test_voto_depois_de_24h_nunca_conta_e_a_regra_fica_rejeitada(db):
     rule = propose(db).view.id
-    vote(db, rule, fx.ANA)
     late = NOW + timedelta(hours=24)  # o prazo acaba exatamente às 24 h
     r = vote(db, rule, fx.BRUNO, at=late)
     assert r.error == service.VOTE_EXPIRED
@@ -222,8 +221,7 @@ def test_voto_depois_de_24h_nunca_conta_e_a_regra_fica_rejeitada(db):
 
 
 def test_expirar_sem_maioria_rejeita_e_e_idempotente(db):
-    rule = propose(db).view.id
-    vote(db, rule, fx.ANA)
+    propose(db)
     later = NOW + timedelta(hours=25)
     first, events = db.run_sync(lambda c: service.list_views(c, A, fx.ANA, later))
     assert first[0].status is AutomationStatus.draft and [e.type for e in events] == [
@@ -250,7 +248,6 @@ def test_votos_fora_de_prazo_nao_entram_na_contagem_nem_aprovam(db):
     """Um voto gravado depois do prazo (ex.: relógio errado) é filtrado antes da função pura."""
     house, tenants = house_of(db, 2)
     rule = propose(db, house, tenants[0]).view.id
-    vote(db, rule, tenants[0], house=house)
     db.run_sync(
         lambda c: c.execute(
             "INSERT INTO automation_vote (rule_id, resident_id, approve, at) VALUES (?,?,1,?)",
@@ -269,7 +266,6 @@ def test_dois_votos_finais_em_simultaneo_so_um_decide(db):
     async def go():
         house, tenants = house_of(db, 3)
         rule = propose(db, house, tenants[0]).view.id
-        vote(db, rule, tenants[0], house=house)
         return (
             rule,
             house,
@@ -290,7 +286,6 @@ def test_o_fecho_e_um_compare_and_set_sobre_a_versao_lida(db):
     house, tenants = house_of(db, 2)
     rule = propose(db, house, tenants[0]).view.id
     stale = db.run_sync(lambda c: repo.get_row(c, house, rule))  # lida antes de alguém decidir
-    vote(db, rule, tenants[0], house=house)
     vote(db, rule, tenants[1], house=house)  # decide (rev avança)
 
     def late(c):
@@ -307,7 +302,7 @@ def test_o_fecho_e_um_compare_and_set_sobre_a_versao_lida(db):
 
 def active_rule(db, house=A, voters=(fx.ANA, fx.BRUNO, fx.CARLA)):
     rule = propose(db, house, voters[0]).view.id
-    for who in voters:
+    for who in voters[1:]:  # o proponente já votou a favor ao propor
         vote(db, rule, who, house=house)
     return rule
 
@@ -339,7 +334,7 @@ def test_reativar_abre_nova_votacao_limpa_e_so_a_maioria_ativa(db):
     v = r.view
     assert v.status is AutomationStatus.disabled and v.vote_open and v.vote_round == 2
     assert (v.votes_for, v.votes_against, v.my_vote) == (0, 0, None)  # ronda limpa
-    assert r.events == ()
+    assert [e.type for e in r.events] == ["automation.proposed"]  # aviso da nova ronda
     assert reactivate(db, rule, fx.ANA).error == service.VOTE_ALREADY_OPEN
     vote(db, rule, fx.ANA)
     assert listing(db)[0][0].status is AutomationStatus.disabled  # um voto não chega
@@ -398,3 +393,79 @@ def test_a_base_recusa_transicoes_invalidas(db):
     with pytest.raises(sqlite3.IntegrityError):  # active sem aprovação
         db.run_sync(lambda c: c.execute("UPDATE automation_rule SET status = 'active'"))
     assert row(db, rule)["status"] == "proposed"
+
+
+# --- proponente, 1 morador, limite, reativação, device_id ---------------------------------------
+
+
+def test_o_proponente_conta_como_um_voto_a_favor(db):
+    r = propose(db)
+    v = r.view
+    assert (v.votes_for, v.majority, v.my_vote) == (1, 3, True)  # faltam 2 votos
+    assert v.status is AutomationStatus.proposed
+    assert vote(db, v.id, fx.ANA).error == service.ALREADY_VOTED
+    other = listing(db, who=fx.BRUNO)[0][0]
+    assert other.my_vote is None and other.votes_for == 1  # a contagem é igual para todos
+
+
+def test_com_um_so_morador_a_regra_fecha_aprovada_no_proprio_pedido(db):
+    house, (only,) = house_of(db, 1)
+    r = propose(db, house, only)
+    assert r.error is None and r.view.status is AutomationStatus.active
+    assert [e.type for e in r.events] == [
+        "automation.proposed",
+        "automation.vote_decided",
+        "automation.status_changed",
+    ]
+    stored = db.run_sync(lambda c: repo.get_row(c, house, r.view.id))
+    assert UUID(stored["approved_by_resident_id"]) == only and not stored["vote_open"]
+    assert types(db, "automation.proposed") == ["automation.proposed"]  # uma só vez
+
+
+def test_limite_de_tres_propostas_abertas_por_proponente(db):
+    for _ in range(service.MAX_OPEN_PER_PROPOSER):
+        assert propose(db).error is None
+    assert propose(db).error == service.TOO_MANY_OPEN
+    assert len(types(db, "automation.proposed")) == 3
+    assert propose(db, who=fx.BRUNO).error is None  # o limite é por proponente
+    # uma proposta que fecha (prazo) liberta lugar
+    later = NOW + timedelta(hours=25)
+    assert propose(db, at=later).error is None
+
+
+def test_reativar_reemite_automation_proposed_com_id_por_ronda(db):
+    rule = active_rule(db)
+    suspend(db, rule, fx.DIOGO)
+    r = reactivate(db, rule, fx.DIOGO)
+    (notice,) = r.events
+    assert notice.type == "automation.proposed" and notice.data.status is AutomationStatus.disabled
+    assert notice.id == stable_id("automation.proposed", str(rule), "2")
+    initial = [
+        s.event for s in db.run_sync(lambda c: load_events(c, types=["automation.proposed"]))
+    ]
+    assert [e.data.status for e in initial] == [
+        AutomationStatus.proposed,
+        AutomationStatus.disabled,
+    ]
+    assert initial[0].id == stable_id("automation.proposed", str(rule))  # ronda 1 inalterada
+    assert len({e.id for e in initial}) == 2
+
+
+def test_device_id_do_gatilho_de_outra_casa_e_recusado(db):
+    other_house_plug = stable_id("device", "tomada-da-casa-b")
+    body = proposal().model_copy(
+        update={
+            "trigger": AutomationTriggerIn(
+                kind=TriggerKind.power_above,
+                device_id=other_house_plug,
+                threshold_w=1500,
+                duration_s=1800,
+            )
+        }
+    )
+    assert propose(db, body=body).error == service.INVALID_TARGET  # o alvo é válido, o gatilho não
+    assert types(db, "automation.proposed") == []
+    lamp_trigger = body.model_copy(
+        update={"trigger": body.trigger.model_copy(update={"device_id": LAMP})}
+    )
+    assert propose(db, body=lamp_trigger).error == service.INVALID_TARGET  # a lâmpada não mede

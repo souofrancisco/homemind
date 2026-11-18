@@ -276,20 +276,34 @@ class NotificationService:
         return self._create(n, provenance, dedupe=False)
 
     def on_automation_proposed(
-        self, rule: AutomationRule, *, correlation_id: UUID, provenance: Provenance
+        self,
+        rule: AutomationRule,
+        *,
+        source_event_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
     ) -> Outcome:
         """`automation.proposed` (SAFE-04) -> aviso da casa, só a inquilinos (o senhorio nunca o
-        vê: `automation_proposal` não está na allow-list). Só uma regra ainda por votar. Sem
-        botões: vota-se na rota das automações. Id derivado da regra (reentrega não duplica)."""
-        if rule.status is not AutomationStatus.proposed:
+        vê: `automation_proposal` não está na allow-list). Regra `proposed` (proposta) ou
+        `disabled` (reativação); outro estado não tem nada por votar. Sem botões: vota-se na
+        rota das automações. Id derivado do evento de origem (uma por ronda; reentrega não
+        duplica)."""
+        if rule.status not in (AutomationStatus.proposed, AutomationStatus.disabled):
             return Outcome(None)
         n = compose_automation_proposal(
             rule=rule,
+            source_event_id=source_event_id,
             origin=provenance.origin,
             correlation_id=correlation_id,
             now=self._clock(),
         )
         return self._create(n, provenance, dedupe=False)
+
+    def on_automation_decided(self, household_id: UUID, rule_id: UUID) -> Outcome:
+        """`automation.vote_decided`: a votação fechou (aprovada, rejeitada ou por prazo); os
+        avisos abertos da regra passam a `expired` (sem evento). Idempotente."""
+        self._expire_open(household_id, NotificationRef(type=RefType.automation, id=rule_id))
+        return Outcome(None)
 
     def on_cold_room(
         self,

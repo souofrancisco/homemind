@@ -53,6 +53,9 @@ AGENT_ACTION_EVENT_TYPES = ("agent.action_proposed",)
 AUTOMATION_PROPOSAL_CONSUMER = "notifications.automation_proposal"
 AUTOMATION_PROPOSAL_EVENT_TYPES = ("automation.proposed",)
 
+AUTOMATION_DECIDED_CONSUMER = "notifications.automation_decided"
+AUTOMATION_DECIDED_EVENT_TYPES = ("automation.vote_decided",)
+
 IDENTIFICATION_CONSUMER = "notifications.appliance_identification"
 IDENTIFICATION_EVENT_TYPES = ("energy.identification_needed",)
 
@@ -299,9 +302,25 @@ def make_automation_proposal_handler(clock: Callable[[], datetime]) -> Handler:
         if not isinstance(ev, de.AutomationProposed):
             return []
         out = _service(conn, clock).on_automation_proposed(
-            ev.data, correlation_id=ev.correlation_id, provenance=ev.provenance
+            ev.data,
+            source_event_id=ev.id,
+            correlation_id=ev.correlation_id,
+            provenance=ev.provenance,
         )
         return list(out.events)
+
+    return handler
+
+
+def make_automation_decided_handler(clock: Callable[[], datetime]) -> Handler:
+    """`automation.vote_decided` (SAFE-04) -> fecha os avisos de votação da regra."""
+
+    def handler(conn: sqlite3.Connection, stored: StoredEvent) -> list[de.DomainEvent]:
+        ev = stored.event
+        if not isinstance(ev, de.AutomationVoteDecided):
+            return []
+        _service(conn, clock).on_automation_decided(ev.household_id, ev.data.rule_id)
+        return []
 
     return handler
 
@@ -324,5 +343,10 @@ CONSUMERS: tuple[tuple[str, Callable[[Callable[[], datetime]], Handler], tuple[s
         AUTOMATION_PROPOSAL_CONSUMER,
         make_automation_proposal_handler,
         AUTOMATION_PROPOSAL_EVENT_TYPES,
+    ),
+    (
+        AUTOMATION_DECIDED_CONSUMER,
+        make_automation_decided_handler,
+        AUTOMATION_DECIDED_EVENT_TYPES,
     ),
 )

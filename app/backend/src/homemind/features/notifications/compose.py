@@ -8,7 +8,7 @@ resposta e de estado vivem no contrato (`contracts/notification.py`); aqui só s
 from datetime import date, datetime, timedelta
 from uuid import UUID, uuid5
 
-from homemind.contracts.agent import AutomationRule, TriggerKind
+from homemind.contracts.agent import AutomationRule, AutomationStatus, TriggerKind
 from homemind.contracts.common import Origin
 from homemind.contracts.energy import (
     APPLIANCE_IDENTIFICATION_ACTIONS,
@@ -239,19 +239,29 @@ def _trigger_text(rule: AutomationRule) -> str:
 
 
 def compose_automation_proposal(
-    *, rule: AutomationRule, origin: Origin, correlation_id: UUID, now: datetime
+    *,
+    rule: AutomationRule,
+    source_event_id: UUID,
+    origin: Origin,
+    correlation_id: UUID,
+    now: datetime,
 ) -> Notification:
     """Regra da casa proposta (SAFE-04): da casa (só os inquilinos a veem), sem botões; vota-se na
-    rota das automações (a UI usa o `ref`). Nada é executado enquanto a regra não for aprovada."""
+    rota das automações (a UI usa o `ref`). Nada é executado enquanto a regra não for aprovada.
+    Regra `disabled` = pedido de reativação. O id deriva do evento de origem (uma por ronda)."""
+    reactivation = rule.status is AutomationStatus.disabled
+    what = "a reativação da regra" if reactivation else "a regra"
     return Notification(
-        id=notification_id_for_ref(NotificationKind.automation_proposal, rule.id, None),
+        id=notification_id_for_ref(NotificationKind.automation_proposal, source_event_id, None),
         household_id=rule.household_id,
         scope=NotificationScope.household,
         kind=NotificationKind.automation_proposal,
         severity=NotificationSeverity.info,
-        title="Nova regra da casa para votar",
+        title="Reativar uma regra da casa: vota"
+        if reactivation
+        else "Nova regra da casa para votar",
         body=_tag(
-            f"Foi proposta a regra «{rule.name}»: desligar uma tomada ao {_trigger_text(rule)}. "
+            f"Foi proposta {what} «{rule.name}»: desligar uma tomada ao {_trigger_text(rule)}. "
             "Só passa a valer se a maioria dos moradores votar a favor em 24 h; "
             "até lá nada é executado.",
             origin,

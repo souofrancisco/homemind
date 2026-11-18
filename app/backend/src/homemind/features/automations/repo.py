@@ -84,6 +84,15 @@ def due_rows(conn: sqlite3.Connection, household_id: UUID, now: datetime) -> lis
     ).fetchall()
 
 
+def count_open_by(conn: sqlite3.Connection, household_id: UUID, resident_id: UUID) -> int:
+    """Votações abertas das regras propostas por este morador (o prazo já foi resolvido)."""
+    return conn.execute(
+        "SELECT count(*) FROM automation_rule WHERE household_id = ? AND created_by_resident_id = ?"
+        " AND vote_open = 1",
+        (str(household_id), str(resident_id)),
+    ).fetchone()[0]
+
+
 def eligible_of(row: sqlite3.Row) -> list[UUID]:
     return [UUID(e) for e in json.loads(row["eligible_json"])]
 

@@ -52,7 +52,7 @@ def vote(client, sub, aid, approve=True, house=A):
 
 def active(client):
     aid = create(client)["id"]
-    for sub in (ANA, BRUNO, CARLA):
+    for sub in (BRUNO, CARLA):  # a Ana propôs: já votou a favor
         assert vote(client, sub, aid).status_code == 200
     return aid
 
@@ -115,7 +115,8 @@ def test_propor_votar_ativar_suspender_e_reativar(client, app):
     assert v["device_name"] and v["message"].startswith("SIMULADO")
     assert [e.type for e in events(app, "automation.proposed")] == ["automation.proposed"]
 
-    assert vote(client, ANA, aid).json()["status"] == "proposed"
+    assert (v["votes_for"], v["my_vote"]) == (1, True)  # o proponente vota a favor ao propor
+    assert err(vote(client, ANA, aid)) == (409, "already_voted")
     assert vote(client, BRUNO, aid, approve=False).json()["votes_against"] == 1
     assert vote(client, CARLA, aid).json()["status"] == "proposed"  # 2 a favor de 4: falta uma
     final = vote(client, DIOGO, aid).json()
@@ -150,8 +151,8 @@ def test_a_resposta_nao_diz_quem_votou_o_que_nem_expoe_ids_de_moradores(client):
 
 def test_erros_de_estado_tem_codigos(client):
     aid = create(client)["id"]
-    assert vote(client, ANA, aid).status_code == 200
-    assert err(vote(client, ANA, aid)) == (409, "already_voted")
+    assert vote(client, BRUNO, aid).status_code == 200
+    assert err(vote(client, BRUNO, aid)) == (409, "already_voted")
     assert err(client.post(f"{URL}/{aid}/reactivate", headers=as_(ANA))) == (
         409, "automation_not_disabled",
     )  # fmt: skip
@@ -219,3 +220,29 @@ def test_o_residente_vem_sempre_do_token_e_nao_do_corpo(client):
     assert err(r)[0] == 400  # campo extra recusado; o autor é o do token
     assert create(client, ANA)["proposed_by_me"] is True
     assert client.get(URL, headers=as_(BRUNO)).json()[0]["proposed_by_me"] is False
+
+
+def test_device_id_do_gatilho_de_outra_casa_e_recusado(client, app):
+    bad = {**body(), "trigger": {**body()["trigger"], "device_id": str(fx.PLUG_SALA)}}
+    assert err(client.post(URL, json=bad, headers=as_(ANA))) == (400, "invalid_target")
+    assert events(app, "automation.proposed") == []
+    # a casa B não tem dispositivos: a tomada da casa A não é dela, nem como alvo nem como gatilho
+    eva = f"/api/households/{HOUSE_B}/automations"
+    assert err(client.post(eva, json=body(), headers=as_(EVA))) == (400, "invalid_target")
+
+
+def test_a_quarta_proposta_aberta_e_recusada(client):
+    for _ in range(3):
+        create(client)
+    assert err(client.post(URL, json=body(), headers=as_(ANA))) == (409, "too_many_open")
+    create(client, BRUNO)  # o limite é por proponente
+
+
+def test_reativar_reemite_automation_proposed_com_a_regra_suspensa(client, app):
+    aid = active(client)
+    client.patch(f"{URL}/{aid}", json={"status": "disabled"}, headers=as_(DIOGO))
+    client.post(f"{URL}/{aid}/reactivate", headers=as_(DIOGO))
+    assert [e.data.status.value for e in events(app, "automation.proposed")] == [
+        "proposed",
+        "disabled",
+    ]
