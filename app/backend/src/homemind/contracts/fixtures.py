@@ -673,6 +673,23 @@ def event_samples() -> list[domain_events.EventBase]:
                 created_at=T0,
             ),
         ),
+        e.BillingRulesProposalChanged(
+            **d,
+            provenance=SIM_MEASURED,
+            data=billing.RuleProposal(
+                id=stable_id("rule_proposal", "ana"),
+                household_id=HOUSEHOLD,
+                effective_from=date(2026, 12, 1),
+                policy=hh.HouseholdPolicy(common_area_rule=hh.CommonAreaRule.equal),
+                proposed_by_resident_id=ANA,
+                proposed_at=T0,
+                status=billing.RuleProposalStatus.open,
+                approvals=1,
+                rejections=0,
+                eligible=4,
+                needed=2,
+            ),
+        ),
         e.NotificationCreated(
             **d,
             provenance=SIM_MEASURED,

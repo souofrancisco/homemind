@@ -19,6 +19,8 @@ from homemind.contracts.billing import (
     AttributionTarget,
     Contestation,
     ContestationStatus,
+    RuleProposal,
+    RuleProposalStatus,
 )
 from homemind.contracts.common import Provenance, ValueKind, replace
 from homemind.contracts.energy import ApplianceIdentificationRequest
@@ -50,6 +52,9 @@ from homemind.features.notifications.compose import (
     compose_peak_alert,
     compose_presence_check,
     compose_receipt_info,
+    compose_rules_approved,
+    compose_rules_not_approved,
+    compose_rules_vote,
     compose_smoke_alert,
     compose_window_alert,
     event_id_for,
@@ -522,6 +527,61 @@ class NotificationService:
             now=now,
         )
         return self._create(n, provenance, dedupe=False)
+
+    def on_rules_proposal(
+        self, p: RuleProposal, *, correlation_id: UUID, provenance: Provenance
+    ) -> Outcome:
+        """`billing.rules_proposal_changed` (HOUSE-04): aberta -> pedido de voto a cada morador
+        (menos quem propôs); aprovada -> aviso a toda a casa (moradores e senhorio); rejeitada
+        ou caducada -> aviso a quem propôs. Decidida de qualquer forma: os pedidos de voto
+        abertos expiram (já não há nada a votar)."""
+        now, hh = self._clock(), p.household_id
+        if p.status is not RuleProposalStatus.open:
+            self._expire_open(hh, NotificationRef(type=RefType.rules_proposal, id=p.id))
+        common = {"proposal_id": p.id, "household_id": hh, "correlation_id": correlation_id}
+        if p.status is RuleProposalStatus.open:
+            notes = [
+                compose_rules_vote(
+                    **common,
+                    recipient=r,
+                    policy=p.policy,
+                    effective_from=p.effective_from,
+                    needed=p.needed,
+                    eligible=p.eligible,
+                    now=now,
+                )  # fmt: skip
+                for r in self._directory.tenants(hh, now)
+                if r != p.proposed_by_resident_id
+            ]
+        elif p.status is RuleProposalStatus.approved:
+            people = [*self._directory.tenants(hh, now), *self._directory.landlords(hh, now)]
+            notes = [
+                compose_rules_approved(
+                    **common,
+                    recipient=r,
+                    policy=p.policy,
+                    effective_from=p.effective_from,
+                    now=now,
+                )  # fmt: skip
+                for r in dict.fromkeys(people)
+            ]
+        elif p.status in (RuleProposalStatus.rejected, RuleProposalStatus.expired):
+            notes = [
+                compose_rules_not_approved(
+                    **common,
+                    recipient=p.proposed_by_resident_id,
+                    expired=p.status is RuleProposalStatus.expired,
+                    now=now,
+                )  # fmt: skip
+            ]
+        else:  # retirada ou substituída: só se fecham os pedidos de voto
+            notes = []
+        first, events = None, []
+        for n in notes:
+            out = self._create(n, provenance, dedupe=False)
+            first = first or out.notification
+            events += out.events
+        return Outcome(first, tuple(events))
 
     def _expire_open(self, household_id: UUID, ref: NotificationRef) -> None:
         """Passa a `expired` as notificações abertas com essa referência (CAS; relê se perder)."""

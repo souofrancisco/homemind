@@ -722,14 +722,58 @@ class HouseRulesIn(ContractModel):
         return HouseholdPolicy(**self.model_dump())
 
 
+class RuleProposalStatus(StrEnum):
+    open = "open"  # à espera de votos
+    approved = "approved"  # maioria: agendada como versão (`HouseRulesView.upcoming`)
+    rejected = "rejected"  # a maioria já não é possível
+    withdrawn = "withdrawn"  # retirada por quem a propôs
+    superseded = "superseded"  # substituída por outra proposta antes de decidida
+    expired = "expired"  # chegou o mês sem maioria: não muda nada
+
+
+class RuleProposal(ContractModel):
+    """Proposta de mudança da regra da sala (HOUSE-04). Só vale com a aprovação de pelo menos
+    metade dos moradores com contrato ativo (`needed`, como a D-32); quem propõe conta como «sim».
+    Só contagens: quem votou o quê não sai daqui."""
+
+    id: UUID
+    household_id: UUID
+    effective_from: date  # dia 1 do mês seguinte ao da proposta
+    policy: HouseholdPolicy
+    proposed_by_resident_id: UUID
+    proposed_at: UtcDatetime
+    status: RuleProposalStatus
+    approvals: Annotated[int, Field(strict=True, ge=0)]
+    rejections: Annotated[int, Field(strict=True, ge=0)]
+    eligible: Annotated[int, Field(strict=True, ge=0)]  # moradores com contrato ativo
+    needed: Annotated[int, Field(strict=True, ge=1)]  # ceil(eligible / 2), mínimo 1
+    decided_at: UtcDatetime | None = None
+
+
+class RuleProposalView(RuleProposal):
+    """A proposta vista por um morador: `my_vote` = o meu voto (`None`: ainda não votei, ou não
+    sou morador); `proposed_by_me`: só quem propôs a pode retirar."""
+
+    my_vote: bool | None = None
+    proposed_by_me: bool = False
+
+
+class RuleVoteIn(ContractModel):
+    """`POST …/rules/next/vote`: aprovar ou rejeitar a proposta aberta (pode mudar até decidir)."""
+
+    approve: bool
+
+
 class HouseRulesView(ContractModel):
     """Que regra vale hoje, que mudança está agendada e o que valeu antes.
 
     Uma mudança só vale a partir de `next_change_from` (o dia 1 do mês seguinte): nunca muda um
-    mês que já começou, portanto nunca muda consumos já decididos nem faturas fechadas.
+    mês que já começou, portanto nunca muda consumos já decididos nem faturas fechadas. Antes de
+    ser agendada (`upcoming`), a mudança é uma `proposal` que a maioria dos moradores aprova.
     """
 
     current: PolicyVersion
-    upcoming: PolicyVersion | None  # agendada, ainda pode ser substituída ou cancelada
+    upcoming: PolicyVersion | None  # aprovada pela maioria, começa em `effective_from`
     history: list[PolicyVersion]  # versões que já valeram, mais recente primeiro (inclui current)
     next_change_from: date
+    proposal: RuleProposalView | None = None  # a proposta aberta, se houver

@@ -47,6 +47,7 @@ def test_o_lifespan_subscreve_os_consumidores(client):
         "notifications.peak_alert",  # ALERT-03: AlertRaisedData já traz potência e início
         "notifications.cold_room",  # ALERT-06: aviso privado de quarto frio
         "notifications.contestation",  # BILL-06: aberta -> senhorio; decidida -> morador
+        "notifications.rules_proposal",  # HOUSE-04: votar; aprovada; não aprovada
         "notifications.appliance_identification",  # ENERGY-04
         "notifications.agent_action",  # AGENT-03: «Ação por confirmar», sem botões
     } <= subs

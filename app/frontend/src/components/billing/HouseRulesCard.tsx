@@ -1,9 +1,10 @@
 import { Alert, Badge, Button, Card, Group, Loader, NumberInput, SegmentedControl, Stack, Text, Title } from "@mantine/core";
-import { IconAlertCircle, IconCalendarEvent } from "@tabler/icons-react";
+import { IconAlertCircle, IconCalendarEvent, IconUsersGroup } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { cancelHouseRules, getHouseRules, scheduleHouseRules, type HouseRulesIn, type HouseRulesView } from "../../services/billing/rules";
+import { getHouseRules, proposeHouseRules, voteHouseRules, withdrawHouseRules, type HouseRulesIn, type HouseRulesView } from "../../services/billing/rules";
 
-// Regras da casa (HOUSE-04): o servidor decide quando valem; aqui só se mostra e se agenda.
+// Regras da casa (HOUSE-04): o servidor decide quando valem e conta os votos; aqui só se mostra,
+// se propõe e se vota. Uma mudança só fica agendada com a maioria dos moradores.
 type Policy = HouseRulesView["current"]["policy"];
 
 const ruleLabel: Record<Policy["common_area_rule"], string> = {
@@ -45,8 +46,9 @@ export default function HouseRulesCard({ householdId, canEdit }: { householdId: 
     setBusy(true);
     work.then((v) => { setData(v); setDraft(null); }).catch(() => undefined).finally(() => setBusy(false));
   };
+  const proposal = data.proposal;
   const start = () => {
-    const p = (data.upcoming ?? data.current).policy;
+    const p = (proposal ?? data.upcoming ?? data.current).policy;
     setDraft({ ...p, common_area_rule: p.common_area_rule === "presence" ? "ask" : p.common_area_rule });
   };
 
@@ -63,12 +65,30 @@ export default function HouseRulesCard({ householdId, canEdit }: { householdId: 
           <Alert variant="light" color="blue" icon={<IconCalendarEvent />} title={`Muda a ${fmtDay(data.upcoming.effective_from)}`}>
             <Stack gap="xs">
               <PolicyText p={data.upcoming.policy} />
-              {canEdit && <Button size="xs" variant="subtle" color="red" w="fit-content" loading={busy} onClick={() => run(cancelHouseRules(householdId))}>Cancelar mudança</Button>}
+              <Text size="xs" c="dimmed">Aprovada pela maioria dos moradores. Para a desfazer, propõe outra regra.</Text>
+            </Stack>
+          </Alert>
+        )}
+        {proposal && (
+          <Alert variant="light" color="yellow" icon={<IconUsersGroup />} title={`Proposta para ${fmtDay(proposal.effective_from)} · ${proposal.approvals} de ${proposal.needed} aprovações necessárias`}>
+            <Stack gap="xs">
+              <PolicyText p={proposal.policy} />
+              <Text size="xs" c="dimmed">
+                {proposal.eligible} moradores · {proposal.approvals} a favor · {proposal.rejections} contra. Sem maioria até {fmtDay(proposal.effective_from)}, nada muda.
+              </Text>
+              {canEdit && (
+                <Group gap="xs">
+                  {proposal.my_vote !== true && <Button size="xs" color="green" loading={busy} onClick={() => run(voteHouseRules(householdId, true))}>Aprovar</Button>}
+                  {proposal.my_vote !== false && !proposal.proposed_by_me && <Button size="xs" variant="light" color="red" loading={busy} onClick={() => run(voteHouseRules(householdId, false))}>Rejeitar</Button>}
+                  {proposal.proposed_by_me && <Button size="xs" variant="subtle" color="red" loading={busy} onClick={() => run(withdrawHouseRules(householdId))}>Retirar proposta</Button>}
+                  {proposal.my_vote != null && <Badge variant="outline">{proposal.my_vote ? "Aprovaste" : "Rejeitaste"}</Badge>}
+                </Group>
+              )}
             </Stack>
           </Alert>
         )}
         {canEdit && !draft && (
-          <Button variant="light" w="fit-content" onClick={start}>{data.upcoming ? "Alterar a mudança agendada" : `Mudar a partir de ${fmtDay(data.next_change_from)}`}</Button>
+          <Button variant="light" w="fit-content" onClick={start}>{proposal ? "Fazer outra proposta" : `Propor mudança para ${fmtDay(data.next_change_from)}`}</Button>
         )}
         {canEdit && draft && (
           <Stack gap="sm">
@@ -86,9 +106,9 @@ export default function HouseRulesCard({ householdId, canEdit }: { householdId: 
                   onChange={(v) => setDraft({ ...draft, ask_timeout_hours: Math.min(168, Math.max(1, Math.round(Number(v || 1)))) })} />
               </Group>
             )}
-            <Text size="xs" c="dimmed">Vale a partir de {fmtDay(data.next_change_from)}. O mês em curso e as faturas fechadas não mudam. Toda a casa vê a mudança antes de ela começar.</Text>
+            <Text size="xs" c="dimmed">Vale a partir de {fmtDay(data.next_change_from)}. O mês em curso e as faturas fechadas não mudam. Só muda se pelo menos metade dos moradores aprovar (a tua proposta conta como «sim»); toda a casa é avisada.</Text>
             <Group gap="xs">
-              <Button loading={busy} onClick={() => run(scheduleHouseRules(householdId, draft))}>Agendar</Button>
+              <Button loading={busy} onClick={() => run(proposeHouseRules(householdId, draft))}>Propor à casa</Button>
               <Button variant="subtle" onClick={() => setDraft(null)}>Cancelar</Button>
             </Group>
           </Stack>
