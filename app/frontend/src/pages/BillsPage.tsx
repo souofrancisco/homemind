@@ -6,8 +6,9 @@ import { useEffect, useState } from "react";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { LandlordContestations, TenantContest, type ContestTarget } from "../components/billing/Contestations";
 import ReceiptExplanationView, { type Own } from "../components/billing/ReceiptExplanationView";
+import TariffCard from "../components/billing/TariffCard";
 import {
-  createBill, finalizeBill, getBillSummary, getMyReceipt, getMyReceiptExplanation, listBills, previewBill,
+  createBill, finalizeBill, getBillSummary, getMyReceipt, getMyReceiptExplanation, listBills, previewBill, reviseBill,
   type BillAllocation, type BillIn, type BillPreview, type BillView, type LandlordBillView, type ReceiptExplanation,
 } from "../services/billing/api";
 
@@ -114,12 +115,15 @@ function Summary({ householdId, bill }: { householdId: string; bill: BillView })
   );
 }
 
-function BillForm({ householdId, origin, onCreated }: { householdId: string; origin: BillIn["origin"]; onCreated: () => void }) {
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [total, setTotal] = useState<number | string>("");
-  const [fixed, setFixed] = useState<number | string>("");
-  const [energy, setEnergy] = useState<number | string>("");
+// `revise`: corrigir uma fatura fechada (nova revisão, BILL-04). Sem ele, regista uma fatura nova.
+function BillForm({ householdId, origin, onCreated, revise, onCancel }: {
+  householdId: string; origin: BillIn["origin"]; onCreated: () => void; revise?: BillView; onCancel?: () => void;
+}) {
+  const [start, setStart] = useState(revise?.period.start ?? "");
+  const [end, setEnd] = useState(revise?.period.end ?? "");
+  const [total, setTotal] = useState<number | string>(revise ? revise.total_cents / 100 : "");
+  const [fixed, setFixed] = useState<number | string>(revise ? revise.fixed_cents / 100 : "");
+  const [energy, setEnergy] = useState<number | string>(revise ? revise.total_wh / 1000 : "");
   const [preview, setPreview] = useState<BillPreview | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -141,7 +145,8 @@ function BillForm({ householdId, origin, onCreated }: { householdId: string; ori
   return (
     <Card withBorder radius="lg" p="lg">
       <Stack gap="md">
-        <Title order={3} size="h4">Introduzir fatura</Title>
+        <Title order={3} size="h4">{revise ? `Corrigir fatura (revisão ${revise.revision + 1})` : "Introduzir fatura"}</Title>
+        {revise && <Text size="xs" c="dimmed">A correção reparte de novo e cria uma nova revisão; a atual fica guardada como «Substituída», com as suas parcelas, para auditoria.</Text>}
         <SimpleGrid cols={{ base: 1, sm: 2 }}>
           <TextInput type="date" label="Início do período" value={start} onChange={(e) => { setStart(e.currentTarget.value); reset(); }} />
           <TextInput type="date" label="Fim do período" value={end} onChange={(e) => { setEnd(e.currentTarget.value); reset(); }} />
@@ -152,7 +157,11 @@ function BillForm({ householdId, origin, onCreated }: { householdId: string; ori
         {origin === "simulated" && <Text size="xs" c="orange">Casa de demonstração: a fatura fica marcada como SIMULADA.</Text>}
         <Group>
           <Button variant="light" disabled={!complete} loading={busy} onClick={() => void run(async () => setPreview(await previewBill(householdId, body())))}>Pré-visualizar</Button>
-          {preview && <Button loading={busy} onClick={() => void run(async () => { await createBill(householdId, body()); reset(); onCreated(); })}>Confirmar registo</Button>}
+          {preview && <Button loading={busy} onClick={() => void run(async () => {
+            await (revise ? reviseBill(householdId, revise.id, body()) : createBill(householdId, body()));
+            reset(); onCreated();
+          })}>{revise ? "Confirmar correção" : "Confirmar registo"}</Button>}
+          {onCancel && <Button variant="subtle" onClick={onCancel}>Cancelar</Button>}
         </Group>
         {preview && (
           <Alert color="indigo" variant="light" title="Pré-visualização (nada foi gravado)">
@@ -170,6 +179,7 @@ export default function BillsContent() {
   const role = session.membership?.role;
   const [state, setState] = useState<{ key: string; bills: BillView[] | null; error: boolean } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [revising, setRevising] = useState<string | null>(null);
 
   const [reload, setReload] = useState(0);
   const load = () => setReload((n) => n + 1);
@@ -184,6 +194,7 @@ export default function BillsContent() {
 
   if (!householdId || !role) return null;
   const current = state?.key === householdId ? state : null;
+  const origin: BillIn["origin"] = session.house?.source_kind === "real" ? "real" : "simulated";
   const finalize = async (bill: BillView) => {
     setBusyId(bill.id);
     try { await finalizeBill(householdId, bill.id); load(); } catch { /* erro já mostrado */ } finally { setBusyId(null); }
@@ -192,7 +203,8 @@ export default function BillsContent() {
   return (
     <Stack gap="md">
       {role === "landlord" && <LandlordContestations householdId={householdId} reload={reload} onDecided={() => load()} />}
-      {role === "landlord" && <BillForm householdId={householdId} origin={session.house?.source_kind === "real" ? "real" : "simulated"} onCreated={() => load()} />}
+      {role === "landlord" && <BillForm householdId={householdId} origin={origin} onCreated={() => load()} />}
+      {role === "landlord" && <TariffCard householdId={householdId} />}
       {!current ? <Group role="status"><Loader size="sm" /><Text>A carregar faturas…</Text></Group>
         : current.error ? (
           <Alert color="red" icon={<IconAlertCircle />} title="Não foi possível consultar as faturas">
@@ -214,6 +226,9 @@ export default function BillsContent() {
                 <Button w="fit-content" loading={busyId === bill.id} onClick={() => void finalize(bill)}>Finalizar e repartir</Button>
               )}
               {role === "landlord" && bill.status !== "draft" && <Summary householdId={householdId} bill={bill} />}
+              {role === "landlord" && bill.status === "finalized" && (revising === bill.id
+                ? <BillForm householdId={householdId} origin={origin} revise={bill} onCancel={() => setRevising(null)} onCreated={() => { setRevising(null); load(); }} />
+                : <Button w="fit-content" variant="subtle" onClick={() => setRevising(bill.id)}>Corrigir fatura</Button>)}
               {role === "tenant" && bill.status !== "draft" && <Receipt householdId={householdId} bill={bill} />}
             </Stack>
           </Card>
