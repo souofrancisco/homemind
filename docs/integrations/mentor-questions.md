@@ -14,3 +14,5 @@ Registar a resposta e a data por baixo de cada pergunta. Contexto técnico em [m
 8. **Brilho**: o schema diz 0–100 e o dispositivo `min: 1`. O valor 0 desliga? —
 9. **Limites**: há rate limit ou número máximo de sessões OAuth por equipa? O refresh token roda a cada renovação? —
 10. **Avaliação**: o que valorizam mais — controlo físico ao vivo, robustez, privacidade, replicabilidade? Um plano B simulado, claramente identificado, é aceitável na demo? —
+11. **MEO Energia (PILOT-02, opcional, fora do MVP).** Existe API ou exportação (para parceiros ou para o Connected Home) de faturas e tarifas dos clientes MEO Energia? Não se encontrou documentação pública. Ver [contador-meo-energia.md](contador-meo-energia.md). —
+12. **Contador geral (PILOT-02, opcional, fora do MVP).** A Altice tem acordo ou acesso à porta HAN ou ao Smart Metering Plus da E-REDES (piloto)? Quem pode pedir o acesso num imóvel arrendado? —
