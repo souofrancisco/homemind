@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     # SQLite partilhado (eventos, casas, memberships). Ficheiro local; ":memory:" nos testes.
     db_path: str = "data/homemind.sqlite3"
     db_busy_timeout_ms: int = 5000
+    # PRIV-04: dias que a telemetria em bruto (leituras de energia e sensores) e os agregados
+    # diários dos alertas ficam guardados. 0 = sem expurgo. Mínimo 62: o mês corrente e o
+    # anterior têm de estar completos (totais de energia, fecho da fatura). PROPOSTA (P-08).
+    retention_telemetry_days: int = 90
     # Authentik (OIDC). Issuer = URL pública do provider (campo `iss` dos tokens);
     # jwks_url pode ser interno (ex.: http://authentik-server:9000/...) em Docker.
     oidc_issuer: str = "http://localhost:9000/application/o/homemind/"
@@ -117,6 +121,13 @@ class Settings(BaseSettings):
     visao_imgsz: int = 640
     visao_tracker: str = "bytetrack.yaml"
     # --- fim P1 — visão ---
+
+    @field_validator("retention_telemetry_days")
+    @classmethod
+    def _retencao(cls, v: int) -> int:
+        if v != 0 and v < 62:
+            raise ValueError("RETENTION_TELEMETRY_DAYS é 0 (sem expurgo) ou pelo menos 62")
+        return v
 
     @field_validator("presence_door_inside_sign")
     @classmethod

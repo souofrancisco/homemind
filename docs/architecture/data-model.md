@@ -129,7 +129,7 @@ Quem altera um estado de outro módulo fá-lo **por evento**, não por escrita d
 |---|---|---|
 | `schema_migration` | IMPLEMENTADA | criada pelo *runner* |
 | `household`, `room`, `resident`, `membership` | IMPLEMENTADAS | FK composta `membership(household_id, room_id) → room`; um índice único parcial por pessoa+casa aberta e por inquilino ativo por quarto; `CHECK`s de papel/quarto/datas |
-| `domain_event` | IMPLEMENTADA | `seq AUTOINCREMENT` (único, global), `id` único, `origin`+`kind`, `payload_json` = só `data`; **imutável** (triggers) |
+| `domain_event` | IMPLEMENTADA | `seq AUTOINCREMENT` (único, global), `id` único, `origin`+`kind`, `payload_json` = só `data`; **imutável** (triggers): nunca UPDATE; DELETE só da telemetria em bruto (`energy.reading_recorded`, `sensor.reading_recorded`) pelo expurgo de retenção (PRIV-04, migração `0004`) |
 | `processed_event(consumer, event_id)` | IMPLEMENTADA | PK composta; guarda **todos** os ids processados, na transação do efeito |
 | `event_failure(consumer, event_id)` | IMPLEMENTADA | tentativas, tipo do erro (nunca a mensagem), `dead` |
 | `presence_device`, `presence_confirmation`, `presence_state` | IMPLEMENTADAS (`0200_presence_tables.sql`) | `presence_device.match_key` = HMAC do MAC com sal (revogar substitui-o por `revoked:<id>`); `presence_confirmation` só aceita 1 resposta; `presence_state` = último estado fundido por morador (PRES-04: `since`, deteção de mudança). As pistas (`presence.cue_recorded`) ficam em `domain_event` |

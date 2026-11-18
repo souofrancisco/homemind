@@ -224,6 +224,24 @@ Exemplo do PDF (v5.1 §20, teste `test_exemplo_do_pdf_excesso_de_330_kwh`): fatu
 **PLANEADO:** o aviso privado «ainda tens X kWh do plafond» junto do alerta de quarto frio; e quem pode alterar `included_wh` depois de criado o quarto, e com que efeito (só nas faturas seguintes).
 
 
+## Rastreabilidade financeira e retenção (PRIV-04)
+
+**Trilho de cada cobrança (IMPLEMENTADO).** Medição → hipótese (assinatura, confiança) → pergunta e votos D-32 (`notification.responded`) → atribuição (`billing.attribution_changed`, com correções e autor) → parcela (`billing_allocation_item`) → recibo explicado (BILL-05) → contestação e reemissão (BILL-06). Cada passo é um evento de `domain_event` com `correlation_id`; o recibo explica-se só com dados do billing e dos consumos, **nunca com as leituras em bruto**, por isso o expurgo da telemetria não apaga a explicação.
+
+**Retenção por categoria** (`features/retention/policy.py`, fonte única; um tipo de evento novo sem categoria falha nos testes):
+
+| Categoria | O quê | Retenção | Estado |
+|---|---|---|---|
+| Financeira | consumos (`energy.step_detected`, `energy.consumption_*`), perguntas e votos, atribuições, faturas, parcelas, contestações, avisos de orçamento | **nunca apagada automaticamente**; a base de dados recusa DELETE/UPDATE (trigger, migração `0004`). Prazo legal de conservação: por fixar com o DPO (P-08) | IMPLEMENTADO (proteção) / PLANEADO (prazo) |
+| Telemetria em bruto | `energy.reading_recorded`, `sensor.reading_recorded` | `RETENTION_TELEMETRY_DAYS` (omissão **90**, mínimo 62 para o mês corrente e o anterior; `0` desliga). Não se apaga um evento que um consumidor ainda está a tentar processar | IMPLEMENTADO; prazo PROPOSTA |
+| Agregados diários dos alertas | `alerts_device_day`, `alerts_room_night` | o mesmo prazo | IMPLEMENTADO |
+| Presença | `presence.*` | PRIV-03 (#51) | fora desta issue |
+| Operacional | notificações, alertas, automações, agente | sem expurgo (o histórico do assistente já tem 50 mensagens/30 dias, P-25) | PLANEADO |
+
+O expurgo (`features/retention/purge.py`) corre 1 min após o arranque e de 6 em 6 h, em lotes de 5000 por transação; no log só ficam contagens. **Anonimização:** PLANEADA (exige base legal por categoria, P-08); nenhum registo financeiro é reescrito.
+
+**Logs (IMPLEMENTADO, `core/redact.py`):** todos os registos do processo (app e uvicorn) passam por uma *record factory* que mascara `Bearer`, chaves/tokens/passwords (`chave=valor` e JSON), `?code=`/`&state=` do OAuth, credenciais em URLs, URLs RTSP inteiros, MACs, emails e UUIDs (ficam os primeiros 8 caracteres). Rede de segurança: o código continua a não registar estes dados. Frames de vídeo nunca são gravados (PRIV-02).
+
 ## Regras da casa versionadas (HOUSE-04)
 
 **IMPLEMENTADO** (`features/billing/rules.py`, migração `0108_billing_policy_versions.sql`, cartão «Regras da casa» na página da casa). Estende o atribuidor (BILL-02); não há um segundo motor de decisão. Premissas:
