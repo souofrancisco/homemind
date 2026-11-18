@@ -29,11 +29,13 @@ from homemind.contracts.domain_events import (
     PresenceChanged,
     PresenceConfirmationNeeded,
     PresenceCueRecorded,
+    PresenceOccupancyChanged,
     StoredEvent,
 )
 from homemind.contracts.notification import RefType
 from homemind.contracts.presence import (
     HouseOccupancy,
+    OccupancyState,
     PersonPresence,
     PresenceConfirmationRequest,
     PresenceDevice,
@@ -145,7 +147,10 @@ class PresenceService:
         appliance_fresh_s: float = 300.0,
         wifi_enabled: bool = False,
         wifi_interval_s: float = 30.0,
+        camera_state: Callable[[], tuple[bool, Origin]] | None = None,
     ) -> None:
+        # (câmara ativa, origem). Sem fonte configurada: não está ativa (conservador).
+        self.camera_state = camera_state or (lambda: (False, Origin.simulated))
         self.db, self.bus, self.salt, self.clock = db, bus, salt, clock
         self.refresh_s = refresh_s
         self.fusion = fusion or FusionParams()
@@ -299,7 +304,7 @@ class PresenceService:
         out: list[DomainEvent] = []
         for rid in residents:
             out += self.apply_fusion(conn, ev.household_id, rid, now)
-        return out
+        return out + self.apply_house(conn, ev.household_id, now)
 
     def on_consumption_detected(
         self, conn: sqlite3.Connection, stored: StoredEvent
@@ -346,8 +351,13 @@ class PresenceService:
 
         def run(conn: sqlite3.Connection) -> list[DomainEvent]:
             out: list[DomainEvent] = []
+            houses: dict[UUID, None] = dict.fromkeys(repo.houses_with_house_state(conn))
             for hid, rid in repo.tracked_residents(conn):
+                houses[hid] = None
                 for ev in self.apply_fusion(conn, hid, rid, now):
+                    out.append(append_event(conn, ev).event)
+            for hid in houses:
+                for ev in self.apply_house(conn, hid, now):
                     out.append(append_event(conn, ev).event)
             return out
 
@@ -362,34 +372,74 @@ class PresenceService:
         now = self.clock()
         return await self.db.run(lambda c: self.current_state(c, household_id, resident_id, now))
 
+    def _occupancy(
+        self,
+        conn: sqlite3.Connection,
+        household_id: UUID,
+        now: datetime,
+        camera_ok: bool,
+        camera_origin: Origin,
+    ) -> HouseOccupancy:
+        """Cálculo ÚNICO da ocupação (cartão e evento). Só lê."""
+        home = unknown = 0
+        for rid in repo.active_tenants(conn, household_id, now):
+            if not repo.has_presence_opt_in(conn, household_id, rid, now):
+                unknown += 1
+                continue
+            presence, _ = self.compute(conn, household_id, rid, now)
+            if presence is not None and presence.state is PresenceState.home:
+                home += 1
+            elif presence is None or presence.state is PresenceState.uncertain:
+                unknown += 1
+        last = repo.get_house_state(conn, household_id)
+        empty_since = last[1] if last and last[0] == OccupancyState.likely_empty.value else None
+        doors = repo.load_doors(conn, household_id, now - WINDOW)
+        return compute_occupancy(
+            doors,
+            Residents(home=home, unknown=unknown),
+            now,
+            camera_ok=camera_ok,
+            camera_origin=camera_origin,
+            empty_since=empty_since,
+        )
+
     async def occupancy(
         self, household_id: UUID, *, camera_ok: bool, camera_origin: Origin
     ) -> HouseOccupancy:
         """Ocupação agregada (PRES-05): só números, calculados em cada pedido a partir do registo
         da porta e dos estados dos moradores; nada se grava. Qualquer morador da casa a vê."""
         now = self.clock()
+        return await self.db.run(
+            lambda c: self._occupancy(c, household_id, now, camera_ok, camera_origin)
+        )
 
-        def run(conn: sqlite3.Connection) -> HouseOccupancy:
-            home = unknown = 0
-            for rid in repo.active_tenants(conn, household_id, now):
-                if not repo.has_presence_opt_in(conn, household_id, rid, now):
-                    unknown += 1
-                    continue
-                presence, _ = self.compute(conn, household_id, rid, now)
-                if presence is not None and presence.state is PresenceState.home:
-                    home += 1
-                elif presence is None or presence.state is PresenceState.uncertain:
-                    unknown += 1
-            doors = repo.load_doors(conn, household_id, now - WINDOW)
-            return compute_occupancy(
-                doors,
-                Residents(home=home, unknown=unknown),
-                now,
-                camera_ok=camera_ok,
-                camera_origin=camera_origin,
+    def apply_house(self, conn: sqlite3.Connection, hid: UUID, now: datetime) -> list[DomainEvent]:
+        """PRES-06: recalcula a ocupação e devolve `presence.occupancy_changed` só se o estado
+        mudou (o primeiro `uncertain` só grava). Só descreve: nunca arma nem executa nada."""
+        camera_ok, origin = self.camera_state()
+        occ = self._occupancy(conn, hid, now, camera_ok, origin)
+        prev = repo.get_house_state(conn, hid)
+        state = occ.state.value
+        if prev is not None and prev[0] == state:
+            return []
+        repo.set_house_state(conn, hid, state, now)
+        if prev is None and occ.state is OccupancyState.uncertain:
+            return []
+        return [
+            PresenceOccupancyChanged(
+                id=stable_id(
+                    "presence-occupancy",
+                    str(hid),
+                    prev[0] if prev else "-",
+                    state,
+                    now.isoformat(),
+                ),
+                ts=now,
+                household_id=hid,
+                provenance=occ.provenance,
+                data=occ,
             )
-
-        return await self.db.run(run)
+        ]
 
     # --- observações Wi-Fi ------------------------------------------------------------------
 

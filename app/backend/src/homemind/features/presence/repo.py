@@ -295,3 +295,29 @@ def last_confirmation_at(
         (str(household_id), str(resident_id)),
     ).fetchone()
     return datetime.fromisoformat(r[0]) if r and r[0] else None
+
+
+# --- estado agregado da casa (PRES-05/06) ----------------------------------------------------
+
+
+def get_house_state(conn: sqlite3.Connection, household_id: UUID) -> tuple[str, datetime] | None:
+    r = conn.execute(
+        "SELECT state, since FROM presence_house_state WHERE household_id = ?",
+        (str(household_id),),
+    ).fetchone()
+    return None if r is None else (r[0], datetime.fromisoformat(r[1]))
+
+
+def set_house_state(
+    conn: sqlite3.Connection, household_id: UUID, state: str, now: datetime
+) -> None:
+    conn.execute(
+        "INSERT INTO presence_house_state (household_id, state, since) VALUES (?,?,?)"
+        " ON CONFLICT (household_id) DO UPDATE SET state = excluded.state,"
+        " since = excluded.since",
+        (str(household_id), state, now.isoformat()),
+    )
+
+
+def houses_with_house_state(conn: sqlite3.Connection) -> list[UUID]:
+    return [UUID(r[0]) for r in conn.execute("SELECT household_id FROM presence_house_state")]

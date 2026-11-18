@@ -106,10 +106,11 @@ def test_incomplete_exits_beyond_a_plausible_count_are_uncertain():
     assert o.state is OccupancyState.uncertain and o.people_inside is None
 
 
-def test_zero_on_the_door_is_never_likely_empty():
+def test_zero_on_the_door_with_nobody_home_is_likely_empty():
     o = occ(seq("in", "out"))
-    assert (o.state, o.people_inside, o.visitors) == (OccupancyState.uncertain, 0, 0)
-    assert o.state is not OccupancyState.likely_empty
+    assert (o.state, o.people_inside, o.visitors, o.residents_home) == (
+        OccupancyState.likely_empty, 0, 0, 0,
+    )  # fmt: skip
 
 
 def test_provenance_is_simulated_when_the_camera_or_any_event_is():
