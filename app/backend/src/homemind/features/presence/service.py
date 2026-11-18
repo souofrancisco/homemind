@@ -33,6 +33,7 @@ from homemind.contracts.domain_events import (
 )
 from homemind.contracts.notification import RefType
 from homemind.contracts.presence import (
+    HouseOccupancy,
     PersonPresence,
     PresenceConfirmationRequest,
     PresenceDevice,
@@ -45,6 +46,7 @@ from homemind.core.db import Database
 from homemind.core.events import EventBus, EventStoreError, append_event
 from homemind.features.presence import repo
 from homemind.features.presence.fusion import CUE_WINDOW, FusionParams, Signals, fuse
+from homemind.features.presence.occupancy import WINDOW, Residents, compute_occupancy
 from homemind.features.presence.wifi import WifiScanner, match_key, normalize_mac
 
 log = logging.getLogger(__name__)
@@ -359,6 +361,35 @@ class PresenceService:
         (regra C da P4) recebem-no por eventos."""
         now = self.clock()
         return await self.db.run(lambda c: self.current_state(c, household_id, resident_id, now))
+
+    async def occupancy(
+        self, household_id: UUID, *, camera_ok: bool, camera_origin: Origin
+    ) -> HouseOccupancy:
+        """Ocupação agregada (PRES-05): só números, calculados em cada pedido a partir do registo
+        da porta e dos estados dos moradores; nada se grava. Qualquer morador da casa a vê."""
+        now = self.clock()
+
+        def run(conn: sqlite3.Connection) -> HouseOccupancy:
+            home = unknown = 0
+            for rid in repo.active_tenants(conn, household_id, now):
+                if not repo.has_presence_opt_in(conn, household_id, rid, now):
+                    unknown += 1
+                    continue
+                presence, _ = self.compute(conn, household_id, rid, now)
+                if presence is not None and presence.state is PresenceState.home:
+                    home += 1
+                elif presence is None or presence.state is PresenceState.uncertain:
+                    unknown += 1
+            doors = repo.load_doors(conn, household_id, now - WINDOW)
+            return compute_occupancy(
+                doors,
+                Residents(home=home, unknown=unknown),
+                now,
+                camera_ok=camera_ok,
+                camera_origin=camera_origin,
+            )
+
+        return await self.db.run(run)
 
     # --- observações Wi-Fi ------------------------------------------------------------------
 

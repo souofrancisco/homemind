@@ -156,7 +156,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | `GET` | `/api/households/{id}/presence` | T | **Só o próprio** (opt-in); **L/O: 403**; ainda PLANEADO |
 | `PUT` | `/api/presence/me` | T | `PresenceMeIn` `{ "state": "in" \| "out" }` (substitui «cheguei/saí») |
 | `GET` | `/api/presence/camera/status` | O | `CameraStatus`: só diagnóstico (FPS, `camera_ok`, fonte e origem); sem imagens nem URL |
-| `GET` | `/api/households/{id}/occupancy` | T | `HouseOccupancy` (PROPOSTA): número de pessoas e visitas, sem nomes; **L: 403** |
+| `GET` | `/api/presence/occupancy?household_id=` | T | `HouseOccupancy` (PRES-05, **IMPLEMENTADO**): número de pessoas e visitas, sem nomes; **L/O: 403**; `uncertain` com contagem incoerente |
 | `GET`·`POST`·`DELETE` | `/api/presence/devices` | T (own) | `PresenceDeviceView` (PROPOSTA): telemóvel para o Wi-Fi, consentimento e revogação; nunca o MAC |
 
 ### Atribuição, fatura e recibos (P4)

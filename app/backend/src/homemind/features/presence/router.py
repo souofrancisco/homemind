@@ -19,7 +19,12 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request,
 from pydantic import Field
 
 from homemind.contracts.common import ContractModel, Origin, ShortText
-from homemind.contracts.presence import CameraStatus, PersonPresence, PresenceDeviceView
+from homemind.contracts.presence import (
+    CameraStatus,
+    HouseOccupancy,
+    PersonPresence,
+    PresenceDeviceView,
+)
 from homemind.core.access import (
     HouseholdAccess,
     Operation,
@@ -216,6 +221,19 @@ def _http(e: DeviceError) -> HTTPException:
 async def get_presence(access: Read, service: Service) -> PersonPresence:
     """O meu estado. Ninguém mais o vê (nem colegas, nem senhorio, nem operador)."""
     return await service.own_state(access.household_id, access.resident_id)
+
+
+@router.get("/occupancy")
+async def get_occupancy(access: Read, service: Service) -> HouseOccupancy:
+    """Quantas pessoas estão em casa e quantas são visitas: só números, sem identidade nem
+    horários. O senhorio e o operador recebem 403. Sem câmara a funcionar, ou com contagem que
+    diverge dos telemóveis, o estado é `uncertain` (nunca «casa vazia», nunca negativo)."""
+    fonte = video.fonte_atual()
+    return await service.occupancy(
+        access.household_id,
+        camera_ok=fonte is not None and fonte.camara_ok,
+        camera_origin=origin_of(resolve_kind(get_settings())),
+    )
 
 
 class PresenceDeviceIn(ContractModel):

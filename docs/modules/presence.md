@@ -1,6 +1,6 @@
 # Módulo `presence` — câmara na porta e presença
 
-**Dono: P2 (1Mii).** **IMPLEMENTADO** (PRES-03 #107, PRES-04 #108): telemóveis com opt-in, pistas Wi-Fi, resposta a «estás em casa?» e fusão em casa/fora/incerto. **Não há check-in manual «cheguei/saí»**: a presença regista-se só pela câmara (porta) e pelo telemóvel no Wi-Fi (decisão do dono). **PLANEADO**: câmara na porta (PRES-01/02; a fusão já consome `presence.door_crossed`, hoje só com fixtures), ocupação (PRES-05). Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
+**Dono: P2 (1Mii).** **IMPLEMENTADO** (PRES-03 #107, PRES-04 #108, PRES-05 #109 ocupação e visitas anónimas): telemóveis com opt-in, pistas Wi-Fi, resposta a «estás em casa?» e fusão em casa/fora/incerto. **Não há check-in manual «cheguei/saí»**: a presença regista-se só pela câmara (porta) e pelo telemóvel no Wi-Fi (decisão do dono). **PLANEADO**: câmara na porta (PRES-01/02; a fusão já consome `presence.door_crossed`, hoje só com fixtures), ocupação (PRES-05). Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
 
 ## Responsabilidade
 
@@ -91,7 +91,7 @@ ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` →
   duas pessoas coladas contam como uma: **limitação conhecida, aceite para a demo**: preferimos contar a menos a inventar entradas).
 - A soleira configura-se só por variáveis de ambiente, sem UI: **aceite para a demo**.
 - `track_id` vive só em memória e é esquecido; pistas sem ID confirmado não contam. Visitas não são
-  distinguidas aqui: são só mais passagens anónimas (o número de visitas é da PRES-05).
+  distinguidas aqui: são só mais passagens anónimas (o número de visitas sai da ocupação agregada, ver «Ocupação e visitas (PRES-05)»).
 - `confidence` é a média da confiança do detetor nessa pessoa, **não** uma precisão medida.
 - Sem frames novos não há eventos e nada daqui conclui «casa vazia». O código ObjectOS (`visao`,
   gestos) fica intacto e deixa de ser necessário neste caminho (remoção: BASE-04 #74).
@@ -143,6 +143,15 @@ ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` →
 **Consentimento.** Todas as pistas individuais (Wi-Fi, aparelho a ligar, resposta à pergunta) exigem `Membership.presence_opt_in`; o Wi-Fi exige também `wifi_opt_in`. `apply_fusion` não grava estado de quem não tem opt-in. **Câmara em baixo:** caso por tratar (decisão do dono); a fusão limita-se a não inventar «fora» sem saída pela porta.
 
 **Provenance.** `simulated` se qualquer entrada for simulada; `inferred` quando decide a porta ou o tempo; `measured` só quando o estado vem só de uma resposta do morador (P-19).
+
+## Ocupação e visitas (PRES-05 #109)
+
+**IMPLEMENTADO** (`occupancy.py` puro + `GET /api/presence/occupancy?household_id=`, só morador; senhorio e operador `403 forbidden_role`; cartão «Quem está em casa» em «A minha casa», com SIMULADO). Não grava nada: calcula-se em cada pedido a partir do registo `presence.door_crossed` das últimas 24 h e dos estados dos moradores.
+- **Contagem** = saldo da porta (entradas − saídas). Nunca negativa: uma saída sem entrada anterior (entrada perdida) reinicia o saldo a 0 e deixa a contagem *dessincronizada* (`uncertain`, `people_inside=null`) até haver nova prova coerente.
+- **Reconciliação** com os moradores em casa (telemóvel com opt-in, estado `in`): saldo da porta inferior ao número de moradores em casa, saldo > 20, câmara sem frames/em falha ou nenhuma passagem na janela → `uncertain`, sem número inventado.
+- **Visitas** = pessoas dentro − moradores em casa, **só** quando todos os moradores ativos têm opt-in e estado conhecido; senão `visitors=null`. Zero na porta nunca é «casa vazia»: fica `uncertain` com `people_inside=0` (`likely_empty` nunca é produzido aqui: é a PRES-06, fase 2, e nunca arma nada).
+- Uma visita é só um número: não gera pista individual, notificação nem conta. Proveniência `simulated` se a câmara ou qualquer passagem da janela o for.
+- **Limitações:** não deteta eventos perdidos que o saldo e os telemóveis não denunciem (ex.: visita que entra sem ser contada e sai contada); só reconcilia moradores, nunca visitas; janela fixa de 24 h; **PLANEADO**: emitir `presence.occupancy_changed` (hoje só o pedido REST) e a regra de «casa vazia» (PRES-06 #131).
 
 **Decisões para a demo (aceites pelo dono).** Varrimento Wi-Fi parado (3 intervalos) com telemóvel registado → pergunta (`uncertain/no_recent_cues`), nunca `out`; saída anónima com vários moradores `in` e sem Wi-Fi → pergunta; único `in` → a saída atribui-se-lhe (limite: uma visita a sair engana-o até à PRES-05).
 
@@ -239,7 +248,7 @@ Escalas: gravidade (G) e probabilidade (P) são **antes das correções**; resid
 | Morador consulta presença de terceiro | Alta | Média | grant `own`; membership e `resident_id` vinculados à casa; evento manual compara actor | Baixo no gate; endpoint de leitura continua planeado |
 | Captura/extração de frames por MJPEG | Crítica | Média | `/api/video` sempre 404; nenhuma dependência `Fonte`; factory RTSP rejeitada; ferramentas de medição exigem clip sintético allowlisted | Baixo no serviço; classe RTSP permanece no módulo para testes unitários com capturas falsas |
 | Correlacionar timestamp de passagem com identidade | Alta | Média | nenhum evento de câmara por pessoa; `DoorCrossed` anónimo; sem feed público | Médio se B for criado: timestamps continuam potencialmente pessoais |
-| Reidentificação indireta por contagem, quarto, energia ou rotina | Alta | Média | sem endpoint de ocupação/série temporal; landlord não recebe presença | Médio; minimização e agregação devem ser validadas no desenho PRES-02/05 |
+| Reidentificação indireta por contagem, quarto, energia ou rotina | Alta | Média | `GET /api/presence/occupancy` devolve só o instantâneo agregado (sem série temporal, sem horários); só o morador o lê, o senhorio e o operador recebem 403 | Médio; minimização e agregação devem ser validadas no desenho PRES-02/05 |
 | Segredo RTSP em exceção ou logs | Alta | Baixa | fonte regista apenas tipo da exceção; endpoint responde mensagem genérica; teste injeta URL falsa com credenciais | Baixo para logs FastAPI revistos; observar logs de OpenCV/FFmpeg no deployment antes de piloto |
 | Presença em REST/WS sem autorização por papel | Alta | Média | booleano legado removido do DTO/WS; evento textual explícito removido de `events.jsonl` | Médio: estados e timestamps do motor legado ainda não são DTOs escopados; não ligá-los a fonte real |
 | Persistência por tempo excessivo | Alta | Alta após futura escrita | eventos F0 append-only; PRIV-02 não apaga nem migra eventos | Alto até P-08/P-20 e política separada, incluindo backups |
