@@ -100,7 +100,7 @@ Quem paga um `ConsumptionEvent`. `id`, `consumption_event_id`, `target_type` (`r
 Parte de cada morador. `id`, `bill_id`, `resident_id`, `room_id?`, `fixed_share_cents`, `residual_share_cents`, `attributed_wh` (lista por proveniência), `individual_cents`, `amount_cents`, `breakdown` (lista de linhas explicáveis), `status` (`draft` \| `published` \| `contested` \| `resolved`). **P4.** Invariante: `Σ amount_cents = bill.total_cents`.
 
 ### AutomationRule
-`id`, `household_id`, `name`, `source` (`natural_language` \| `manual` \| `suggested`), `nl_text?`, `trigger` (tipo + parâmetros), `condition?`, `actions` (`[{device_role, capability, value}]`), `requires_confirmation` (bool), `status` (`draft` \| `proposed` \| `active` \| `disabled`), `created_by`, `approved_by?`. **P3 (modelo e UI) / P1 (execução via `Home`).** As ações limitam-se ao que o MCP permite hoje (lâmpada e tomada: `power`, `brightness`, `color_rgb`).
+`id`, `household_id`, `name`, `source` (`natural_language` \| `manual` \| `suggested`), `nl_text?`, `trigger` (tipo + parâmetros), `condition?`, `actions` (`[{device_role, capability, value}]`), `requires_confirmation` (bool), `status` (`draft` \| `proposed` \| `active` \| `disabled`), `created_by`, `approved_by?`. **P3 (modelo e UI) / P1 (execução via `Home`).** As ações limitam-se ao que o MCP permite hoje (lâmpada e tomada: `power`, `brightness`, `color_rgb`); **no contrato de SAFE-04 (PROPOSTA D-35) só «desligar tomada»** (`power=false`).
 
 ## Estados e responsabilidades — resumo
 

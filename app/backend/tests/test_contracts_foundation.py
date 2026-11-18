@@ -3,6 +3,7 @@
 import json
 import math
 from datetime import date, datetime, timedelta, timezone
+from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
@@ -51,7 +52,8 @@ def test_every_fixture_builds_and_roundtrips_json():
         fx.door_crossed(), fx.person_presence(), fx.confirmation_request(),
         fx.confirmation_notification(), fx.carla_attribution(), fx.landlord_view(), fx.budget(),
         fx.tool_request(), fx.tool_result(), fx.proposed_action(), fx.uncertain_execution(),
-        fx.automation(), fx.notification_preferences(), *fx.bill_a()[1], fx.bill_a()[0],
+        fx.automation(), *fx.automation_votes(), fx.notification_preferences(),
+        *fx.bill_a()[1], fx.bill_a()[0],
         fx.appliance_cue(), fx.presence_confirmation(), fx.occupancy(), fx.presence_device(),
         fx.camera_status(), fx.window_open(), fx.window_alert(), fx.smoke_alert(),
     ]:  # fmt: skip
@@ -710,12 +712,137 @@ def test_automation_rules_and_transitions():
     bad(agent.AutomationTrigger, kind="power_above")
 
 
+def _rule_with(command: dict):
+    return {**fx.automation().model_dump(), "actions": [command]}
+
+
+def test_automation_rule_only_turns_a_plug_off():
+    plug = fx.PLUG_SALA
+    ok = agent.AutomationRule(
+        **_rule_with({"target_device_id": plug, "capability": "power", "power": False})
+    )
+    assert ok.actions[0].power is False
+    bad(
+        agent.AutomationRule,
+        **_rule_with({"target_device_id": plug, "capability": "power", "power": True}),
+    )
+    for cap, extra in (
+        ("brightness", {"brightness": 50}),
+        ("color_rgb", {"color_rgb": {"r": 1, "g": 2, "b": 3}}),
+    ):
+        bad(
+            agent.AutomationRule,
+            **_rule_with({"target_device_id": plug, "capability": cap, **extra}),
+        )
+    two = [
+        *fx.automation().actions,
+        agent.DeviceCommand(target_device_id=plug, capability="power", power=True),
+    ]
+    bad(agent.AutomationRule, **{**fx.automation().model_dump(), "actions": two})
+    # continua a exigir aprovação para estar ativa
+    bad(agent.AutomationRule, **{**fx.automation().model_dump(), "status": "active"})
+    agent.AutomationRule(
+        **{**fx.automation().model_dump(), "status": "active", "approved_by_resident_id": fx.ANA}
+    )
+
+
+def _votes(*pairs: tuple[UUID, bool]) -> list[agent.AutomationVote]:
+    return [
+        agent.AutomationVote(resident_id=r, approve=a, at=T0 + timedelta(minutes=i))
+        for i, (r, a) in enumerate(pairs)
+    ]
+
+
+@pytest.mark.parametrize(("n", "majority"), [(1, 1), (2, 2), (3, 2), (4, 3), (5, 3)])
+def test_absolute_majority_is_more_than_half(n, majority):
+    assert agent.absolute_majority(n) == majority
+    ids = [stable_id("m", str(i)) for i in range(n)]
+    out = agent.rule_approval_outcome(_votes(*[(r, True) for r in ids[: majority - 1]]), ids)
+    assert out.verdict is agent.RuleVerdict.pending or majority == 1
+    out = agent.rule_approval_outcome(_votes(*[(r, True) for r in ids[:majority]]), ids)
+    assert out.verdict is agent.RuleVerdict.approved and out.majority == majority and out.decided
+
+
+def test_rule_outcome_rejects_as_soon_as_majority_is_impossible():
+    ids = [stable_id("m", str(i)) for i in range(4)]  # maioria 3: 2 contra chegam
+    one = agent.rule_approval_outcome(_votes((ids[0], False)), ids)
+    assert one.verdict is agent.RuleVerdict.pending
+    two = agent.rule_approval_outcome(_votes((ids[0], False), (ids[1], False)), ids)
+    assert two.verdict is agent.RuleVerdict.rejected and (two.votes_for, two.votes_against) == (
+        0,
+        2,
+    )
+    ids2 = ids[:2]  # maioria 2: um contra chega
+    assert (
+        agent.rule_approval_outcome(_votes((ids2[0], False)), ids2).verdict
+        is agent.RuleVerdict.rejected
+    )
+    ids3 = ids[:3]  # maioria 2: um contra não chega, dois sim
+    assert (
+        agent.rule_approval_outcome(_votes((ids3[0], False)), ids3).verdict
+        is agent.RuleVerdict.pending
+    )
+    assert (
+        agent.rule_approval_outcome(_votes((ids3[0], False), (ids3[1], False)), ids3).verdict
+        is agent.RuleVerdict.rejected
+    )
+
+
+def test_rule_outcome_expiry_without_majority_rejects_but_majority_still_wins():
+    ids = [stable_id("m", str(i)) for i in range(5)]  # maioria 3
+    short = _votes((ids[0], True), (ids[1], True))
+    assert agent.rule_approval_outcome(short, ids).verdict is agent.RuleVerdict.pending
+    assert (
+        agent.rule_approval_outcome(short, ids, expired=True).verdict is agent.RuleVerdict.rejected
+    )
+    assert agent.rule_approval_outcome([], ids, expired=True).verdict is agent.RuleVerdict.rejected
+    full = _votes((ids[0], True), (ids[1], True), (ids[2], True))
+    assert (
+        agent.rule_approval_outcome(full, ids, expired=True).verdict is agent.RuleVerdict.approved
+    )
+
+
+def test_rule_outcome_with_fixture_votes_and_invalid_votes():
+    four = [fx.ANA, fx.BRUNO, fx.CARLA, fx.DIOGO]
+    out = agent.rule_approval_outcome(fx.automation_votes(), four)
+    assert (out.verdict, out.votes_for, out.votes_against, out.majority) == (
+        agent.RuleVerdict.pending,
+        2,
+        1,
+        3,
+    )  # 2 a favor < maioria de 3
+    with pytest.raises(ValueError):
+        agent.rule_approval_outcome(_votes((fx.ANA, True), (fx.ANA, False)), four)
+    with pytest.raises(ValueError):
+        agent.rule_approval_outcome(_votes((stable_id("intruso"), True)), four)
+    with pytest.raises(ValueError):
+        agent.rule_approval_outcome([], [])
+    with pytest.raises(ValueError):
+        agent.rule_approval_outcome([], [fx.ANA, fx.ANA])
+
+
+def test_vote_events_carry_only_counts():
+    decided = next(s for s in fx.event_samples() if s.type == "automation.vote_decided")
+    assert set(decided.data.model_dump()) == {
+        "rule_id", "verdict", "votes_for", "votes_against", "eligible", "expired",
+    }  # fmt: skip
+    bad(
+        domain_events.AutomationVoteDecidedData,
+        **{**decided.data.model_dump(), "verdict": "pending"},
+    )
+    changed = next(s for s in fx.event_samples() if s.type == "automation.status_changed")
+    bad(
+        domain_events.AutomationStatusChangedData,
+        **{**changed.data.model_dump(), "to_status": "active"},
+    )
+
+
 # --- eventos de domínio ---------------------------------------------------------------------------
 
 
 def test_every_event_type_has_a_sample_and_roundtrips_json():
     samples = fx.event_samples()
-    assert {s.type for s in samples} == set(domain_events.EVENT_TYPES) and len(samples) == 27
+    assert {s.type for s in samples} == set(domain_events.EVENT_TYPES) and len(samples) == 29
     for s in samples:
         wire = s.model_dump_json()
         back = domain_events.domain_event_adapter.validate_json(wire)
@@ -737,6 +864,7 @@ def test_event_types_cover_the_documented_list():
         "notification.responded", "alerts.threshold_crossed", "alerts.alert_raised",
         "alerts.cold_room",
         "agent.action_proposed", "automation.proposed", "automation.executed",
+        "automation.vote_decided", "automation.status_changed",
     }  # fmt: skip
     assert set(domain_events.EVENT_TYPES) == documented
 

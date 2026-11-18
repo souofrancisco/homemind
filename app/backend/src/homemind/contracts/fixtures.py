@@ -57,6 +57,7 @@ SUBJECTS = {  # `sub` simulados do Authentik
 }
 METER = stable_id("device", "main-meter")
 LAMP = stable_id("device", "lamp")
+PLUG_SALA = stable_id("device", "tomada-sala")
 HEATER = stable_id("appliance", "aquecedor-bruno")
 KETTLE = stable_id("appliance", "chaleira-sala")
 CONSUMPTION = stable_id("consumption", "aquecedor-sala")
@@ -594,15 +595,27 @@ def automation() -> agent.AutomationRule:
         source=agent.AutomationSource.natural_language,
         nl_text="Se a sala passar de 1,5 kW, desliga.",
         trigger=agent.AutomationTrigger(
-            kind=agent.TriggerKind.power_above, device_id=METER, threshold_w=1500, duration_s=1800
+            kind=agent.TriggerKind.power_above,
+            device_id=PLUG_SALA,
+            threshold_w=1500,
+            duration_s=1800,
         ),
         actions=[
             agent.DeviceCommand(
-                target_device_id=METER, capability=agent.DeviceCapability.power, power=False
+                target_device_id=PLUG_SALA, capability=agent.DeviceCapability.power, power=False
             )
         ],
         created_by_resident_id=BRUNO,
     )
+
+
+def automation_votes() -> list[agent.AutomationVote]:
+    """Bruno (autor) e Ana a favor, Carla contra; Diogo ainda não votou."""
+    return [
+        agent.AutomationVote(resident_id=BRUNO, approve=True, at=T0),
+        agent.AutomationVote(resident_id=ANA, approve=True, at=T0 + timedelta(minutes=5)),
+        agent.AutomationVote(resident_id=CARLA, approve=False, at=T0 + timedelta(minutes=9)),
+    ]
 
 
 def notification_preferences() -> notification.NotificationPreferences:
@@ -741,5 +754,26 @@ def event_samples() -> list[domain_events.EventBase]:
             **d,
             provenance=SIM_MEASURED,
             data=e.AutomationExecutedData(rule_id=automation().id, result=uncertain_execution()),
+        ),
+        e.AutomationVoteDecided(
+            **d,
+            provenance=SIM_INFERRED,
+            data=e.AutomationVoteDecidedData(
+                rule_id=automation().id,
+                verdict=agent.RuleVerdict.approved,
+                votes_for=3,
+                votes_against=1,
+                eligible=4,
+            ),
+        ),
+        e.AutomationStatusChanged(
+            **d,
+            provenance=SIM_INFERRED,
+            data=e.AutomationStatusChangedData(
+                rule_id=automation().id,
+                from_status=agent.AutomationStatus.active,
+                to_status=agent.AutomationStatus.disabled,
+                resident_id=CARLA,
+            ),
         ),
     ]

@@ -60,8 +60,8 @@ Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), 
 | `Notification`, `NotificationView`, `NotificationAction/Response/Preferences`, `ConfirmationRequest` | P3 (pedido: P4) | UI, P4 | **IMPLEMENTADA** (`0300_notifications_core.sql`: `notification`, `notification_read`, `notification_preferences`; *compare-and-set* sobre o estado e a versão/n.º de votos) | modelos + cenário + `notifications/tests` | D-32 (votação nas confirmações) |
 | `ProposedAction`, `ActionConfirmation`, `ActionExecutionResult` | P3 (execução: P1) | P3, `notifications` | **IMPLEMENTADA** (`0310_agent_actions.sql`: `agent_action`, com a confirmação e o resultado em JSON, e `agent_action_log` *append-only* como auditoria; AGENT-03 #112). Executor real **PLANEADO** (P1); na casa demo só SIMULADO | modelos + `agent/tests` | P-06 (LLM e dados) |
 | `AgentMessage` | P3 | app (DTO) | **IMPLEMENTADA** (`0311_agent_messages.sql`: `agent_message`, por residente; retenção 50 mensagens / 30 dias, P-25; nunca enviada ao LLM, P-06; #111) | `agent/tests/test_history.py` | `AgentMessage` sem `resident_id` (desejado: só o próprio lê) |
-| `AgentToolRequest/Result`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3); as ferramentas não persistem resultados; `AutomationRule` é AGENT-04 | modelos | P-06 (LLM e dados) |
-| `DomainEvent` (23 tipos), `StoredEvent` | cada módulo | cada módulo | **IMPLEMENTADA** (`domain_event`) | `test_events`, cenário | — |
+| `AgentToolRequest/Result`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3); as ferramentas não persistem resultados; `AutomationRule` é AGENT-04. **SAFE-04 (#117), contrato PROPOSTO (D-35):** `actions` só «desligar tomada» (`power=False`; sem lâmpada), `AutomationVote` e `rule_approval_outcome` (maioria absoluta, distinta da D-32), eventos `automation.vote_decided` e `automation.status_changed`. Persistência, rotas e motor PLANEADOS (ondas 2 e 3) | modelos (`test_contracts_foundation`) | P-06 (LLM e dados); D-35 |
+| `DomainEvent` (29 tipos), `StoredEvent` | cada módulo | cada módulo | **IMPLEMENTADA** (`domain_event`) | `test_events`, cenário | — |
 
 ## 4. Eventos de domínio
 
@@ -95,6 +95,8 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `agent.action_proposed` | P3 | `ProposedAction` | P3 (`notifications.agent_action`, **IMPLEMENTADO**: aviso pessoal sem botões; emitido pelo chat e pelo `agent.safety_suggestion`; o contrato não tem `source`, #157) | idem |
 | `automation.proposed` | P3 | `AutomationRule` | P3 | idem |
 | `automation.executed` | P1 | `AutomationExecutedData` | P3 | idem |
+| `automation.vote_decided` | P3 | `AutomationVoteDecidedData` (SAFE-04, **PROPOSTA D-35**: veredicto `approved`/`rejected`, `votes_for`, `votes_against`, `eligible`, `expired`; sem quem votou o quê; categoria de retenção `operational`) | P3 | idem |
+| `automation.status_changed` | P3 | `AutomationStatusChangedData` (SAFE-04, **PROPOSTA D-35**: `from_status`→`to_status`, `resident_id` ou `null` = sistema; ex.: suspensão `active→disabled`) | P3 | idem |
 
 Garantias e limites: [event-flow.md](event-flow.md) §4. Eventos **não** se expõem à app em bruto (`StoredEvent` não está no OpenAPI: inclui presença de pessoas); chegam como DTOs filtrados por papel.
 
