@@ -20,8 +20,8 @@ Roteiro dos testes a executar à mão. Os testes automáticos (`make check`, `ma
 | [B. API e tempo real](#b-api-e-tempo-real) | API-01, API-02, WS-01, WS-02 |
 | [C. Painel](#c-painel) | UI-01, UI-02 |
 | [D. Motor, regras e NVIDIA](#d-motor-regras-e-nvidia) | MOT-01, MOT-02, REG-01, NV-01, OFF-01 |
-| [E. MCP Altice](#e-mcp-altice) | MCP-01 … MCP-07 |
-| [F. Vídeo e visão](#f-vídeo-e-visão) | PRES-01, PRES-02, VID-01, VID-02, VID-03, YOLO-01, YOLO-02, POSE-01, TRK-01 |
+| [E. MCP Altice](#e-mcp-altice) | MCP-01 … MCP-09 |
+| [F. Vídeo e visão](#f-vídeo-e-visão) | PRES-01, PRES-02, VID-01, VID-02, VID-03, VID-04, YOLO-01, YOLO-02, POSE-01, TRK-01 |
 | [G. Gestos e presença](#g-gestos-e-presença) | GES-01, GES-02, PRE-01 |
 | [H. Demo](#h-demo) | LAT-01, LAT-02, DEMO-01, PB-01, PRIV-01 |
 | [I. Presença (Conta Certa)](#i-presença-conta-certa) | PRW-01 … PRW-04, PRF-01 … PRF-04 |
@@ -160,6 +160,24 @@ auth() { curl -s -H "Authorization: Bearer $TOKEN" "$@"; }
 
 Operação detalhada em [mcp-demo.md](../integrations/mcp-demo.md); hipóteses para a lâmpada em [mcp-capabilities.md](../integrations/mcp-capabilities.md).
 
+**Runbook automático (DEMO-03, #122) — IMPLEMENTADO.** Corre as verificações, mede e imprime as linhas desta Folha de resultados prontas a colar (PASS / FAIL / BLOQUEADO, hora UTC e local, evidência sem IDs, nomes, URL nem tokens). Só leitura por omissão.
+
+```bash
+cd app/backend
+uv run python -m homemind.connectors.runbook --simulated            # ensaio sem kit (tudo SIMULADO)
+uv run --env-file ../.env python -m homemind.connectors.runbook     # kit REAL, só leitura
+#   --interactive        mede a latência do contacto (MCP-08), com o operador junto ao sensor
+#   --write lamp plug    escritas físicas (MCP-04/05), cada uma com «AUTORIZO …» e grant privado de 2 min
+#   --camera             abre VIDEO_SOURCE para VID-04 (ver bloco F e PRIV-02)
+#   --samples-s 90       duração da amostragem de MCP-06 (uma leitura a cada 5 s)
+#   --out relatorio.json JSON do relatório (por omissão vai para o stdout; nunca para o repositório)
+#   --update-guide       preenche as linhas MCP-01/02/04/05/06/08/09 e VID-04 desta Folha
+```
+
+- Código de saída ≠ 0 se houver algum FAIL. Sem `--write`, MCP-04/05 ficam BLOQUEADO («não autorizado nesta sessão»); no kit real, o PASS de uma escrita exige a releitura **e** o operador confirmar o que viu.
+- `--update-guide` só altera as colunas REAL / SIM, PASS / FAIL e Evidência das linhas com o mesmo ID; um BLOQUEADO não apaga um resultado já registado. Um ensaio `--simulated` só atualiza um guia indicado com `--guide`.
+- O «MCP-03» do runbook é o **inventário** (tipos e identificação inequívoca); não substitui o MCP-03 manual abaixo (leitura acompanha a app oficial) e não é escrito nesta folha. O MCP-07 do runbook só corre no simulador; no kit real seguem-se os passos manuais.
+
 ### MCP-01 — OAuth
 - **Issue:** #10 · **Tipo:** REAL
 - **Pré-requisitos:** `MCP_ENDPOINT`, `MCP_API_KEY` em `app/.env`; conta da equipa.
@@ -211,6 +229,20 @@ Operação detalhada em [mcp-demo.md](../integrations/mcp-demo.md); hipóteses p
 - **Esperado:** 1) «Escritas BLOQUEADAS»; o painel mostra falha com o motivo e **não** afirma que desligou. 2) Só a lâmpada é comandada; a tomada é recusada («dispositivo fora da autorização»); depois de expirar tudo é recusado. 3) `mcp_ok:false` e estados desconhecidos durante a falha; recupera sozinho em ≤ 15 s; nenhuma escrita é repetida.
 - **PASS** se os três comportamentos se verificarem. No fim: `make mcp-writes-off stack=demo`.
 
+### MCP-08 — Contacto: estado e latência
+- **Issue:** #122 · **Tipo:** REAL, só leitura
+- **Pré-requisitos:** MCP-03 do runbook com um único sensor de contacto; operador junto ao sensor.
+- **Passos:** runbook com `--interactive`; a cada pedido, carregar Enter e logo a seguir abrir (depois fechar) o sensor.
+- **Esperado:** estado atual `aberto`/`fechado` e idade do último contacto; latência de ABRIR e de FECHAR medida com amostras a cada 2 s (timeout 90 s). A latência inclui o tempo de reação do operador (por excesso).
+- **Evidência:** as duas latências; decidem se a meta «janela → corte < 10 s» é realista.
+- **PASS** com estado conhecido e, com `--interactive`, as duas mudanças vistas em ≤ 90 s.
+
+### MCP-09 — Clima: temperatura e humidade
+- **Issue:** #122 · **Tipo:** REAL, só leitura
+- **Passos:** runbook (sem opções extra).
+- **Esperado:** temperatura (°C) e humidade (%) atuais e idade do último contacto (o clima reporta com pouca frequência: ≥ ~11 min).
+- **PASS** com os dois valores conhecidos; leitura com mais de 2 h fica BLOQUEADO.
+
 ## F. Vídeo e visão
 
 **Bloqueado por PRIV-02 #119:** não executar validações com câmara real, RTSP, pessoas ou clips de origem real. `GET /api/video` está desativado, `criar_fonte` recusa RTSP e a visão só aceita clips sintéticos allowlisted com perfil demo e FakeHome. Reabrir estas validações exige os controlos PRES-02/03 e revisão de produto/jurídica.
@@ -249,6 +281,13 @@ Operação detalhada em [mcp-demo.md](../integrations/mcp-demo.md); hipóteses p
 - **Passos:** com o vídeo no painel, desligar a câmara da corrente 15 s e voltar a ligar.
 - **Esperado:** `camera_ok:false` em ≤ 5 s e evento «Câmara indisponível»; a casa **não** entra em espera por causa disso; o vídeo volta sozinho e aparece «Câmara disponível».
 - **PASS** se recuperar sem reiniciar o backend e sem transições de presença falsas.
+
+### VID-04 — Câmara: abertura e FPS (runbook)
+- **Issue:** #122 · **Tipo:** REAL (kit/RTSP) / SIMULADO (clip, telemóvel ou `--simulated`) · **Estado: só com autorização (PRIV-02)**
+- **Pré-requisitos:** `VIDEO_SOURCE` em `app/.env`; autorização explícita para abrir a câmara real (PRIV-02 #119).
+- **Passos:** runbook com `--camera`.
+- **Esperado:** abre a fonte, lê frames **só em memória** durante ~5 s e descarta-os logo; mede resolução, FPS, atraso de abertura e do primeiro frame. Nada é gravado nem enviado; o URL nunca aparece na saída. Sem `VIDEO_SOURCE` ou sem `--camera`: BLOQUEADO.
+- **PASS** se chegar pelo menos um frame. Não substitui o VID-01 (10 min sem quedas).
 
 ### YOLO-01 — Objetos reconhecidos (BLOQUEADO para captura de pessoas)
 - **Issue:** #4 · **Tipo:** REAL
@@ -430,11 +469,14 @@ Data: ________ · Testador(es): ________ · Hardware (GPU/CPU): ________ · Comm
 | MCP-05 | ⚠️ Tomada | | | | #11 |
 | MCP-06 | Consumo | | | valor bruto: ____ com carga de ____ W | #12 |
 | MCP-07 | ⚠️ Falhas e reconexão | | | | #11, #12 |
+| MCP-08 | Contacto: estado e latência | | | abrir: ____ s · fechar: ____ s | #122 |
+| MCP-09 | Clima: temperatura e humidade | | | ____ °C · ____ % | #122 |
 | PRES-01 | Câmara da porta: kit e plano B | | | kit: ____ · FPS: ____ | #105 |
 | PRES-02 | Contagem na soleira | | | certas/total: ____ | #106 |
 | VID-01 | RTSP 10 min | | | quedas: ____ · FPS: ____ | #2 |
 | VID-02 | Atraso câmara → ecrã | | | 0/5/10 min: ____ / ____ / ____ s | #2 |
 | VID-03 | Reconexão da câmara | | | | #3 |
+| VID-04 | Câmara: abertura e FPS (runbook) | | | FPS: ____ · resolução: ____ | #122 |
 | YOLO-01 | Objetos | | | objeto do «livro»: ____ | #4 |
 | YOLO-02 | FPS de inferência | | | ____ ms/frame · variante ____ | #4 |
 | POSE-01 | Esqueleto | | | | #4 |
