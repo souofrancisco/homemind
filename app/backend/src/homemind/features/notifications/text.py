@@ -15,3 +15,8 @@ def format_eur(cents: int) -> str:
 def format_kw(watts: float) -> str:
     """Potência em kW com uma casa decimal, em PT-PT: `2040.0` -> `2,0 kW`."""
     return f"{watts / 1000:.1f} kW".replace(".", ",")
+
+
+def format_kwh(wh: int) -> str:
+    """Energia em kWh com uma casa decimal, em PT-PT: `5400` -> `5,4 kWh`."""
+    return f"{wh / 1000:.1f} kWh".replace(".", ",")

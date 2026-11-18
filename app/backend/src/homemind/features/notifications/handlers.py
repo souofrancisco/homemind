@@ -167,13 +167,23 @@ def make_budget_handler(clock: Callable[[], datetime]) -> Handler:
 
 
 def make_peak_handler(clock: Callable[[], datetime]) -> Handler:
-    """`alerts.alert_raised` (`kind=peak`, ALERT-03) -> aviso de pico da casa. Os outros
-    `kind` (aparelho esquecido, «não bate certo») ainda não têm produtor nem texto: ignorados."""
+    """`alerts.alert_raised` (ALERT-03) -> aviso da casa: `kind=peak` (pico) ou `anomaly` (gasto
+    do dia fora do habitual). Os outros `kind` (aparelho esquecido, «não bate certo») ainda não
+    têm produtor nem texto: ignorados."""
 
     def handler(conn: sqlite3.Connection, stored: StoredEvent) -> list[de.DomainEvent]:
         ev = stored.event
         if not isinstance(ev, de.AlertsAlertRaised):
             return []
+        if ev.data.kind is de.AlertKind.anomaly:
+            out = _service(conn, clock).on_anomaly_alert(
+                ev.data,
+                source_event_id=ev.id,
+                household_id=ev.household_id,
+                correlation_id=ev.correlation_id,
+                provenance=ev.provenance,
+            )
+            return list(out.events)
         out = _service(conn, clock).on_peak_alert(
             ev.data,
             source_event_id=ev.id,

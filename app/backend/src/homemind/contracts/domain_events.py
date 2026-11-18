@@ -24,6 +24,7 @@ from homemind.contracts.agent import ActionExecutionResult, AutomationRule, Prop
 from homemind.contracts.billing import Attribution, BudgetThreshold, Contestation
 from homemind.contracts.common import (
     ContractModel,
+    EnergyWh,
     PowerW,
     Provenance,
     UtcDatetime,
@@ -109,6 +110,7 @@ class NotificationRespondedData(ContractModel):
 
 class AlertKind(StrEnum):
     peak = "peak"
+    anomaly = "anomaly"  # gasto do dia muito acima do habitual (ALERT-03)
     forgotten_appliance = "forgotten_appliance"
     mismatch = "mismatch"
 
@@ -120,6 +122,10 @@ class AlertRaisedData(ContractModel):
     (início do episódio; a duração é `ts - since`); `room_id` só se a tomada estiver numa
     zona comum registada (`None` = «pico de consumo por identificar»); `appliance_id` só com
     identificação confiante de um aparelho comum (nunca pessoal: o nome identificaria o dono).
+
+    `anomaly` (ALERT-03): `device_id` e `room_id` (sempre zona comum), `day` (data local),
+    `energy_wh` (gasto do dia até agora) e `baseline_wh` (o habitual: mediana dos dias
+    anteriores com leituras suficientes).
     """
 
     kind: AlertKind
@@ -131,6 +137,9 @@ class AlertRaisedData(ContractModel):
     appliance_id: UUID | None = None
     power_w: PowerW | None = None
     since: UtcDatetime | None = None
+    day: date | None = None
+    energy_wh: EnergyWh | None = None
+    baseline_wh: EnergyWh | None = None
 
 
 class ColdRoomData(ContractModel):

@@ -39,6 +39,7 @@ from homemind.contracts.presence import PresenceConfirmationRequest
 from homemind.contracts.safety import SafetyAlert, SafetyAlertKind, SafetyAlertStatus
 from homemind.features.notifications.compose import (
     compose_agent_action,
+    compose_anomaly_alert,
     compose_appliance_identification,
     compose_attribution_info,
     compose_budget_alert,
@@ -198,6 +199,41 @@ class NotificationService:
             correlation_id=correlation_id,
             now=self._clock(),
         )
+        return self._create(n, provenance, dedupe=False)
+
+    def on_anomaly_alert(
+        self,
+        alert: de.AlertRaisedData,
+        *,
+        source_event_id: UUID,
+        household_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
+    ) -> Outcome:
+        """`alerts.alert_raised` com `kind=anomaly` -> aviso da casa (ALERT-03, gasto anormal).
+
+        Sem os números (gasto e habitual) ou sem zona comum conhecida não se escreve o aviso.
+        Id derivado do evento (o detetor já avisa uma vez por tomada e dia).
+        """
+        if (
+            alert.kind is not de.AlertKind.anomaly
+            or alert.energy_wh is None
+            or alert.baseline_wh is None
+            or alert.room_id is None
+        ):
+            return Outcome(None)
+        n = compose_anomaly_alert(
+            source_event_id=source_event_id,
+            household_id=household_id,
+            room=self._directory.room(household_id, alert.room_id),
+            energy_wh=alert.energy_wh,
+            baseline_wh=alert.baseline_wh,
+            origin=provenance.origin,
+            correlation_id=correlation_id,
+            now=self._clock(),
+        )
+        if n is None:
+            return Outcome(None)
         return self._create(n, provenance, dedupe=False)
 
     def on_action_proposed(
