@@ -5,9 +5,10 @@ resposta e de estado vivem no contrato (`contracts/notification.py`); aqui só s
 `Notification`.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from uuid import UUID, uuid5
 
+from homemind.contracts.agent import AutomationRule, TriggerKind
 from homemind.contracts.common import Origin
 from homemind.contracts.energy import (
     APPLIANCE_IDENTIFICATION_ACTIONS,
@@ -220,6 +221,44 @@ def compose_agent_action(
         origin=origin,
         expires_at=expires_at,
         ref=NotificationRef(type=RefType.agent_action, id=action_id),
+        correlation_id=correlation_id,
+        created_at=now,
+    )
+
+
+# Prazo da votação das regras da casa (SAFE-04). O serviço das automações guarda o mesmo valor
+# (`features/automations`); aqui duplica-se porque uma feature não importa outra.
+AUTOMATION_VOTE_WINDOW = timedelta(hours=24)
+
+
+def _trigger_text(rule: AutomationRule) -> str:
+    t = rule.trigger
+    if t.kind is TriggerKind.power_above:
+        return f"a potência passar de {t.threshold_w:g} W durante {t.duration_s} s"
+    return "mudar quem está em casa"
+
+
+def compose_automation_proposal(
+    *, rule: AutomationRule, origin: Origin, correlation_id: UUID, now: datetime
+) -> Notification:
+    """Regra da casa proposta (SAFE-04): da casa (só os inquilinos a veem), sem botões; vota-se na
+    rota das automações (a UI usa o `ref`). Nada é executado enquanto a regra não for aprovada."""
+    return Notification(
+        id=notification_id_for_ref(NotificationKind.automation_proposal, rule.id, None),
+        household_id=rule.household_id,
+        scope=NotificationScope.household,
+        kind=NotificationKind.automation_proposal,
+        severity=NotificationSeverity.info,
+        title="Nova regra da casa para votar",
+        body=_tag(
+            f"Foi proposta a regra «{rule.name}»: desligar uma tomada ao {_trigger_text(rule)}. "
+            "Só passa a valer se a maioria dos moradores votar a favor em 24 h; "
+            "até lá nada é executado.",
+            origin,
+        ),
+        origin=origin,
+        expires_at=now + AUTOMATION_VOTE_WINDOW,
+        ref=NotificationRef(type=RefType.automation, id=rule.id),
         correlation_id=correlation_id,
         created_at=now,
     )

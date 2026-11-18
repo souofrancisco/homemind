@@ -60,7 +60,7 @@ Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), 
 | `Notification`, `NotificationView`, `NotificationAction/Response/Preferences`, `ConfirmationRequest` | P3 (pedido: P4) | UI, P4 | **IMPLEMENTADA** (`0300_notifications_core.sql`: `notification`, `notification_read`, `notification_preferences`; *compare-and-set* sobre o estado e a versão/n.º de votos) | modelos + cenário + `notifications/tests` | D-32 (votação nas confirmações) |
 | `ProposedAction`, `ActionConfirmation`, `ActionExecutionResult` | P3 (execução: P1) | P3, `notifications` | **IMPLEMENTADA** (`0310_agent_actions.sql`: `agent_action`, com a confirmação e o resultado em JSON, e `agent_action_log` *append-only* como auditoria; AGENT-03 #112). Executor real **PLANEADO** (P1); na casa demo só SIMULADO | modelos + `agent/tests` | P-06 (LLM e dados) |
 | `AgentMessage` | P3 | app (DTO) | **IMPLEMENTADA** (`0311_agent_messages.sql`: `agent_message`, por residente; retenção 50 mensagens / 30 dias, P-25; nunca enviada ao LLM, P-06; #111) | `agent/tests/test_history.py` | `AgentMessage` sem `resident_id` (desejado: só o próprio lê) |
-| `AgentToolRequest/Result`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3); as ferramentas não persistem resultados; `AutomationRule` é AGENT-04. **SAFE-04 (#117), contrato PROPOSTO (D-35):** `actions` só «desligar tomada» (`power=False`; sem lâmpada), `AutomationVote` e `rule_approval_outcome` (maioria absoluta, distinta da D-32), eventos `automation.vote_decided` e `automation.status_changed`. Persistência, rotas e motor PLANEADOS (ondas 2 e 3) | modelos (`test_contracts_foundation`) | P-06 (LLM e dados); D-35 |
+| `AgentToolRequest/Result`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3); as ferramentas não persistem resultados; `AutomationRule` é AGENT-04. **SAFE-04 (#117), contrato PROPOSTO (D-35):** `actions` só «desligar tomada» (`power=False`; sem lâmpada), `AutomationVote` e `rule_approval_outcome` (maioria absoluta, distinta da D-32), eventos `automation.vote_decided` e `automation.status_changed`. Persistência, votação e rotas IMPLEMENTADAS (onda 2, `features/automations`); motor PLANEADO (onda 3) | modelos (`test_contracts_foundation`) | P-06 (LLM e dados); D-35 |
 | `DomainEvent` (29 tipos), `StoredEvent` | cada módulo | cada módulo | **IMPLEMENTADA** (`domain_event`) | `test_events`, cenário | — |
 
 ## 4. Eventos de domínio
@@ -122,7 +122,7 @@ Garantias e limites: [event-flow.md](event-flow.md) §4. Eventos **não** se exp
 | `house_rules` (regra da sala versionada) | household (r) | household (r/w) | — |
 | `budget`, `agent` | — | own | — |
 | `notification` | own | own | — |
-| `automation` | — | household | diagnostic |
+| `automation` (regras da casa, SAFE-04) | — | household | — |
 | `simulation` (w) | — | — | diagnostic |
 
 Regras transversais: a identidade é o `sub` do token → `resident` → membership **ativa e dentro de datas no fuso da casa**; nunca um `resident_id` do cliente; sem membership ⇒ `404 household_not_found`; recurso de outra casa ⇒ 404; erros sem detalhes privados.
@@ -199,8 +199,10 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | `POST` | `/api/households/{household_id}/agent/messages` | T | **IMPLEMENTADO** (parcial). `{ "text": "…" }` → `AgentResponse`. Dados **SIMULADOS** da casa demo (as outras casas não têm dados); LLM desligado por omissão (`AGENT_LLM_ENABLED`). Um pedido de ação («desliga a luz») devolve `proposed_actions` com uma `ProposedAction` por confirmar (AGENT-03); nunca executa nada. A troca fica no histórico do próprio residente. Caminho por casa; revisão P5 |
 | `GET` | `/api/households/{household_id}/agent/messages?limit` | T | **IMPLEMENTADO** (#111). `[AgentMessage]` (`limit` 1..100, omissão 50), do mais antigo para o mais recente; só o histórico do **próprio** residente (nunca o de outro nem de outra casa). Dados pessoais com retenção curta (50 mensagens, 30 dias, P-25); **nunca** enviado ao LLM (P-06). Revisão P5 |
 | `GET` | `/api/households/{id}/agent/actions[/{aid}]` · `POST …/agent/actions/{aid}/confirm` · `…/reject` | T | **IMPLEMENTADO** (AGENT-03; ver `api-implementada.md`). Só no `confirm` uma ação é executada, no máximo uma vez; na casa demo o executor é SIMULADO. O executor real (hardware) é **PLANEADO** (P1). Caminho por casa (substitui o `/api/agent/actions/{id}/…` proposto); revisão P5 |
-| `GET` `POST` | `/api/households/{id}/automations` | T, O | |
-| `PATCH` | `/api/automations/{id}` | T, O | `{ "status" }`; ativação é passo explícito |
+| `GET` `POST` | `/api/households/{id}/automations` | T | **IMPLEMENTADO** (SAFE-04). `GET`: `[AutomationView]` (uma votação fora de prazo resolve-se aqui, rejeitada). `POST` (201): `{name, trigger, target_device_id}` → regra `proposed`; só tomada conhecida da casa (lâmpada 400 `invalid_target`). Só contagens, nunca quem votou o quê; o residente vem do token; senhorio/operador 403, fora da casa 404 |
+| `POST` | `/api/households/{id}/automations/{aid}/vote` | T | **IMPLEMENTADO.** `{ "approve": bool }`; um voto por morador, 24 h, maioria absoluta. Erros: `already_voted`, `vote_not_open`, `vote_expired`, `not_eligible`, `automation_not_found` |
+| `PATCH` | `/api/households/{id}/automations/{aid}` | T | **IMPLEMENTADO.** `{ "status": "disabled" }` suspende (qualquer inquilino, `active→disabled`); `active` só pela votação (`automation_not_active` 409) |
+| `POST` | `/api/households/{id}/automations/{aid}/reactivate` | T | **IMPLEMENTADO.** Abre nova votação numa regra `disabled` (`automation_not_disabled`, `vote_already_open`); só a maioria a ativa |
 | `POST` | `/api/automations/parse` | T, O | **PLANEADO.** Definir o contrato próprio do assistente; não há dependência da rota removida `/api/rules/parse` |
 
 ### Operação (P1/P5, existentes)

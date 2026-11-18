@@ -58,7 +58,12 @@ sequenceDiagram
 - O assistente atual usa `features/agent/llm.py` e ferramentas tipadas próprias. O cliente NVIDIA e a rota de propostas de regras do motor foram removidos em BASE-04; automações futuras precisam de contrato próprio.
 - **Âmbito do MCP:** só lâmpada (`power`, `brightness`, `color_rgb`) e tomada (`power`). Gatilhos por sensores de contacto/clima exigem **leitura** de dispositivos hoje fora da seleção do `McpHome` — **PROPOSTA** de extensão só de leitura (P-01). **Cenários** do Connected Home (`post_new_scenario`), alarme e segurança **continuam proibidos** até decisão explícita da equipa.
 - A votação da casa (PDF §12: 👍/👎) passa a ser aprovação na aplicação (**PROPOSTA**, P2).
-- **SAFE-04 (#117), PROPOSTA D-35:** o **contrato** já está em `contracts/agent.py` (**IMPLEMENTADO** só como modelos e testes): `AutomationRule.actions` só pode «desligar a tomada» (`power=False`), `AutomationVote` e `rule_approval_outcome` (maioria absoluta = mais de metade; 24 h; sem maioria = rejeitada, `proposed→draft`), e os eventos `automation.vote_decided` e `automation.status_changed` (+ `automation.proposed`/`automation.executed` já existentes). **PLANEADO:** persistência, rotas, motor de execução, suspensão por qualquer morador e UI.
+- **SAFE-04 (#117), PROPOSTA D-35:** o **contrato** já está em `contracts/agent.py` (**IMPLEMENTADO** só como modelos e testes): `AutomationRule.actions` só pode «desligar a tomada» (`power=False`), `AutomationVote` e `rule_approval_outcome` (maioria absoluta = mais de metade; 24 h; sem maioria = rejeitada, `proposed→draft`), e os eventos `automation.vote_decided` e `automation.status_changed` (+ `automation.proposed`/`automation.executed` já existentes). **IMPLEMENTADO** (`features/automations`, migração `0320_automations.sql`, testado com bases em memória e relógio simulado; nunca visto no browser nem com hardware): persistência (`automation_rule`, `automation_vote`, `automation_log` só de acrescentar), votação, suspensão, reativação e rotas.
+  - **Propor** (só inquilino ativo): a regra fica `proposed` e emite `automation.proposed`; o alvo tem de ser uma **tomada** conhecida da casa (a lâmpada nunca é alvo) e a única ação é desligá-la. O corpo é `{name, trigger, target_device_id}`; o autor vem do token.
+  - **Votar** (`POST …/vote`, `{approve}`): um voto por morador, só os inquilinos elegíveis (gravados à abertura da ronda), prazo fixo de 24 h; depois de cada voto aplica-se `rule_approval_outcome` (maioria absoluta). Aprovada: `active`, `approved_by_resident_id` = quem deu o voto decisivo, eventos `vote_decided` + `status_changed`. Maioria impossível: `proposed→draft` e só `vote_decided`. Votos fora de prazo nunca contam; a ronda sem maioria no prazo é **rejeitada de forma preguiçosa** (na leitura ou ao votar), idempotente. Cada fecho é um compare-and-set.
+  - **Suspender** (`PATCH …/{id}` com `{status:"disabled"}`): qualquer inquilino, na hora, `active→disabled`, evento `status_changed`. **Reativar** (`POST …/{id}/reactivate`): abre uma ronda nova com votos limpos; a regra continua `disabled` até a maioria votar (`active` nunca é direto) e uma ronda sem maioria deixa-a `disabled`.
+  - Respostas (`AutomationView`) só têm contagens e o voto do próprio; nunca quem votou o quê. Senhorio e operador: 403; fora da casa: 404 (`Resource.automation`). O aviso `automation_proposal` à casa vem de `automation.proposed` (`notifications.automation_proposal`; só inquilinos).
+  - **PLANEADO:** motor de execução (onda 3), UI (onda 4), regras vindas do assistente (AGENT-04), expirar o aviso quando a votação fecha antes das 24 h e notificar a reativação (hoje não há evento próprio).
 - Prioridade: P2. Nada disto bloqueia o MVP.
 
 ## Ficheiros existentes reutilizáveis
@@ -67,7 +72,7 @@ sequenceDiagram
 
 ## Ficheiros novos previstos
 
-`features/agent/{tools,router,service,tests}`, `features/automations/{router,service,tests}`, `contracts/agent.py` (existe na `main`), frontend `pages/AssistantPage.tsx`.
+`features/agent/{tools,router,service,tests}`, `features/automations/{repo,service,router,tests}` (existem; sem motor), `contracts/agent.py` (existe na `main`), frontend `pages/AssistantPage.tsx`.
 
 ## Dependências
 
