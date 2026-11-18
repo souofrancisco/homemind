@@ -20,6 +20,7 @@ from homemind.contracts.billing import (
     ContestationStatus,
 )
 from homemind.contracts.common import Provenance, ValueKind, replace
+from homemind.contracts.energy import ApplianceIdentificationRequest
 from homemind.contracts.household import MembershipRole, RoomKind
 from homemind.contracts.notification import (
     AlreadyRespondedError,
@@ -36,6 +37,7 @@ from homemind.contracts.notification import (
 from homemind.contracts.presence import PresenceConfirmationRequest
 from homemind.contracts.safety import SafetyAlert, SafetyAlertKind, SafetyAlertStatus
 from homemind.features.notifications.compose import (
+    compose_appliance_identification,
     compose_attribution_info,
     compose_budget_alert,
     compose_cold_room,
@@ -252,6 +254,36 @@ class NotificationService:
             now=now,
         )
         return self._create(n, provenance, dedupe=True)
+
+    def on_identification_needed(
+        self,
+        req: ApplianceIdentificationRequest,
+        *,
+        household_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
+    ) -> Outcome:
+        """`energy.identification_needed` (ENERGY-04) -> «O que é este aparelho?» da casa.
+
+        Respondem os inquilinos ativos (nunca o senhorio, que também não a vê: allow-list); a
+        primeira resposta fecha e volta em `notification.responded` (`ref.type =
+        appliance_identification`), que é a energia que trata. Id derivado do pedido.
+        """
+        now = self._clock()
+        if req.expires_at <= now:
+            return Outcome(None)  # já caducou: perguntar agora seria ruído
+        responders = self._directory.tenants(household_id, now)
+        if not responders:
+            return Outcome(None)
+        n = compose_appliance_identification(
+            req,
+            household_id=household_id,
+            responder_ids=responders,
+            origin=provenance.origin,
+            correlation_id=correlation_id,
+            now=now,
+        )
+        return self._create(n, provenance, dedupe=False)
 
     def on_safety_alert(
         self,

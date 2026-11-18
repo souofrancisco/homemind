@@ -84,6 +84,7 @@ continuam fora da `main` até integração. Isso não implementa o pipeline P1 d
 | Polling do MCP (a cada 5 s, já implementado) ou do simulador | `EnergyReading`, `energy.reading_recorded` |
 | Aparelhos registados e assinaturas (UI/API) | `PowerStep`, `energy.step_detected` |
 | Respostas de confirmação (para aprender) | `ConsumptionEvent`, `energy.consumption_detected`, `energy.consumption_closed` |
+| Respostas a «O que é este aparelho?» (`notification.responded`, ENERGY-04) | `energy.identification_needed` (ENERGY-04) |
 | Ordens de ação confirmadas (agente, automações) | Escritas via `Home` com a whitelist atual |
 
 ## Pipeline (PDF §6.3, adaptado)
@@ -94,8 +95,8 @@ continuam fora da `main` até integração. Isso não implementa o pipeline P1 d
 | Deteção de degraus | Diferença entre janelas de leituras, limiar configurável; ΔW mínimo (PDF sugere > 300 W para a demo) | P0 |
 | Identificação | Vizinho mais próximo sobre (potência, duração, padrão), devolve `confidence` e candidatos; abaixo do limiar → `unknown` | P0 |
 | Localização | P1 observa `ConsumptionEvent.location`/`room_id`. `ApplianceOwnership.home_room_id` e `Device.room_id` são locais habituais/configurados, não prova da utilização efetiva. Uma tomada agregada pode não localizar uma carga individual | P0 |
-| Aprendizagem com confirmações | Atualiza `ApplianceSignature` (`origin=learned`) | P1 |
-| Aparelhos desconhecidos recorrentes (clustering) | Agrupar degraus semelhantes e perguntar uma vez | P2 |
+| Aprendizagem com confirmações | Atualiza `ApplianceSignature` (`origin=learned`) — **IMPLEMENTADO** (ENERGY-04) | P1 |
+| Aparelhos desconhecidos recorrentes (clustering) | Agrupar sessões semelhantes e perguntar uma vez — **IMPLEMENTADO** (ENERGY-04) | P2 |
 | Estimativa de lâmpada (9 W × tempo × brilho) | `provenance=estimated` | P2 |
 
 ## Collector MCP → `EnergyReading` (MCP-02) — **IMPLEMENTADO** (sem ligação à app)
@@ -156,6 +157,25 @@ Código: `features/energy/learning.py` (puro), `learning_consumer.py` (subscrito
 | API | `GET /api/households/{id}/energy/signatures` e `PATCH …/signatures/{appliance_id}` (padrão); senhorio sem acesso, operador sem `typical_hours` |
 
 O contrato do catálogo ganhou `appliances_for_household(conn, household_id, at)` (só leitura; implementado em `features/appliances/repo.py`). Contagens por padrão e travões em `energy_signature_stats` / `energy_signature_lock` (migração `0400`).
+
+## Aprendizagem por confirmação (ENERGY-04) — **IMPLEMENTADO** (backend; a pergunta aparece na lista genérica de notificações da app; desfazer ainda sem UI, **PLANEADO**)
+
+Código: `features/energy/identification.py` (regras puras), `identification_consumer.py` (consumidor `energy.identification`, subscrito no arranque da energia com o catálogo lido tarde de `app.state`), rotas de desfazer em `signatures.py`, migração `0401_energy_identification.sql`. Valores **decididos pelo utilizador (18/11/2026)**:
+
+| Regra | Valor |
+|---|---|
+| Que sessões | `energy.consumption_closed` fechadas, > 50 W, **sem aparelho nem candidatos** e que a ENERGY-01 também não explica (tomada associada ou potência registada única) |
+| Agrupar | por casa (qualquer tomada): potência dentro de `max(50 W, 10 %)` da média do grupo **e** duração semelhante (`min/max >= 0,5`); vários grupos → o de potência mais próxima |
+| Quando perguntar | à **3.ª ocorrência em 7 dias**, **uma só vez** por grupo (com pergunta pendente, a 4.ª e a 5.ª não perguntam) |
+| Pergunta | `energy.identification_needed` (`ApplianceIdentificationRequest`: potência e duração médias, hora local habitual, n.º de ocorrências, `expires_at` = 24 h) → notificação da casa `appliance_identification` para os inquilinos ativos (nunca o senhorio): «Um aparelho de ~800 W liga muitas vezes por volta das 8h. O que é?» [É meu] [É da casa] [Ignorar] |
+| Resposta | qualquer inquilino; a **primeira resposta válida fecha** (não é votação). «É meu» → aparelho **pessoal de quem respondeu**; «É da casa» → aparelho **comum**; nome genérico «Aparelho ~800 W» (« (2)» se repetido), categoria `other`, `typical_watts` = média do grupo (renomeia-se pela API de aparelhos) |
+| Assinatura | nasce das sessões do grupo (amostras `confirmation`, `origin=learned`); a sessão parecida seguinte já é identificada pelo classificador e a ENERGY-01 continua a aprender |
+| «Ignorar» ou sem resposta | o grupo não volta a perguntar durante **7 dias** (desde a resposta ou desde que a pergunta caducou); depois pode voltar |
+| Desfazer | histórico de amostras por evento (`energy_signature_sample`: amostras `learning` da ENERGY-01 e `confirmation`); a assinatura **recalcula-se sempre** a partir das não revogadas. `POST …/energy/identifications/{request_id}/revoke` revoga as amostras dessa resposta (o `request_id` é o `ref.id` da notificação); `POST …/energy/signatures/{appliance_id}/samples/{sample_id}/revoke` revoga uma; `GET …/signatures/{appliance_id}/samples` lista-as (só inquilinos: horas são hábitos). Escrita com as regras do PATCH (dono, ou quem registou um aparelho comum). Sem amostras, a assinatura (com contagens e travão de padrão) é removida e deixa de contar. Leituras, consumos e eventos **nunca** mudam; o aparelho criado mantém-se |
+
+Estado persistido (sobrevive a reinícios) em `energy_identification_group`, `energy_identification_session` e `energy_identification_request`, na transação do barramento e com ids derivados do evento de origem. Assinaturas aprendidas antes da `0401` ficam como base fixa (`energy_signature_baseline`, não revogável) somada às amostras novas.
+
+O contrato do catálogo ganhou `create_learned_appliance(conn, household_id, *, name, typical_watts, ownership, registered_by_resident_id, at)` (HOUSE-03, `features/appliances/repo.py`), com as validações do registo pela API.
 
 ## Kit real → barramento — **IMPLEMENTADO** (só com `ENERGY_HOUSEHOLD_ID`)
 

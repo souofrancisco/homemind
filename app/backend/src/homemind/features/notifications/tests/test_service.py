@@ -6,6 +6,7 @@ import pytest
 
 from homemind.contracts import domain_events as de
 from homemind.contracts.common import Origin, ValueKind
+from homemind.contracts.energy import ApplianceIdentificationRequest
 from homemind.contracts.notification import (
     AlreadyRespondedError,
     NotAllowedToRespondError,
@@ -600,3 +601,65 @@ def test_pedido_vencido_fica_expired_antes_de_se_criar_o_novo():
     assert again is not None and again.id != first.id
     assert repo.get(first.id).status is NotificationStatus.expired  # type: ignore[union-attr]
     assert repo.get(again.id).status is NotificationStatus.unread  # type: ignore[union-attr]
+
+
+# --- «O que é este aparelho?» (ENERGY-04) ------------------------------------------------------
+
+
+def _identification(svc: NotificationService, origin=Origin.real, expires_in=timedelta(hours=24)):
+    req = ApplianceIdentificationRequest(
+        id=uid("pedido-identificacao"),
+        device_id=uid("tomada"),
+        power_w=812.0,
+        duration_s=900,
+        hour_local=8,
+        occurrences=3,
+        expires_at=svc._clock() + expires_in,
+        provenance=prov(origin),
+    )
+    return svc.on_identification_needed(
+        req, household_id=HOUSE, correlation_id=uid("corr"), provenance=prov(origin)
+    )
+
+
+def test_identificacao_da_casa_so_para_inquilinos_e_idempotente():
+    svc, repo, _ = make_service()
+    out = _identification(svc)
+    n = out.notification
+    assert n is not None and len(out.events) == 1
+    assert n.kind is NotificationKind.appliance_identification
+    assert n.scope is NotificationScope.household and n.responder_ids == sorted(
+        [ANA, BRUNO], key=str
+    )
+    assert n.title == "O que é este aparelho?"
+    assert n.body == "Um aparelho de ~800 W liga muitas vezes por volta das 8h. O que é?"
+    assert [a.id for a in n.actions] == ["mine", "household", "ignore"]
+    assert n.ref is not None and n.ref.type is RefType.appliance_identification
+    again = _identification(svc)
+    assert again.notification == n and again.events == ()  # mesmo pedido, mesma notificação
+    assert len(repo.list_household(HOUSE)) == 1
+    assert svc.list_for(HOUSE, LANDLORD) == []  # o senhorio nunca a vê
+    assert [v.id for v in svc.list_for(HOUSE, BRUNO)] == [n.id]
+
+
+def test_identificacao_primeira_resposta_fecha_com_ref():
+    svc, _, _ = make_service()
+    n = _identification(svc).notification
+    assert n is not None
+    out = svc.respond(n.id, household_id=HOUSE, resident_id=BRUNO, action_id="household")
+    [ev] = out.events
+    assert isinstance(ev, de.NotificationResponded) and ev.data.ref == n.ref
+    assert ev.data.outcome is None and ev.data.response.action_id == "household"
+    with pytest.raises(AlreadyRespondedError):  # não é votação
+        svc.respond(n.id, household_id=HOUSE, resident_id=ANA, action_id="mine")
+    with pytest.raises(NotificationNotFoundError):
+        svc.respond(n.id, household_id=HOUSE, resident_id=LANDLORD, action_id="mine")
+
+
+def test_identificacao_caducada_sem_inquilinos_ou_simulada():
+    svc, _, _ = make_service()
+    assert _identification(svc, expires_in=timedelta(0)).notification is None
+    lonely, _, _ = make_service(directory=FakeDirectory(roles={}))
+    assert _identification(lonely).notification is None
+    simulated = _identification(make_service()[0], origin=Origin.simulated).notification
+    assert simulated is not None and simulated.body.endswith("(SIMULADO)")

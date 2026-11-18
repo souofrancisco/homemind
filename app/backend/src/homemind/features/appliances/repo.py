@@ -213,6 +213,68 @@ def create_appliance(
     return get_appliance(conn, access, aid)
 
 
+def create_learned_appliance(
+    conn: sqlite3.Connection,
+    household_id: UUID,
+    *,
+    name: str,
+    typical_watts: float,
+    ownership: ApplianceOwnership,
+    registered_by_resident_id: UUID,
+    at: datetime,
+) -> UUID:
+    """ENERGY-04: aparelho nascido de «O que é este aparelho?» (categoria `other`).
+
+    Mesmas validações de `create_appliance`: quem regista tem de ser inquilino ativo; um
+    aparelho pessoal (ou partilhado) é de quem regista; um comum não tem dono; a divisão
+    habitual tem de ser da casa. Um nome repetido de quem regista ganha « (2)», « (3)»…
+    (o índice `appliance_active_duplicate` recusaria o duplicado).
+    """
+    house, actor, when = household_id, registered_by_resident_id, timestamp(at)
+    if not _active_tenant(conn, house, actor, at):
+        raise CatalogError(403, "forbidden_role", "Só inquilinos registam aparelhos")
+    expected_owner = None if ownership.scope is ApplianceScope.common else actor
+    if ownership.owner_resident_id != expected_owner:
+        raise _invalid("Um aparelho pessoal é de quem o regista")
+    _check_owner(conn, house, ownership.scope, ownership.owner_resident_id, at)
+    _check_room(conn, house, ownership.home_room_id)
+    if not 0 < typical_watts <= 100_000:
+        raise _invalid("Potência típica inválida")
+    base = name.strip()
+    if not 1 <= len(base) <= 110:
+        raise _invalid("Nome inválido")
+    candidate, n = base, 1
+    while conn.execute(
+        "SELECT 1 FROM appliance WHERE household_id = ? AND registered_by_resident_id = ?"
+        " AND category = 'other' AND lower(name) = lower(?) AND status = 'active'",
+        (str(house), str(actor), candidate),
+    ).fetchone():
+        n += 1
+        candidate = f"{base} ({n})"
+    aid = new_id()
+    conn.execute(
+        "INSERT INTO appliance (id,household_id,name,category,typical_watts,"
+        "registered_by_resident_id,status,created_at) VALUES (?,?,?,'other',?,?,'active',?)",
+        (str(aid), str(house), candidate, typical_watts, str(actor), when),
+    )
+    conn.execute(
+        "INSERT INTO appliance_state (id,appliance_id,household_id,scope,"
+        "owner_resident_id,home_room_id,valid_from,changed_by_resident_id)"
+        " VALUES (?,?,?,?,?,?,?,?)",
+        (
+            str(new_id()),
+            str(aid),
+            str(house),
+            ownership.scope.value,
+            str(ownership.owner_resident_id) if ownership.owner_resident_id else None,
+            str(ownership.home_room_id) if ownership.home_room_id else None,
+            when,
+            str(actor),
+        ),
+    )
+    return aid
+
+
 def _monotonic(when: str, start: str) -> None:
     if when <= start:
         raise CatalogError(409, "catalog_time_conflict", "Alterações exigem instantes crescentes")
@@ -875,6 +937,27 @@ class SqliteApplianceCatalog:
         self, conn: sqlite3.Connection, event: ConsumptionEvent
     ) -> ApplianceOwnership | None:
         return context_for_consumption(conn, event)
+
+    def create_learned_appliance(
+        self,
+        conn: sqlite3.Connection,
+        household_id: UUID,
+        *,
+        name: str,
+        typical_watts: float,
+        ownership: ApplianceOwnership,
+        registered_by_resident_id: UUID,
+        at: datetime,
+    ) -> UUID:
+        return create_learned_appliance(
+            conn,
+            household_id,
+            name=name,
+            typical_watts=typical_watts,
+            ownership=ownership,
+            registered_by_resident_id=registered_by_resident_id,
+            at=at,
+        )
 
 
 def appliance_catalog() -> ApplianceCatalog:

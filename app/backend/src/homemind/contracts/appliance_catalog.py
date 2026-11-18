@@ -103,3 +103,20 @@ class ApplianceCatalog(Protocol):
     def context_for_consumption(
         self, conn: sqlite3.Connection, event: ConsumptionEvent
     ) -> ApplianceOwnership | None: ...
+
+    def create_learned_appliance(
+        self,
+        conn: sqlite3.Connection,
+        household_id: UUID,
+        *,
+        name: str,
+        typical_watts: float,
+        ownership: ApplianceOwnership,
+        registered_by_resident_id: UUID,
+        at: datetime,
+    ) -> UUID:
+        """ENERGY-04: regista um aparelho (categoria `other`) a partir de «O que é este
+        aparelho?», com as mesmas validações do registo pela API: quem regista é inquilino
+        ativo, um aparelho pessoal é de quem regista e um comum não tem dono. Se o nome já
+        existir para quem regista, acrescenta « (2)», « (3)»… Erros: `CatalogError` (403/422)."""
+        ...

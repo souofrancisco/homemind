@@ -15,6 +15,7 @@ from homemind.contracts.appliance_catalog import ApplianceCatalog
 from homemind.contracts.common import inferred
 from homemind.contracts.devices import (
     ApplianceCategory,
+    ApplianceOwnership,
     ApplianceScope,
     ApplianceSignature,
     Device,
@@ -1038,5 +1039,69 @@ def test_appliances_snapshot_temporal_state_meter_retirement_and_house(tmp_path)
         assert at(39)[0].appliance_id == aid and at(39)[0].typical_watts == 2000
         assert at(40) == [] and at(50) == []
         assert at(15, HOUSE_B) == []
+    finally:
+        db.close()
+
+
+def test_create_learned_appliance_reuses_registration_rules(tmp_path):
+    """ENERGY-04: aparelho de «O que é este aparelho?» com as validações do registo."""
+
+    db = Database(tmp_path / "learned.sqlite3")
+    db.open()
+    try:
+        migrate(db)
+        db.run_sync(seed_two_houses)
+        catalog = repo.appliance_catalog()
+
+        def create(scope, owner, by, house=fx.HOUSEHOLD, name="Aparelho ~800 W", room=None):
+            return db.run_sync(
+                lambda c: catalog.create_learned_appliance(
+                    c,
+                    house,
+                    name=name,
+                    typical_watts=812.5,
+                    ownership=ApplianceOwnership(
+                        scope=scope, owner_resident_id=owner, home_room_id=room
+                    ),
+                    registered_by_resident_id=by,
+                    at=NOW,
+                )
+            )
+
+        mine = create(ApplianceScope.personal, fx.ANA, fx.ANA)
+        again = create(ApplianceScope.personal, fx.ANA, fx.ANA)  # mesmo nome: « (2)»
+        common = create(ApplianceScope.common, None, fx.BRUNO)
+        rows = {
+            r["id"]: r
+            for r in db.run_sync(
+                lambda c: c.execute(
+                    "SELECT a.*,s.scope,s.owner_resident_id FROM appliance a"
+                    " JOIN appliance_state s ON s.appliance_id=a.id"
+                ).fetchall()
+            )
+        }
+        assert rows[str(mine)]["name"] == "Aparelho ~800 W"
+        assert rows[str(again)]["name"] == "Aparelho ~800 W (2)"
+        assert rows[str(mine)]["category"] == "other" and rows[str(mine)]["typical_watts"] == 812.5
+        assert rows[str(mine)]["owner_resident_id"] == str(fx.ANA)
+        assert (
+            rows[str(common)]["scope"] == "common"
+            and rows[str(common)]["owner_resident_id"] is None
+        )
+        assert rows[str(common)]["registered_by_resident_id"] == str(fx.BRUNO)
+        refused = [
+            (ApplianceScope.personal, fx.BRUNO, fx.ANA, fx.HOUSEHOLD, 422),  # pessoal de outro
+            (ApplianceScope.common, None, fx.LANDLORD, fx.HOUSEHOLD, 403),  # senhorio
+            (ApplianceScope.common, None, fx.OPERATOR, fx.HOUSEHOLD, 403),
+            (ApplianceScope.personal, EVA, EVA, fx.HOUSEHOLD, 403),  # inquilina de outra casa
+            (ApplianceScope.common, None, fx.ANA, HOUSE_B, 403),
+        ]
+        for scope, owner, by, house, status in refused:
+            with pytest.raises(repo.CatalogError) as error:
+                create(scope, owner, by, house)
+            assert error.value.status == status
+        with pytest.raises(repo.CatalogError):
+            create(ApplianceScope.common, None, fx.ANA, room=ROOM_B1)  # divisão de outra casa
+        assert len(rows) == 3
     finally:
         db.close()

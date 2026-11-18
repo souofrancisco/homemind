@@ -67,6 +67,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `energy.step_detected` | P1 | `PowerStep` | P1 | idem |
 | `energy.consumption_detected` | P1 | `ConsumptionEvent` (`ongoing`; `appliance_owner_resident_id` PROPOSTA) | P4, P3, P2 (pista `appliance`) | idem |
 | `energy.consumption_closed` | P1 | `ConsumptionEvent` (`closed`/`discarded`) | P4 | idem |
+| `energy.identification_needed` | P1 | `ApplianceIdentificationRequest` (ENERGY-04: «O que é este aparelho?»; sem nomes) | P3 (`notifications.appliance_identification`); a resposta volta em `notification.responded` (`ref.type=appliance_identification`) para P1 | idem |
 | `presence.door_crossed` | P2 | `DoorCrossed` (anónimo) | P2 | idem |
 | `presence.changed` | P2 | `PersonPresence` | P4, P3 | idem |
 | `presence.cue_recorded` (PROPOSTA) | P2 | `PresenceEvent` (Wi-Fi, manual, aparelho) | P2 | idem |

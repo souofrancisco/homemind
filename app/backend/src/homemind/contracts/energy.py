@@ -235,3 +235,46 @@ class EnergySummary(ContractModel):
         if len(set(keys)) != len(keys):
             raise ValueError("proveniência repetida nos totais")
         return self
+
+
+# --- aprendizagem por confirmação (ENERGY-04) ----------------------------------------------------
+
+
+class IdentificationChoice(StrEnum):
+    """Respostas a «O que é este aparelho?». «É meu» é sempre de quem responde."""
+
+    mine = "mine"  # aparelho pessoal de quem respondeu
+    household = "household"  # aparelho comum da casa
+    ignore = "ignore"  # não perguntar deste grupo durante 7 dias
+
+
+APPLIANCE_IDENTIFICATION_ACTIONS = tuple(c.value for c in IdentificationChoice)
+
+
+def approx_power_w(power_w: float) -> int:
+    """Potência arredondada aos 50 W (mínimo 50): o «~800 W» da pergunta e do nome genérico."""
+    return max(50, int(round(power_w / 50)) * 50)
+
+
+class ApplianceIdentificationRequest(ContractModel):
+    """Emitido pela energia quando um consumo desconhecido se repete (3.ª vez em 7 dias).
+
+    P3 transforma-o numa `Notification` da casa (`kind=appliance_identification`,
+    `ref={type: appliance_identification, id}`) para os inquilinos ativos (nunca o senhorio),
+    com as ações de `APPLIANCE_IDENTIFICATION_ACTIONS`. A primeira resposta fecha (não é
+    votação); a resposta volta em `notification.responded` e é a energia que a trata.
+    Sem nomes de pessoas nem ids externos: só potência, duração e hora local aproximadas.
+    """
+
+    id: UUID
+    device_id: UUID  # tomada (id interno) da ocorrência que fez perguntar
+    power_w: Annotated[PowerW, Field(gt=0)]  # média do grupo (acima da base)
+    duration_s: Annotated[int, Field(strict=True, gt=0)]  # duração média do grupo
+    hour_local: Annotated[int, Field(strict=True, ge=0, le=23)]  # hora habitual (fuso da casa)
+    occurrences: Annotated[int, Field(strict=True, ge=1)]  # ocorrências nos últimos 7 dias
+    expires_at: UtcDatetime
+    provenance: Provenance
+
+    @property
+    def approx_power_w(self) -> int:
+        return approx_power_w(self.power_w)

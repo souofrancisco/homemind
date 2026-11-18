@@ -30,6 +30,8 @@ from homemind.core.access import (
 )
 from homemind.core.events import Handler
 from homemind.features.energy.consumer import make_step_consumer
+from homemind.features.energy.identification_consumer import INPUT_TYPES as IDENTIFICATION_TYPES
+from homemind.features.energy.identification_consumer import make_identification_consumer
 from homemind.features.energy.learning_consumer import INPUT_TYPES as LEARNING_TYPES
 from homemind.features.energy.learning_consumer import make_learning_consumer
 from homemind.features.energy.signatures import signatures_router
@@ -37,6 +39,7 @@ from homemind.features.energy.steps import StepTracker, reading_time
 
 CONSUMER = "energy.steps"
 LEARNING_CONSUMER = "energy.learning"
+IDENTIFICATION_CONSUMER = "energy.identification"  # ENERGY-04 (nome permanente)
 EVENT_TYPES = ["energy.reading_recorded"]
 
 
@@ -82,11 +85,34 @@ def make_learning_dispatcher(app: FastAPI) -> Handler:
     return handle
 
 
+def make_identification_dispatcher(app: FastAPI) -> Handler:
+    """Aprendizagem por confirmação (ENERGY-04), com o catálogo lido tarde de `app.state`.
+
+    Sem catálogo não se agrupa nem se responde: o evento é dado como tratado sem efeitos.
+    """
+    handler: Handler | None = None
+
+    def handle(conn: sqlite3.Connection, stored: StoredEvent):
+        nonlocal handler
+        if handler is None:
+            catalog = getattr(app.state, "appliance_catalog", None)
+            if catalog is None:
+                return []
+            handler = make_identification_consumer(catalog)
+        return handler(conn, stored)
+
+    return handle
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.bus.subscribe(CONSUMER, make_dispatcher(app), EVENT_TYPES)
     # ENERGY-01: aprendizagem automática de assinaturas a partir das sessões fechadas.
     app.state.bus.subscribe(LEARNING_CONSUMER, make_learning_dispatcher(app), LEARNING_TYPES)
+    # ENERGY-04: «O que é este aparelho?» para consumos desconhecidos repetidos, e as respostas.
+    app.state.bus.subscribe(
+        IDENTIFICATION_CONSUMER, make_identification_dispatcher(app), IDENTIFICATION_TYPES
+    )
     yield
 
 
@@ -94,7 +120,7 @@ router = APIRouter(
     prefix="/api/households/{household_id}/energy", tags=["energy"], lifespan=lifespan
 )
 Read = Annotated[HouseholdAccess, Depends(require_access(Resource.consumption))]
-router.include_router(signatures_router)  # ENERGY-01: /signatures
+router.include_router(signatures_router)  # ENERGY-01/04: /signatures, /identifications
 
 SESSIONS_LIMIT = 20
 SCAN_LIMIT = 500

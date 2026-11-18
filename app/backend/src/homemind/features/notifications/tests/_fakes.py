@@ -73,6 +73,10 @@ class FakeDirectory:
     def appliance_name(self, household_id: UUID, appliance_id: UUID) -> str | None:
         return self.appliances.get((household_id, appliance_id))
 
+    def tenants(self, household_id: UUID, at: datetime) -> list[UUID]:
+        found = [r for (h, r), role in self.roles.items() if h == household_id and role == "tenant"]
+        return sorted(found, key=str)
+
 
 def make_service(
     clock: FakeClock | None = None, directory: FakeDirectory | None = None

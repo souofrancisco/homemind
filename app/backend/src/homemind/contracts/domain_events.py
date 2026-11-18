@@ -30,6 +30,7 @@ from homemind.contracts.common import (
     new_id,
 )
 from homemind.contracts.energy import (
+    ApplianceIdentificationRequest,
     ConsumptionEvent,
     ConsumptionStatus,
     EnergyReading,
@@ -185,6 +186,13 @@ class EnergyConsumptionClosed(EventBase):
         return self
 
 
+class EnergyIdentificationNeeded(EventBase):
+    """«O que é este aparelho?» (ENERGY-04): P3 transforma-o numa notificação da casa."""
+
+    type: Literal["energy.identification_needed"] = "energy.identification_needed"
+    data: ApplianceIdentificationRequest
+
+
 # --- presença -------------------------------------------------------------------------------
 
 
@@ -316,6 +324,7 @@ DomainEvent = Annotated[
     | EnergyStepDetected
     | EnergyConsumptionDetected
     | EnergyConsumptionClosed
+    | EnergyIdentificationNeeded
     | PresenceDoorCrossed
     | PresenceChanged
     | PresenceCueRecorded

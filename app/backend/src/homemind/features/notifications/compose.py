@@ -9,6 +9,10 @@ from datetime import datetime
 from uuid import UUID, uuid5
 
 from homemind.contracts.common import Origin
+from homemind.contracts.energy import (
+    APPLIANCE_IDENTIFICATION_ACTIONS,
+    ApplianceIdentificationRequest,
+)
 from homemind.contracts.household import RoomKind
 from homemind.contracts.notification import (
     ActionStyle,
@@ -218,6 +222,51 @@ def compose_presence_check(
         ],
         expires_at=expires_at,
         ref=NotificationRef(type=RefType.presence_check, id=request_id),
+        correlation_id=correlation_id,
+        created_at=now,
+    )
+
+
+# --- energia: «O que é este aparelho?» (ENERGY-04) ---------------------------------------------
+
+IDENTIFICATION_LABELS = {"mine": "É meu", "household": "É da casa", "ignore": "Ignorar"}
+
+
+def compose_appliance_identification(
+    req: ApplianceIdentificationRequest,
+    *,
+    household_id: UUID,
+    responder_ids: list[UUID],
+    origin: Origin,
+    correlation_id: UUID,
+    now: datetime,
+) -> Notification:
+    """Pergunta da casa aos inquilinos ativos: potência arredondada e hora local aproximada,
+    sem nomes de pessoas nem divisões. A primeira resposta fecha (não é votação)."""
+    body = (
+        f"Um aparelho de ~{req.approx_power_w} W liga muitas vezes por volta das"
+        f" {req.hour_local}h. O que é?"
+    )
+    return Notification(
+        id=notification_id_for_ref(NotificationKind.appliance_identification, req.id, None),
+        household_id=household_id,
+        scope=NotificationScope.household,
+        responder_ids=list(responder_ids),
+        kind=NotificationKind.appliance_identification,
+        severity=NotificationSeverity.info,
+        title="O que é este aparelho?",
+        body=_tag(body, origin),
+        origin=origin,
+        actions=[
+            NotificationAction(
+                id=a,
+                label=IDENTIFICATION_LABELS[a],
+                style=ActionStyle.primary if a == "mine" else ActionStyle.neutral,
+            )
+            for a in APPLIANCE_IDENTIFICATION_ACTIONS
+        ],
+        expires_at=req.expires_at,
+        ref=NotificationRef(type=RefType.appliance_identification, id=req.id),
         correlation_id=correlation_id,
         created_at=now,
     )
