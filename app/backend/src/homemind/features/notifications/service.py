@@ -12,6 +12,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from homemind.contracts import domain_events as de
+from homemind.contracts.agent import ProposedAction
 from homemind.contracts.billing import (
     Attribution,
     AttributionStatus,
@@ -37,6 +38,7 @@ from homemind.contracts.notification import (
 from homemind.contracts.presence import PresenceConfirmationRequest
 from homemind.contracts.safety import SafetyAlert, SafetyAlertKind, SafetyAlertStatus
 from homemind.features.notifications.compose import (
+    compose_agent_action,
     compose_appliance_identification,
     compose_attribution_info,
     compose_budget_alert,
@@ -195,6 +197,39 @@ class NotificationService:
             origin=provenance.origin,
             correlation_id=correlation_id,
             now=self._clock(),
+        )
+        return self._create(n, provenance, dedupe=False)
+
+    def on_action_proposed(
+        self,
+        action: ProposedAction,
+        *,
+        source_event_id: UUID,
+        household_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
+    ) -> Outcome:
+        """`agent.action_proposed` -> «Ação por confirmar» pessoal, só a um inquilino ativo.
+
+        Sem botões: confirma-se na rota do agente. Proposta já caducada: nada (perguntar agora
+        seria ruído). Id derivado do evento de origem (reentrega não duplica).
+        """
+        now = self._clock()
+        if action.expires_at <= now:
+            return Outcome(None)
+        resident_id = action.proposed_for_resident_id
+        if self._directory.role_in(household_id, resident_id, now) != MembershipRole.tenant:
+            return Outcome(None)
+        n = compose_agent_action(
+            source_event_id=source_event_id,
+            action_id=action.id,
+            household_id=household_id,
+            resident_id=resident_id,
+            rationale=action.rationale,
+            expires_at=action.expires_at,
+            origin=provenance.origin,
+            correlation_id=correlation_id,
+            now=now,
         )
         return self._create(n, provenance, dedupe=False)
 
