@@ -1,0 +1,10 @@
+# Demo web LOCAL (make demo-web-up): backend sobre a CÓPIA da base de demo (app/.demo-web),
+# nunca sobre a original (app/.demo-data, protegida pelo demo-reset). Só desenvolvimento.
+services:
+  backend:
+    environment:
+      PROFILE: demo
+      HOME_BACKEND: fake
+      DB_PATH: /srv/demo-web/conta-certa-web.sqlite3
+    volumes:
+      - ./.demo-web:/srv/demo-web
