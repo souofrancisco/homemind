@@ -47,6 +47,7 @@ EVENT_CATEGORY: dict[str, Category] = {
     "billing.bill_finalized": Category.financial,
     "billing.allocation_published": Category.financial,
     "billing.contestation_changed": Category.financial,
+    "billing.rules_proposal_changed": Category.financial,  # a regra decide cobranças
     "alerts.threshold_crossed": Category.financial,
     # presença (PRIV-03 #51)
     "presence.cue_recorded": Category.presence,

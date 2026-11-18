@@ -2,6 +2,7 @@ import { Alert, Badge, Button, Card, Group, Loader, Select, Stack, Text, Title }
 import { IconAlertCircle } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
+import ManualControls from "../components/notifications/ManualControls";
 import { getMembers, type MemberView } from "../services/households/api";
 import {
   listNotifications, markNotificationRead, respondToNotification, type NotificationView,
@@ -37,16 +38,18 @@ function Card1({ n, householdId, members, onChange }: {
   const v = n.voting;
 
   return (
-    <Card withBorder radius="lg" p="lg">
+    <Card withBorder radius="lg" p="lg" component="article" aria-label={n.title}>
       <Stack gap="sm">
         <Group justify="space-between" align="flex-start" wrap="wrap">
           <Title order={3} size="h4">{n.title}</Title>
           <Group gap="xs">
             <Badge color={severityColor[n.severity]} variant="light">{statusLabel[n.status]}</Badge>
-            {n.origin === "simulated" && <Badge color="orange" variant="light">SIMULADO</Badge>}
+            {n.kind === "presence_check" && <Badge color="indigo" variant="light">Presença</Badge>}
+            <Badge color={n.origin === "simulated" ? "orange" : "teal"} variant="light">{n.origin === "simulated" ? "SIMULADO" : "REAL"}</Badge>
           </Group>
         </Group>
         <Text>{n.body}</Text>
+        {n.kind === "presence_check" && <Text size="sm" c="dimmed">Sem câmara, a tua resposta é a forma de confirmar a presença. É uma pergunta, não uma acusação; só tu a vês.</Text>}
         {v && (
           <Alert color={v.verdict === "pending" ? "blue" : "gray"} variant="light" title={verdictLabel[v.verdict]}>
             {v.votes} de {v.eligible} votos (decide-se com {v.votes_needed}).
@@ -54,11 +57,11 @@ function Card1({ n, householdId, members, onChange }: {
             {v.verdict !== "pending" && (v.pays_me ? " Esta utilização fica a teu cargo." : " Esta utilização não fica a teu cargo.")}
           </Alert>
         )}
-        {n.response && !v && <Text size="sm" c="dimmed">Respondeste {when.format(new Date(n.response.responded_at))}.</Text>}
+        <div role="status" aria-live="polite">{n.response && !v && <Text size="sm" c="dimmed">Respondeste {when.format(new Date(n.response.responded_at))}.</Text>}</div>
         {canAct && !picking && (
           <Group gap="xs">
             {n.actions.map((a) => (
-              <Button key={a.id} size="sm" loading={busy} variant={a.style === "primary" ? "filled" : "light"} color={a.style === "danger" ? "red" : undefined}
+              <Button key={a.id} size="sm" aria-label={`${a.label}: ${n.title}`} loading={busy} variant={a.style === "primary" ? "filled" : "light"} color={a.style === "danger" ? "red" : undefined}
                 onClick={() => (a.id === OTHER ? setPicking(true) : void respond(a.id))}>{a.label}</Button>
             ))}
             {n.status === "unread" && <Button size="sm" variant="subtle" loading={busy} onClick={() => void act(() => markNotificationRead(householdId, n.id))}>Marcar como lida</Button>}
@@ -101,11 +104,18 @@ export default function NotificationsContent() {
       <Button w="fit-content" color="red" variant="light" onClick={() => setReload((n) => n + 1)}>Tentar novamente</Button>
     </Alert>
   );
-  if (!cur.items.length) return <Text c="dimmed">Sem notificações. Quando houver uma utilização a confirmar ou um aviso de orçamento, aparece aqui.</Text>;
+  const tenant = session.membership?.role === "tenant";
+  if (!cur.items.length) return (
+    <Stack gap="md">
+      <Text c="dimmed">Sem notificações. Quando houver uma utilização a confirmar ou um aviso de orçamento, aparece aqui.</Text>
+      {tenant && <ManualControls householdId={householdId} />}
+    </Stack>
+  );
   const replace = (v: NotificationView) => setState({ ...cur, items: cur.items!.map((i) => (i.id === v.id ? v : i)) });
   return (
     <Stack gap="md">
       {cur.items.map((n) => <Card1 key={n.id} n={n} householdId={householdId} members={cur.members} onChange={replace} />)}
+      {tenant && <ManualControls householdId={householdId} />}
     </Stack>
   );
 }

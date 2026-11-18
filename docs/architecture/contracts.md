@@ -74,7 +74,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `presence.changed` | P2 | `PersonPresence` | P4, P3 | idem |
 | `presence.cue_recorded` (PROPOSTA) | P2 | `PresenceEvent` (Wi-Fi, manual, aparelho) | P2 | idem |
 | `presence.confirmation_needed` (PROPOSTA) | P2 | `PresenceConfirmationRequest` | P3 (`notifications.presence_check`, **IMPLEMENTADO**) | idem |
-| `presence.occupancy_changed` (PROPOSTA) | P2 | `HouseOccupancy` (anónimo) | P2, P3 | idem |
+| `presence.occupancy_changed` (PROPOSTA, **IMPLEMENTADO**, PRES-06) | P2 | `HouseOccupancy` (anónimo; só quando o estado muda; `likely_empty` = porta fiável a 0) | P2, P3, SAFE-02 (futuro) | idem |
 | `sensor.reading_recorded` (PROPOSTA) | P1 | `SensorReading` | P2 | idem |
 | `safety.alert_raised` (PROPOSTA) | P2 | `SafetyAlert` (o mesmo `id` volta com `status=resolved`) | P3 (`notifications.safety_alert`, **IMPLEMENTADO**); P3 (`agent.safety_suggestion`, **IMPLEMENTADO**, AGENT-03b: só propõe, uma `ProposedAction` por inquilino ativo; alerta resolvido → propostas pendentes `rejected`; em runtime real só dispara quando a `safety` tiver o resolvedor de aquecedores, ENERGY-03 #81; hoje só na demo SIMULADA e nos testes) | idem |
 | `billing.confirmation_needed` | P4 | `ConfirmationRequest` | P3 (consumidor `notifications.confirmation_needed`, **IMPLEMENTADO**) | idem |
@@ -82,6 +82,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `billing.bill_created` / `bill_finalized` | P4 | `BillRef` | P3, UI | idem |
 | `billing.allocation_published` | P4 | `AllocationPublished` | P3 (`notifications.allocation_published`, **IMPLEMENTADO**) | idem |
 | `billing.contestation_changed` | P4 | `Contestation` (BILL-06: aberta → aviso ao senhorio; decidida → aviso a quem contestou) | P3 (`notifications.contestation`, **IMPLEMENTADO**) | idem |
+| `billing.rules_proposal_changed` | P4 | `RuleProposal` (HOUSE-04: aberta, aprovada pela maioria, rejeitada, retirada, substituída ou caducada; só contagens de votos) | P3 (`notifications.rules_proposal`, **IMPLEMENTADO**) | idem |
 | `notification.created` | P3 | `NotificationCreatedData` | UI (DTO) | idem |
 | `notification.responded` | P3 | `NotificationRespondedData` (resposta + `ref` + `outcome` nas confirmações: um evento por voto; P4 só atribui com `outcome.decided`) | P4 | idem |
 | `alerts.threshold_crossed` | P4 | `BudgetThreshold` | P3 (`notifications.budget_threshold`, **IMPLEMENTADO**); P3 (`agent.budget_light`, ALERT-06: proposta de cor na lâmpada, **IMPLEMENTADO**) | idem |
@@ -156,7 +157,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | `GET` | `/api/households/{id}/presence` | T | **Só o próprio** (opt-in); **L/O: 403**; ainda PLANEADO |
 | `PUT` | `/api/presence/me` | T | `PresenceMeIn` `{ "state": "in" \| "out" }` (substitui «cheguei/saí») |
 | `GET` | `/api/presence/camera/status` | O | `CameraStatus`: só diagnóstico (FPS, `camera_ok`, fonte e origem); sem imagens nem URL |
-| `GET` | `/api/households/{id}/occupancy` | T | `HouseOccupancy` (PROPOSTA): número de pessoas e visitas, sem nomes; **L: 403** |
+| `GET` | `/api/presence/occupancy?household_id=` | T | `HouseOccupancy` (PRES-05, **IMPLEMENTADO**): número de pessoas e visitas, sem nomes; **L/O: 403**; `uncertain` com contagem incoerente |
 | `GET`·`POST`·`DELETE` | `/api/presence/devices` | T (own) | `PresenceDeviceView` (PROPOSTA): telemóvel para o Wi-Fi, consentimento e revogação; nunca o MAC |
 
 ### Atribuição, fatura e recibos (P4)

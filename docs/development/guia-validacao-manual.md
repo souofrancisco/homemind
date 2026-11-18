@@ -363,6 +363,13 @@ uv run --env-file ../.env python -m homemind.connectors.runbook     # kit REAL, 
 - **Esperado:** < 4 s nas 10.
 - **PASS** com 10/10 < 4 s. Se MCP-04 falhou: **não executado**.
 
+### ALR-06 — ⚠️ Cor do orçamento na lâmpada real
+- **Issue:** #104 · **Tipo:** REAL — só depois de MCP-04 com PASS; uma pessoa, lâmpada à vista.
+- **Preparação:** `HOME_BACKEND=mcp`, `ENERGY_HOUSEHOLD_ID` = casa real de teste, `MCP_LAMP_ROOM_ID` = quarto do morador de teste (ou uma zona comum), `ENABLE_PHYSICAL_WRITES=true` e `make mcp-writes-on` só para `lamp`.
+- **Passos:** definir um orçamento baixo para o morador; esperar o aviso de 80 %; na página Orçamento carregar em «Mudar a cor»; observar a lâmpada; repetir com `make mcp-writes-off` antes de confirmar.
+- **Esperado:** com grant: lâmpada amarela e mensagem de sucesso só depois da releitura (`confirmed`); sem grant: `blocked`, a lâmpada não muda e nada é repetido. Se a lâmpada não mudar mas o MCP disser «device updated»: `uncertain`, sem nova tentativa.
+- **PASS** só com as duas observações feitas à mão. Fim: `make mcp-writes-off`.
+
 ### DEMO-01 — Dez demonstrações seguidas
 - **Issue:** #28 · **Tipo:** indicar REAL ou SIMULADO
 - **Uma demo:** arrancar de fresco → entrar → caneca (pausa) → livro (leitura) → sair → espera → suspenso → regressar (restaurado) → **Desligar tudo** → `inativo`.
@@ -462,21 +469,22 @@ Data: ________ · Testador(es): ________ · Hardware (GPU/CPU): ________ · Comm
 | REG-01 | Gerir regras | | | | #26 |
 | NV-01 | Regra por texto (NVIDIA) | | | | #14 |
 | OFF-01 | Desligar tudo | | | | #27 |
-| MCP-01 | OAuth | | | | #10 |
-| MCP-02 | Descoberta | | | | #10 |
+| MCP-01 | OAuth | REAL | PASS | 2026-11-18 15:24:07 UTC (15:24:07 local) · sessão aberta com os tokens persistidos, sem login (750 ms) | #10 |
+| MCP-02 | Descoberta | REAL | PASS | 2026-11-18 15:24:10 UTC (15:24:10 local) · 18 ferramentas (get_device_details, get_device_recommendations, get_device_timers, get_home, get_home_detail_report, get_home_devices, get_home_rooms, get_home_scenarios, get_home_security_alarm_history, get_home_security_status, get_home_status_brief, get_scenario, patch_home_security_status, patch_scenario_activation, post_execute_scenario, post_new_scenario, post_timer_device, update_device_capabilities); as 3 usadas têm schema compatível | #10 |
 | MCP-03 | Leitura acompanha a realidade | | | | #11 |
-| MCP-04 | ⚠️ Lâmpada RGB | | | workMode: ____ · sem contacto: ____ min | #11 |
-| MCP-05 | ⚠️ Tomada | | | | #11 |
-| MCP-06 | Consumo | | | valor bruto: ____ com carga de ____ W | #12 |
+| MCP-04 | ⚠️ Lâmpada RGB | REAL | FAIL | 2026-11-18 15:07:24 UTC (15:07:24 local) · releitura: alteração confirmada, restauro confirmado; estado final: ligada=True, brilho=1; última escrita 6109 ms; operador viu a lâmpada ficar vermelha (efeito físico observado), mas ela NÃO voltou à cor inicial: ficou vermelha a 1 % (a nuvem devolvia color_rgb bruto 3,0,0 com brilho=1, igual ao que o operador via). O «restauro confirmado» era um falso positivo: a tolerância de cor (_RGB_TOL=3) a brilho 1 aceita qualquer cor. Causa apurada com dois ensaios autorizados às ~15:35–15:42 UTC: escrever `brightness` DEPOIS de `color_rgb` anula a cor enviada e repõe a cor antiga (restauro e 1.º ensaio: cor azulada vista e depois vermelho a brilho 40); com `brightness` ANTES de `color_rgb` ficam as duas (branco-azulado a 40 %, visto pelo operador, releitura 80,80,102). Ver mcp-capabilities.md; workMode antes: colour | #11 |
+| MCP-05 | ⚠️ Tomada | REAL | PASS | 2026-11-18 15:13:55 UTC (15:13:55 local) · releitura: alteração confirmada, restauro confirmado; ligada inicial=True, final=True; última escrita 4312 ms; mudança física observada pelo operador | #11 |
+| MCP-06 | Consumo | REAL | PASS | 2026-11-18 15:25:41 UTC (15:25:41 local) · 18/18 amostras em 88 s; instantPower bruto 119–143; V 233–234; I 582–779 mA; unidade declarada: ausente; MCP_INSTANTPOWER_UNIT: W; lastCommunicationTime mudou 3× (intervalos: 43,1 s, 59,0 s, 1,9 s); P/(V·I) mediana 0,87 (mín. 0,78, máx. 0,87) | #12 |
+| ALR-06 | ⚠️ Cor do orçamento na lâmpada real | | | com grant: ____ · sem grant: ____ | #104 |
 | MCP-07 | ⚠️ Falhas e reconexão | | | | #11, #12 |
-| MCP-08 | Contacto: estado e latência | | | abrir: ____ s · fechar: ____ s | #122 |
-| MCP-09 | Clima: temperatura e humidade | | | ____ °C · ____ % | #122 |
+| MCP-08 | Contacto: estado e latência | REAL | PASS | 2026-11-18 15:28:00 UTC (15:28:00 local) · estado: aberto; último contacto há 2 min; fechar e abrir: mudança já visível na 1.ª leitura, por isso o runbook devolve 0,0 s nos dois (o relógio só arranca no fim de um bip de 0,9 s e a 1.ª leitura demora ~1–2 s). Valor exato NÃO medido; a latência ficou abaixo de ~3 s com um ensaio anterior a dar fechar = 2,9 s. Sinal sonoro no lugar do Enter, inclui a reação do operador; poucas amostras | #122 |
+| MCP-09 | Clima: temperatura e humidade | REAL | PASS | 2026-11-18 15:28:03 UTC (15:28:03 local) · temperatura 27,4 °C; humidade 54 %; último contacto há 80 s | #122 |
 | PRES-01 | Câmara da porta: kit e plano B | | | kit: ____ · FPS: ____ | #105 |
 | PRES-02 | Contagem na soleira | | | certas/total: ____ | #106 |
 | VID-01 | RTSP 10 min | | | quedas: ____ · FPS: ____ | #2 |
 | VID-02 | Atraso câmara → ecrã | | | 0/5/10 min: ____ / ____ / ____ s | #2 |
 | VID-03 | Reconexão da câmara | | | | #3 |
-| VID-04 | Câmara: abertura e FPS (runbook) | | | FPS: ____ · resolução: ____ | #122 |
+| VID-04 | Câmara: abertura e FPS (runbook) | REAL | BLOQUEADO | 2026-11-18 15:11:01 UTC (15:11:01 local) · PRIV-02: câmara só com --camera e autorização | #122 |
 | YOLO-01 | Objetos | | | objeto do «livro»: ____ | #4 |
 | YOLO-02 | FPS de inferência | | | ____ ms/frame · variante ____ | #4 |
 | POSE-01 | Esqueleto | | | | #4 |

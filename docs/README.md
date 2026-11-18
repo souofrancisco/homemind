@@ -78,6 +78,7 @@ Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home).
 | [mcp-demo.md](integrations/mcp-demo.md) | Operação: OAuth, modo MCP, escritas autorizadas, erros |
 | [mcp-capabilities.md](integrations/mcp-capabilities.md) | Capacidades observadas, hipóteses, bloqueios de hardware |
 | [mentor-questions.md](integrations/mentor-questions.md) | Perguntas abertas aos mentores Altice |
+| [contador-meo-energia.md](integrations/contador-meo-energia.md) | PILOT-02 (PROPOSTA): inventário HAN/E-REDES e MEO Energia, lacunas e plano B |
 | [mcp-p3-relatorio.md](integrations/mcp-p3-relatorio.md) | Relatório de passagem do MCP (correções e testes) |
 
 ### Decisões e arquivo

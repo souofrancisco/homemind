@@ -8,6 +8,8 @@ export type BillPreview = Schemas["BillPreview"];
 export type BillAllocation = Schemas["BillAllocation"];
 export type LandlordBillView = Schemas["LandlordBillView"];
 export type ReceiptExplanation = Schemas["ReceiptExplanation"];
+export type TariffIn = Schemas["TariffIn"];
+export type TariffStatus = Schemas["TariffStatus"];
 
 const base = (householdId: string) => `/api/households/${encodeURIComponent(householdId)}`;
 const post = <T>(path: string, body?: unknown) =>
@@ -33,3 +35,11 @@ export const listMyContestations = (householdId: string) => api<Contestation[]>(
 export const listContestations = (householdId: string) => api<LandlordContestationView[]>(`${base(householdId)}/contestations`);
 export const decideContestation = (householdId: string, contestationId: string, body: ContestationDecisionIn) =>
   post<LandlordContestationView>(`${base(householdId)}/contestations/${contestationId}/decision`, body);
+
+// Correção de uma fatura fechada (BILL-04): nova revisão; a anterior fica `superseded`.
+export const reviseBill = (householdId: string, billId: string, body: BillIn) =>
+  post<BillView>(`${base(householdId)}/bills/${encodeURIComponent(billId)}/revisions`, body);
+// Tarifa de referência para estimativas (ALERT-02); nunca muda faturas fechadas.
+export const getTariff = (householdId: string) => api<TariffStatus>(`${base(householdId)}/tariff`);
+export const setTariff = (householdId: string, body: TariffIn) =>
+  request<TariffStatus>(`${base(householdId)}/tariff`, { method: "PUT", body: JSON.stringify(body) });

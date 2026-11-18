@@ -12,6 +12,7 @@ import BillsContent from "./BillsPage";
 import RoomAllowanceLine from "../components/billing/RoomAllowanceLine";
 import { listRoomAllowances, type RoomAllowanceView } from "../services/billing/allowances";
 import HouseRulesCard from "../components/billing/HouseRulesCard";
+import OccupancyCard from "../components/presence/OccupancyCard";
 import Dashboard from "./DashboardPage";
 import AppliancesContent from "./AppliancesPage";
 import EnergyContent from "./EnergyPage";
@@ -203,6 +204,7 @@ function HouseContent() {
           <Text c="dimmed" size="sm">Esta associação vem do teu contrato, não de sensores de presença.</Text>
         </Card>
       )}
+      {role === "tenant" && <OccupancyCard householdId={session.house.id} />}
       <section aria-labelledby="room-list-title">
         <Title id="room-list-title" order={3} size="h4" mb="sm">Divisões da casa</Title>
         {session.rooms.length ? (

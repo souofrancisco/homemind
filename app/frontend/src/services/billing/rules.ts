@@ -6,7 +6,10 @@ export type HouseRulesIn = components["schemas"]["HouseRulesIn"];
 
 const path = (householdId: string) => `/api/households/${encodeURIComponent(householdId)}/rules`;
 export const getHouseRules = (householdId: string) => api<HouseRulesView>(path(householdId));
-export const scheduleHouseRules = (householdId: string, body: HouseRulesIn) =>
+// HOUSE-04: propor (conta como «sim»), votar e retirar; só a maioria agenda a mudança.
+export const proposeHouseRules = (householdId: string, body: HouseRulesIn) =>
   request<HouseRulesView>(`${path(householdId)}/next`, { method: "PUT", body: JSON.stringify(body) });
-export const cancelHouseRules = (householdId: string) =>
+export const voteHouseRules = (householdId: string, approve: boolean) =>
+  request<HouseRulesView>(`${path(householdId)}/next/vote`, { method: "POST", body: JSON.stringify({ approve }) });
+export const withdrawHouseRules = (householdId: string) =>
   request<HouseRulesView>(`${path(householdId)}/next`, { method: "DELETE" });
