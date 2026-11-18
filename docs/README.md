@@ -1,6 +1,6 @@
 # Documentação — Conta Certa
 
-> **Estado:** o produto passou de ObjectOS para **Conta Certa** (reorganização documental de 17/11/2026, reconciliada com o v5.1). O código ainda é o do ObjectOS; os documentos marcados **PLANEADO** descrevem o que vai ser construído, não o que existe. Ver [architecture/migration.md](architecture/migration.md).
+> **Estado:** produto **Conta Certa**. O que existe e está provado: [functional-flows.md](functional-flows.md). O que falta, prioridades e responsáveis: [GitHub Project](https://github.com/users/souofrancisco/projects/1) e issues (não há backlog neste repositório). Documentos marcados PLANEADO descrevem o que vai ser construído, não o que existe. O código ObjectOS ainda existe até à BASE-04 ([migration.md](architecture/migration.md)).
 
 Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home).
 
@@ -8,10 +8,21 @@ Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home).
 
 | Sou… | Ler por esta ordem |
 |---|---|
-| Novo na equipa | [product/vision.md](product/vision.md) → [architecture/overview.md](architecture/overview.md) → [development/team.md](development/team.md) |
-| Programador (qualquer módulo) | A minha secção em [development/team.md](development/team.md) → o meu documento em `modules/` → [architecture/contracts.md](architecture/contracts.md) e [architecture/data-model.md](architecture/data-model.md) |
-| A preparar a demo | [development/mvp.md](development/mvp.md) → [development/risks.md](development/risks.md) |
+| Novo na equipa | [../README.md](../README.md) → [development.md](development.md) → [architecture.md](architecture.md) → [functional-flows.md](functional-flows.md) |
+| Programador (qualquer módulo) | [ai-workflow.md](ai-workflow.md) → a minha secção em [development/team.md](development/team.md) → o meu `modules/<nome>.md` → [architecture/contracts.md](architecture/contracts.md) |
+| A preparar a demo | [development/handoff.md](development/handoff.md) → [evidence/demo-web-2026-11-18/](evidence/demo-web-2026-11-18/README.md) → [development/mvp.md](development/mvp.md) |
 | A trabalhar com o MCP | [integrations/altice-mcp.md](integrations/altice-mcp.md) |
+
+## Núcleo (curto e atual)
+
+| Documento | Conteúdo |
+|---|---|
+| [development.md](development.md) | Ambiente local, `.env`, comandos, migração dos comandos antigos |
+| [architecture.md](architecture.md) | Arquitetura implementada e regras |
+| [functional-flows.md](functional-flows.md) | Fluxos verificados (entrada, componentes, resultado, estado, limitações) |
+| [ai-workflow.md](ai-workflow.md) | Claude Code + Codex: issue → PR |
+| [decisions.md](decisions.md) | Decisões ainda válidas |
+| [development/handoff.md](development/handoff.md) | Plano por pessoa e decisões pendentes |
 
 ## Índice
 
@@ -52,9 +63,9 @@ Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home).
 | Documento | Conteúdo |
 |---|---|
 | [team.md](development/team.md) | Divisão do trabalho pelas cinco pessoas |
-| [roadmap.md](development/roadmap.md) | Fases F0–F3, prioridades, bloqueios, ordem de trabalho (espelho da issue #129) |
+| [roadmap.md](development/roadmap.md) | Apontador para o GitHub Project (a versão antiga está em `archive/planning/`) |
 | [mvp.md](development/mvp.md) | MVP, cenário de demo, real vs simulado, plano B |
-| [backlog.md](development/backlog.md) | Mapa épico → issues reais (#58–#132) e destino das issues antigas |
+| [backlog.md](development/backlog.md) | Apontador para o GitHub Project |
 | [risks.md](development/risks.md) | Riscos técnicos e limites do hardware |
 | [testing.md](development/testing.md) | Estratégia de testes e critérios de qualidade |
 | [guia-validacao-manual.md](development/guia-validacao-manual.md) | Roteiro de validação manual (herdado; ver nota no topo) |
@@ -76,6 +87,7 @@ Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home).
 | [decisions.md](decisions.md) | Decisões (incl. Telegram → aplicação), pressupostos e pontos por resolver |
 | [references/](references/README.md) | PDFs originais, **documento v5.1** (`.md`, fonte de produto) e guia MCP oficial (intactos, históricos) |
 | [archive/objectos/](archive/objectos/README.md) | Documentação do ObjectOS, só para consulta |
+| [archive/planning/](archive/planning/) | Roadmap e backlog de 17/11/2026 (substituídos pelo Project) |
 
 ## Convenções dos documentos
 
