@@ -1,11 +1,11 @@
-import { Accordion, Alert, Badge, Group, Stack, Text, ThemeIcon, Timeline, Title } from "@mantine/core";
+import { Accordion, Alert, Badge, Button, Group, Stack, Text, ThemeIcon, Timeline, Title } from "@mantine/core";
 import {
   IconAlertCircle, IconBolt, IconCoin, IconFlame, IconGavel, IconHistory, IconMapPin, IconSearch,
 } from "@tabler/icons-react";
 import type { ReceiptExplanation } from "../../services/billing/api";
 
 // Só apresentação: todos os números e textos vêm do servidor (BILL-05); aqui não se calcula nada.
-type Own = ReceiptExplanation["own"][number];
+export type Own = ReceiptExplanation["own"][number];
 type Group_ = ReceiptExplanation["common"][number];
 type Prov = Own["provenance"];
 
@@ -56,7 +56,7 @@ function ProvBadge({ p }: { p: Prov }) {
   );
 }
 
-function OwnItem({ item }: { item: Own }) {
+function OwnItem({ item, onContest }: { item: Own; onContest?: (item: Own) => void }) {
   const name = item.appliance_name ?? "Aparelho não identificado";
   return (
     <Accordion.Item value={item.consumption_event_id}>
@@ -87,6 +87,9 @@ function OwnItem({ item }: { item: Own }) {
               );
             })}
           </Timeline>
+          {onContest && (
+            <Button w="fit-content" size="xs" variant="light" color="yellow" onClick={() => onContest(item)}>Este consumo não é meu</Button>
+          )}
         </Stack>
       </Accordion.Panel>
     </Accordion.Item>
@@ -138,7 +141,8 @@ function AllowanceSection({ a }: { a: NonNullable<ReceiptExplanation["allowance"
   );
 }
 
-export default function ReceiptExplanationView({ data }: { data: ReceiptExplanation }) {
+/** `onContest`: só quando o recibo ainda pode ser contestado (BILL-06). */
+export default function ReceiptExplanationView({ data, onContest }: { data: ReceiptExplanation; onContest?: (item: Own) => void }) {
   const diff = data.amount_cents - data.equal_split_cents;
   const r = data.residual;
   return (
@@ -157,7 +161,7 @@ export default function ReceiptExplanationView({ data }: { data: ReceiptExplanat
       <Stack gap="xs">
         <Title order={4} size="h5">O teu consumo · {eur(data.own.reduce((s, i) => s + i.amount_cents, 0))}</Title>
         {data.own.length ? (
-          <Accordion variant="separated" radius="md">{data.own.map((item) => <OwnItem key={item.consumption_event_id} item={item} />)}</Accordion>
+          <Accordion variant="separated" radius="md">{data.own.map((item) => <OwnItem key={item.consumption_event_id} item={item} onContest={onContest} />)}</Accordion>
         ) : (
           <Text size="sm" c="dimmed">Nenhum consumo foi atribuído só a ti nesta fatura.</Text>
         )}

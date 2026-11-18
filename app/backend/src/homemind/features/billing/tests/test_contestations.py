@@ -102,6 +102,9 @@ def test_aceitar_passa_o_consumo_para_a_conta_comum_e_reemite(client, fatura):
     assert r.status_code == 200, r.text
     d = r.json()
     assert d["status"] == "accepted" and (d["before_cents"], d["after_cents"]) == (4200, 3000)
+    # a resposta ao senhorio é a vista dele: quarto, nunca o consumo nem o morador
+    assert d["room_name"] == "Quarto Ana" and d["contests_consumption"] is True
+    assert str(CONSUMO) not in r.text and str(fx.ANA) not in r.text
     nova = d["revision_bill_id"]
     assert client.get(f"{H}/bills/{fatura}", headers=LANDLORD).json()["status"] == "superseded"
     assert client.get(f"{H}/bills/{nova}", headers=LANDLORD).json()["revision"] == 2
