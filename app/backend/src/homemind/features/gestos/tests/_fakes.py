@@ -195,7 +195,7 @@ class ThreadVisaoFalsa:
 
 
 class DetetorDeClip:
-    """Detetor SIMULADO para o afinador `--video`: ignora a imagem e devolve, pelo `indice`,
+    """Detetor SIMULADO para os testes da visão: ignora a imagem e devolve, pelo `indice`,
     uma pessoa sempre presente que levanta uma caneca nos índices 20-39 (2 s a 10 fps)."""
 
     def __init__(self) -> None:

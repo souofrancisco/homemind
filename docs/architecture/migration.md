@@ -66,8 +66,8 @@ Caminhos relativos a `app/backend/src/homemind/` (backend) e `app/frontend/src/`
 | `features/visao/detetor.py` (`DetetorYolo`, YOLO11 + pose + ByteTrack) | **ADAPT** | Mantém-se a classe «pessoa» e o tracking; **sai** a deteção de caneca/livro/comando e a pose | P2 |
 | `features/visao/thread.py`, `dispositivo.py`, `pesos.py` | **KEEP** | Thread de visão, escolha de dispositivo (MPS/CUDA/CPU), descarga de pesos | P2 |
 | `features/visao/anotar.py` | **ADAPT** | Passa a desenhar só a soleira e a máscara a preto | P2 |
-| `features/visao/medir_latencia.py` | **REMOVE** | Mede «gesto → luz», métrica do produto antigo | P2 |
-| `features/gestos/gesto.py`, `repeticao.py`, `afinador.py`, `parametros.py` | **REMOVE** | Gesto «objeto levantado» deixa de existir | P2 |
+| `features/visao/medir_latencia.py` | **REMOVIDO** (BASE-04, #74) | Mede «gesto → luz», métrica do produto antigo | P2 |
+| `features/gestos/gesto.py`, `repeticao.py`, `afinador.py`, `parametros.py` | **REMOVE** (`repeticao.py` e `afinador.py` **REMOVIDOS**, BASE-04 #74; `gesto.py` e `parametros.py` ficam enquanto `visao/router.py` usar o `ProcessadorObjectOS`) | Gesto «objeto levantado» deixa de existir | P2 |
 | `features/gestos/presenca.py` (debounce de presença binária) | **ADAPT** | Ideia reutilizada (2 frames para entrar, 3 s para sair) na deteção de passagem na porta | P2 |
 | `features/gestos/ponte.py` (thread → `asyncio.Queue`) | **KEEP** | A visão continua numa thread e publica eventos no loop | P2 |
 | `features/gestos/processador.py` | **REPLACE** | Passa a emitir `DoorCrossed` (linha na soleira) em vez de `ObjetoLevantado` | P2 |

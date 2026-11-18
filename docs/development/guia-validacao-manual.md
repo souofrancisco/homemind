@@ -296,18 +296,8 @@ uv run --env-file ../.env python -m homemind.connectors.runbook     # kit REAL, 
 - **Esperado:** cada objeto com caixa e nome certo na maior parte do tempo. Se o livro falhar, repetir com `VISAO_LIVRO_COCO=39` (garrafa) ou `67` (telemóvel) e anotar a escolha.
 - **PASS** com os três objetos reconhecidos (indicar o objeto usado em vez do livro, se for o caso).
 
-### YOLO-02 — FPS de inferência (BLOQUEADO para fontes reais)
-- **Issue:** #4 · **Tipo:** REAL
-- **Pré-requisitos:** clip gravado da MEARI em `app/backend/data/clip.mp4`.
-- **Passos:**
-  ```bash
-  cd app/backend
-  uv run python -m homemind.features.gestos.afinador --video data/clip.mp4 \
-    --detetor homemind.features.visao.detetor:DetetorYolo --gravar-jsonl data/clip.jsonl
-  ```
-- **Esperado:** no resumo, `detetar` ≤ 100 ms/frame (≥ 10 FPS) com GPU. Sem GPU: anotar o valor e repetir com `--variante n` (`python -m homemind.features.visao.pesos --variante n`, `VISAO_VARIANTE=n`).
-- **Evidência:** linha do resumo, hardware e variante.
-- **PASS** com ≥ 10 FPS, ou com a limitação e o fallback anotados.
+### YOLO-02 — FPS de inferência (RETIRADO)
+- **Retirado na BASE-04 (#74):** dependia do `afinador` (ObjectOS), já removido. A medição do FPS de inferência de **pessoas** na soleira fica **PLANEADA** na feature de presença (PRES-02); enquanto não existir, este teste não se executa.
 
 ### POSE-01 — Esqueleto
 - **Issue:** #4 · **Tipo:** REAL
@@ -344,18 +334,8 @@ uv run --env-file ../.env python -m homemind.connectors.runbook     # kit REAL, 
 
 ## H. Demo
 
-### LAT-01 — Latência do software
-- **Issue:** #28 · **Tipo:** SIMULADO (FakeHome)
-- **Passos:**
-  ```bash
-  cd app/backend
-  uv run --env-file ../.env python -m homemind.features.visao.medir_latencia \
-    --detetor homemind.features.visao.detetor:DetetorYolo --gestos 10
-  ```
-  e fazer 10 gestos em frente à câmara.
-- **Esperado:** todos < 4 s; código de saída 0.
-- **Evidência:** linha min/média/máx.
-- **PASS** com 10/10 < 4 s.
+### LAT-01 — Latência do software (RETIRADO)
+- **Retirado na BASE-04 (#74):** dependia do `medir_latencia` («gesto → luz»), métrica do produto antigo, já removido. Não se executa.
 
 ### LAT-02 — ⚠️ Latência gesto → lâmpada real
 - **Issue:** #28 · **Tipo:** REAL — só depois de MCP-04 com PASS
@@ -486,13 +466,13 @@ Data: ________ · Testador(es): ________ · Hardware (GPU/CPU): ________ · Comm
 | VID-03 | Reconexão da câmara | | | | #3 |
 | VID-04 | Câmara: abertura e FPS (runbook) | REAL | BLOQUEADO | 2026-11-18 15:11:01 UTC (15:11:01 local) · PRIV-02: câmara só com --camera e autorização | #122 |
 | YOLO-01 | Objetos | | | objeto do «livro»: ____ | #4 |
-| YOLO-02 | FPS de inferência | | | ____ ms/frame · variante ____ | #4 |
+| YOLO-02 | FPS de inferência (retirado) | | | ____ ms/frame · variante ____ | #4 |
 | POSE-01 | Esqueleto | | | | #4 |
 | TRK-01 | Tracking | | | | #4 |
 | GES-01 | 10 gestos válidos | | | ____ / 10 | #5 |
 | GES-02 | Sem falsos positivos | | | falsos: ____ | #5, #8 |
 | PRE-01 | Presença | | | | #6 |
-| LAT-01 | Latência software | | | min/média/máx: ____ | #28 |
+| LAT-01 | Latência software (retirado) | | | min/média/máx: ____ | #28 |
 | LAT-02 | ⚠️ Latência lâmpada real | | | | #28 |
 | DEMO-01 | 10 demos seguidas | | | ____ / 10 | #28 |
 | PB-01 | Plano B | | | troca em ____ s | #3, #28 |

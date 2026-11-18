@@ -37,7 +37,7 @@ Regras gerais em [`../../CLAUDE.md`](../../CLAUDE.md). Aqui só o específico do
 |---|---|---|
 | `features/video` | Último frame local de clip de teste; RTSP recusado no serviço e `GET /api/video` responde sempre 404 (PRIV-02) | ADAPT; não reabrir stream sem contrato/autorização e revisão |
 | `features/visao` | `DetetorYolo` (extra `visao`), thread de visão, anotação | ADAPT: só pessoa + linha na porta |
-| `features/gestos` | Gesto, presença, ponte thread→loop, afinador. Lógica pura | Gesto/afinador REMOVE; ponte KEEP; presença ADAPT |
+| `features/gestos` | Gesto, presença, ponte thread→loop. Lógica pura | Gesto REMOVE (afinador já removido); ponte KEEP; presença ADAPT |
 | `features/engine` | Regras (`rules.json`), máquina de estados, energia, registo (`events.jsonl`), NVIDIA, REST e WS | Motor REMOVE; `llm.py` e WS ADAPT |
 | `features/agent` (**parcial**, P3) | Assistente só de leitura: `POST /api/households/{id}/agent/messages`, dados SIMULADOS da casa demo, LLM desligado por omissão (`AGENT_LLM_ENABLED`); AGENT-03: ações propostas com confirmação (`agent_action`, `0310`), executor injetado (nesta feature só o simulado), nunca sem `confirm`; AGENT-03b: consumidor `agent.safety_suggestion` (só propõe); histórico `GET …/agent/messages` (`agent_message`, `0311`, só o próprio, nunca ao LLM) | [agent](../../docs/modules/agent.md) |
 | `features/notifications` (**parcial**, P3) | Notificações por casa (lista, leitura, resposta, preferências), persistência SQLite e consumidor `notifications.confirmation_needed`. WebSocket, limiares e picos PLANEADOS | [notifications](../../docs/modules/notifications.md) |
