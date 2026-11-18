@@ -315,6 +315,55 @@ class LandlordBillView(ContractModel):
     rooms: list[RoomTotal]
 
 
+# --- tarifário (ALERT-02) ----------------------------------------------------------------------
+
+# Por kWh com impostos, em milicêntimos (1 € = 100 000); no máximo 1,00 €/kWh, como a fatura.
+PriceMillicents = Annotated[int, Field(strict=True, gt=0, le=100_000)]
+
+
+class TariffKind(StrEnum):
+    simple = "simple"
+    bi_hourly = "bi_hourly"
+
+
+class Tariff(ContractModel):
+    """Tarifa de referência da casa, para ESTIMAR custos antes da fatura (orçamento, previsão).
+    O fecho reparte sempre o total real da fatura.
+
+    Bi-horário (simplificado, v5.1 §6.6): vazio das 22h às 08h (hora local da casa) e todo o
+    sábado e domingo; fora do vazio vale `price_millicents_per_kwh`."""
+
+    kind: TariffKind
+    price_millicents_per_kwh: PriceMillicents  # simples: o preço; bi-horário: fora do vazio
+    offpeak_price_millicents_per_kwh: PriceMillicents | None = None  # só bi-horário
+
+    @model_validator(mode="after")
+    def _coherent(self) -> Self:
+        if (self.kind is TariffKind.bi_hourly) != (
+            self.offpeak_price_millicents_per_kwh is not None
+        ):
+            raise ValueError("o preço de vazio existe só (e sempre) no bi-horário")
+        return self
+
+
+class TariffIn(Tariff):
+    """`PUT …/tariff`: o senhorio define a tarifa do contrato (substitui a anterior)."""
+
+
+class TariffSource(StrEnum):
+    configured = "configured"  # definida pelo senhorio (`PUT …/tariff`)
+    reference = "reference"  # preço de referência da casa (simples)
+    last_bill = "last_bill"  # preço médio da última fatura fechada (simples)
+
+
+class TariffStatus(ContractModel):
+    """A tarifa usada nas estimativas e de onde veio; `tariff=None`: não há preço nenhum, e os
+    custos estimados ficam desconhecidos (nunca 0 €)."""
+
+    tariff: Tariff | None
+    source: TariffSource | None
+
+
 # --- orçamentos e contestações ----------------------------------------------------------------
 
 
@@ -417,6 +466,24 @@ def budget_light(pct: int | None) -> BudgetLightCue | None:
     return BudgetLightCue(light=light, color=color, rgb=rgb, label=f"{label} ({pct} %)")
 
 
+class BudgetForecast(ContractModel):
+    """Previsão do gasto até ao fim do mês (ALERT-02): o gasto atual mais o ritmo observado
+    (linear) nos dias que faltam, mais a base do mês inteiro. Só existe com pelo menos
+    `observed_days >= 3` dias de dados no mês; `low_cents`–`high_cents` mostra a incerteza
+    (variação entre dias). Sempre `estimated`."""
+
+    cents: Cents
+    low_cents: Cents
+    high_cents: Cents
+    observed_days: Annotated[int, Field(strict=True, ge=0)]
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Self:
+        if not self.low_cents <= self.cents <= self.high_cents:
+            raise ValueError("previsão fora do intervalo")
+        return self
+
+
 class BudgetStatus(ContractModel):
     """Quanto já gastei este mês face ao meu objetivo (D-31: todos os custos).
 
@@ -432,6 +499,7 @@ class BudgetStatus(ContractModel):
     base_cents: Cents | None  # parte do termo fixo + resíduo (estimada do último recibo)
     pct: Annotated[int, Field(strict=True, ge=0)] | None
     light: BudgetLightCue | None = None  # ALERT-06: cor mostrada na app (lâmpada só com grant)
+    forecast: BudgetForecast | None = None  # ALERT-02; None: dados insuficientes para prever
     final: bool
     provenance: Provenance | None
     as_of: UtcDatetime

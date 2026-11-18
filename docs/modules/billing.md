@@ -121,7 +121,7 @@ O sumário executivo cita 21,20 €; o corpo do documento (§6.2 e §7.1) cita 4
 
 - Orçamento pessoal: limiares 50 / 80 / 100 % (omissão do PDF), notificação por limiar **uma só vez** por período (`last_threshold_notified`).
 - O gasto comparado inclui **todos os custos** (parte do termo fixo + resíduo + consumo individual), isto é, o valor que o morador vai pagar (D-31).
-- Previsão do fim do mês: projeção linear do gasto acumulado (P1). Algoritmos mais complexos ficam fora do MVP.
+- Previsão do fim do mês (ALERT-02): projeção linear do gasto acumulado, com intervalo de incerteza; ver «Previsão e tarifário» abaixo. Algoritmos mais complexos ficam fora do MVP.
 - «Despesas incluídas» do senhorio (PDF §6.9, §15.3: até X kWh do quarto incluídos na renda, aviso antes de passar): **PLANEADO**, precisa de um campo próprio. **Não** é o `room.included_wh`, que é o plafond solidário de aquecimento (BILL-03, abaixo).
 
 ## Alertas (P1/P2)
@@ -158,7 +158,27 @@ Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `
 | Quartos frios (ALERT-06, `features/billing/comfort.py`, migração `0120`): consumidor `billing.cold_rooms` de `sensor.reading_recorded` (só temperatura `ok` com quarto `bedroom`; `unknown`/`stale`/sem quarto/sala ignorados). Guarda só o agregado da noite (22:00–08:00, fuso da casa); noite fria = média < 18 °C; ≥ 3 noites frias nas últimas 7 completas → `alerts.cold_room` para o inquilino do quarto, uma vez por janela. Consumidor P3 `notifications.cold_room` → `comfort_alert` pessoal (nunca senhorio), sem valores de plafond (aviso «ainda tens X kWh do plafond»: PLANEADO) | IMPLEMENTADO |
 | Plafond solidário de aquecimento (BILL-03, `features/billing/allowance.py`, migração `0106`): ver «Plafond solidário» abaixo | IMPLEMENTADO |
 | Contestar e reemitir (BILL-06, `features/billing/contestations.py`, migração `0130`): o inquilino contesta o **próprio** recibo (opcionalmente um consumo atribuído a si; uma aberta por fatura); só o senhorio decide, sempre com justificação. Rejeitar não muda nada. Aceitar passa o consumo contestado para a conta comum (`manual`, auditado com o senhorio como autor; nunca pior do que a divisão igual), corrige opcionalmente os dados da fatura e **reemite sempre como nova revisão** (a anterior fica `superseded`), guardando o antes/depois da parcela. Correções diretas (`/revisions`) levam as contestações abertas para a nova revisão. O senhorio vê quarto, motivo e decisão, nunca o consumo nem presença. `billing.contestation_changed` → consumidor P3 `notifications.contestation` (aberta: aviso aos senhorios sem o motivo; decidida: aviso a quem contestou com justificação e antes/depois). Respostas tardias a «de quem é esta conta?» não mudam faturas fechadas (o atribuidor ignora-as após o prazo). **App (página Faturas):** o inquilino contesta o recibo («Não concordo com este recibo») ou um consumo na explicação («Este consumo não é meu») e vê o estado e a decisão; o senhorio vê a lista e aceita/rejeita com justificação. Corrigir os dados da fatura ao aceitar (`bill`) só pela API | IMPLEMENTADO |
-| Previsão (ALERT-02) | PLANEADO |
+| Previsão do fim do mês e tarifário simples/bi-horário (ALERT-02, `features/billing/{budgets,tariff}.py`, migração `0107`): ver «Previsão e tarifário» abaixo | IMPLEMENTADO (API; a página do orçamento ainda não mostra a previsão) |
+| Fecho valorizado à hora (bi-horário na repartição da fatura real) | PLANEADO: o fecho reparte o total real por kWh, sem preço por hora |
+
+## Previsão e tarifário (ALERT-02)
+
+**Tarifário de referência** (`tariff.py`, `GET`/`PUT /api/households/{id}/tariff`): o senhorio define a tarifa do contrato; senhorio e inquilinos veem-na (só preços). Serve **só para estimar** (gasto do mês, previsão, custo para decidir se se pergunta «de quem é esta conta?»); o fecho reparte sempre o total real da fatura.
+
+- **Simples:** um preço por kWh (com impostos).
+- **Bi-horário (simplificado):** vazio das 22h às 08h (hora local da casa) e todo o sábado e domingo (v5.1 §6.6); fora do vazio vale o outro preço. Cada kWh vale o preço da hora em que foi gasto; um consumo que atravessa a fronteira reparte-se pelo tempo (potência constante dentro do consumo). Os ciclos reais dos comercializadores (diário/semanal, horário de verão) variam: este é um modelo de referência, não o tarifário legal de nenhum.
+- **Origem do preço**, por ordem: tarifa definida (`configured`) → preço de referência da casa (`reference`) → preço médio da última fatura fechada (`last_bill`) → nenhum (custos desconhecidos, nunca 0 €).
+- **Custo do tarifário:** valor = Σ (Wh de cada hora × preço dessa hora) ÷ 1000 em milicêntimos, exato em frações; arredonda-se **uma vez** por soma, ao cêntimo mais próximo (empate ao par, como `cost_cents`). Exemplo: 2 kWh numa terça das 21h às 23h com 0,20 € / 0,10 € = 1 kWh × 0,20 € + 1 kWh × 0,10 € = **0,30 €**; ao sábado = 0,20 €.
+- No atribuidor, o custo estimado usa o preço **mais alto** dos dois (na dúvida pergunta-se).
+- Mudar a tarifa reavalia logo os orçamentos do mês (pode sair um aviso de limiar).
+
+**Previsão** (`BudgetStatus.forecast`, e `forecast_cents` no aviso de limiar → «Ao ritmo atual chegas aos X €»):
+
+- previsão = gasto variável até agora + ritmo × dias que faltam + base (termo fixo + resíduo) do **mês inteiro**, estimada pelo último recibo; sem recibo anterior, a previsão não inclui base (como o gasto).
+- ritmo = gasto variável ÷ dias observados; a observação começa no **primeiro consumo atribuído da casa no mês** (antes disso não havia dados, não «zero»).
+- **Sem previsão** (`null`) num mês sem consumos ou com menos de **3 dias** observados: poucos minutos/dias não são uma previsão. Com a fatura do mês fechada vale o valor real (`final`), sem previsão.
+- **Incerteza:** `low_cents`–`high_cents` = previsão ± ritmo × (desvio-padrão ÷ média do meu custo diário nos dias completos observados) × √dias que faltam; o mínimo nunca fica abaixo do que já se gastou. Ritmo constante → intervalo nulo.
+- Reprodutível: só depende dos consumos guardados, da tarifa e do relógio. Aproximação conhecida: o plafond solidário esgota-se a meio do mês e a extrapolação linear não o antecipa.
 
 Validação da fatura (PROPOSTA de limiares, ajustáveis em `bills.py`): preço médio 0,01–1,00 €/kWh (apanha erros de unidades), período ≤ 62 dias e já terminado, tarifa declarada opcional que tem de fechar com `total − fixa` (folga de 1 %, mínimo 5 cêntimos). Foto/PDF lido por LLM fica para depois e passará pela mesma pré-visualização.
 

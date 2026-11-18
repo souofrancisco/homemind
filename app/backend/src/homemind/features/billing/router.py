@@ -31,6 +31,8 @@ from homemind.contracts.billing import (
     LandlordBillView,
     LandlordContestationView,
     ReceiptExplanation,
+    TariffIn,
+    TariffStatus,
 )
 from homemind.contracts.common import new_id, stable_id
 from homemind.contracts.domain_events import BillingBillCreated, BillRef
@@ -55,6 +57,7 @@ from homemind.features.billing import (
     contestations,
     explanation,
     peaks,
+    tariff,
 )
 
 log = logging.getLogger(__name__)
@@ -393,6 +396,33 @@ async def decide_contestation(
             conn, access.household_id, contestation_id, access.resident_id, body, new_bill, now
         )
         return events, contestations.landlord_view(conn, access.household_id, decided)
+
+    return await _commit(request, db, work)
+
+
+# --- tarifário de referência (ALERT-02) --------------------------------------------------------
+
+
+@router.get("/households/{household_id}/tariff")
+async def get_tariff(access: ReadAccess, db: DbDep) -> TariffStatus:
+    """A tarifa usada nas estimativas (orçamento, previsão) e de onde veio. Só preços: nada
+    pessoal, por isso o senhorio e os inquilinos veem o mesmo."""
+    return await db.run(lambda conn: tariff.load(conn, access.household_id))
+
+
+@router.put("/households/{household_id}/tariff")
+async def set_tariff(
+    body: TariffIn, access: WriteAccess, db: DbDep, clock: ClockDep, request: Request
+) -> TariffStatus:
+    """O senhorio define a tarifa do contrato (simples ou bi-horária). Só muda estimativas; o
+    fecho reparte sempre o total real da fatura. Reavalia já os orçamentos do mês."""
+    now = clock()
+
+    def work(conn):
+        tariff.save(conn, access.household_id, body, now)
+        h = access.household_id
+        events = budgets.evaluate(conn, h, budgets.current_period(conn, h, now), now)
+        return events, tariff.load(conn, access.household_id)
 
     return await _commit(request, db, work)
 
