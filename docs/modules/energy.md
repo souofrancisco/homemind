@@ -62,6 +62,21 @@ Código: `features/energy/steps.py` (`StepTracker`, puro) e `features/energy/con
 
 **Por fazer (PLANEADO):** subscrever o consumidor no arranque da app (precisa de casa e dispositivos: HOUSE-01/03) e identificar o aparelho (ENERGY-03). O estado do tracker é em memória e reinicia com o processo.
 
+## Identificação do aparelho (ENERGY-03) — **IMPLEMENTADO** (sem ligação à app)
+
+Código: `features/energy/classifier.py` (`classify`, `explain`; puro) integrado no `StepTracker`: os eventos `energy.consumption_detected` (identificação **provisória**: potência e hora) e `energy.consumption_closed` (identificação **final**: potência, duração, padrão e hora) já saem com o `ApplianceMatch` preenchido. O `id` do consumo não muda; o billing guarda a última versão. Valores **decididos pelo utilizador (17/11/2026)**:
+
+| Regra | Valor |
+|---|---|
+| Algoritmo | vizinho mais próximo pesado; pesos potência 0,5 / duração 0,3 / padrão 0,1 / hora habitual 0,1 (os indisponíveis saem e os restantes renormalizam) |
+| Potência | dentro da tolerância: 1 → 0,5; até 2× a tolerância: 0,5 → 0; acima disso não é candidato |
+| Sem vencedor | melhor confiança < 0,6 → `unknown` **sem candidatos listados**; dois melhores a menos de 0,15 → `ambiguous` (candidatos listados) |
+| Cobrança | sem vencedor não há cobrança individual (segue a regra da zona comum) |
+| Aparelhos iguais | se só a hora os distingue, o fecho pode ficar sem vencedor mesmo que o arranque tivesse um: na dúvida não se cobra |
+| Dono | com vencedor pessoal, `appliance_owner_resident_id` vem do catálogo (`ownership_at`); `location` continua `unknown` (ENERGY-05) |
+
+A explicação completa por candidato (componentes e pontuação) fica disponível em `explain()` para o recibo.
+
 ## O que não se promete
 
 Com **uma só tomada de medição** o sistema separa cargas com potências bem distintas (aquecedor ~2000 W vs secador ~600 W), mas **não** garante a identificação de aparelhos pequenos (< 100 W), de dois aparelhos em simultâneo com potências próximas, nem a distinção de dois aparelhos iguais em quartos diferentes. O resultado tem sempre `confidence` e pode ser `unknown`; o resíduo divide-se por igual. Os próprios autores do PDF dizem que o NILM «funciona para cargas grandes» (§15.1).

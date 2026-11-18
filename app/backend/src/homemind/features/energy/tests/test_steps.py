@@ -1,24 +1,33 @@
 """Synthetic appliance profiles; all times come from the input readings."""
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 import pytest
 
 from homemind.contracts import fixtures as fx
 from homemind.contracts.common import Origin, Provenance, ValueKind, replace, stable_id
-from homemind.contracts.devices import PowerUnit
+from homemind.contracts.devices import (
+    ApplianceOwnership,
+    ApplianceScope,
+    PowerUnit,
+    SignaturePattern,
+)
 from homemind.contracts.domain_events import (
     EnergyConsumptionClosed,
     EnergyConsumptionDetected,
     EnergyStepDetected,
 )
 from homemind.contracts.energy import (
+    ApplianceCandidate,
+    ApplianceMatch,
+    ConsumptionEvent,
     ConsumptionStatus,
     EnergyReading,
     LocationKind,
     MatchOutcome,
     ReadingStatus,
 )
+from homemind.features.energy.classifier import SessionFeatures
 from homemind.features.energy.steps import StepTracker
 
 SOCKET = stable_id("energy-tests", "socket")
@@ -371,3 +380,131 @@ def test_custom_threshold_and_timeout():
 def test_invalid_configuration_is_rejected(kwargs):
     with pytest.raises(ValueError):
         StepTracker(household_id=fx.HOUSEHOLD, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "profile,pattern,duration",
+    [
+        ([(0, 0), (30, 2000), (210, 0)], SignaturePattern.short, 180),
+        ([(0, 0), (30, 2000), (7230, 0)], SignaturePattern.continuous, 7200),
+        (
+            [(0, 0), (30, 2000), (330, 0), (570, 2000), (870, 0)],
+            SignaturePattern.cyclic,
+            840,
+        ),
+        (
+            [(0, 50), (30, 650), (330, 600), (630, 550), (930, 500), (1230, 450), (1530, 50)],
+            SignaturePattern.decaying,
+            1500,
+        ),
+    ],
+)
+def test_classifier_receives_opening_delta_local_hour_and_final_pattern(profile, pattern, duration):
+    seen = []
+
+    def classify(features):
+        seen.append(features)
+        return ApplianceMatch()
+
+    tracker = StepTracker(
+        household_id=fx.HOUSEHOLD,
+        classify=classify,
+        timezone=timezone(timedelta(hours=2)),
+    )
+    events = feed(tracker, profile)
+    events += tracker.tick(fx.T0 + timedelta(seconds=profile[-1][0] + 601))
+    assert len(seen) == 2
+    assert seen[0] == SessionFeatures(profile[1][1] - profile[0][1], 21)
+    assert seen[1] == SessionFeatures(seen[0].power_w, 21, duration, pattern)
+    detected = of_type(events, EnergyConsumptionDetected)[0]
+    closed = of_type(events, EnergyConsumptionClosed)[0]
+    assert detected.data.id == closed.data.id
+    assert closed.data.location is LocationKind.unknown
+
+
+def test_pattern_quarters_weight_time_and_exclude_missing_intervals():
+    seen = []
+
+    def classify(features):
+        seen.append(features)
+        return ApplianceMatch()
+
+    tracker = StepTracker(household_id=fx.HOUSEHOLD, classify=classify)
+    # First 100 ON seconds at 600 W, final 300 at 400 W: quarter means 600/400.
+    # The long unknown interval cannot dilute the first-quarter mean.
+    feed(tracker, [(0, 50), (30, 650), (130, 650)])
+    tracker.ingest(reading(160, None, status=ReadingStatus.missing))
+    feed(tracker, [(1000, 650), (1001, 600), (1002, 550), (1003, 500), (1004, 450), (1304, 50)])
+    tracker.tick(fx.T0 + timedelta(seconds=1905))
+    assert seen[-1].pattern is SignaturePattern.decaying
+
+
+def test_ambiguous_event_validates_and_never_queries_owner():
+    ids = [stable_id("ambiguous", str(i)) for i in range(2)]
+    match = ApplianceMatch(
+        candidates=[ApplianceCandidate(appliance_id=aid, confidence=1) for aid in ids]
+    )
+
+    def unexpected_owner(appliance_id, at):
+        pytest.fail("ambiguous load must not look up an owner")
+
+    tracker = StepTracker(
+        household_id=fx.HOUSEHOLD,
+        classify=lambda _: match,
+        ownership_at=unexpected_owner,
+    )
+    events = feed(tracker, [(0, 0), (30, 2000), (210, 0)])
+    events += tracker.tick(fx.T0 + timedelta(seconds=811))
+    consumptions = of_type(events, EnergyConsumptionDetected) + of_type(
+        events, EnergyConsumptionClosed
+    )
+    for event in consumptions:
+        data = ConsumptionEvent.model_validate_json(event.data.model_dump_json())
+        assert data.match.appliance_id is data.match.confidence is None
+        assert data.appliance_owner_resident_id is None
+        assert data.location is LocationKind.unknown and data.room_id is None
+
+
+def test_identification_can_change_and_owner_uses_session_start():
+    first, final, owner = (stable_id("changing", key) for key in ("first", "final", "owner"))
+    calls = []
+
+    def classify(features):
+        aid = first if features.duration_s is None else final
+        return ApplianceMatch(appliance_id=aid, confidence=1)
+
+    def ownership_at(appliance_id, at):
+        calls.append((appliance_id, at))
+        return ApplianceOwnership(scope=ApplianceScope.personal, owner_resident_id=owner)
+
+    tracker = StepTracker(household_id=fx.HOUSEHOLD, classify=classify, ownership_at=ownership_at)
+    events = feed(tracker, [(0, 0), (30, 2000), (210, 0)])
+    events += tracker.tick(fx.T0 + timedelta(seconds=811))
+    detected = of_type(events, EnergyConsumptionDetected)[0].data
+    closed = of_type(events, EnergyConsumptionClosed)[0].data
+    assert detected.id == closed.id
+    assert detected.match.appliance_id == first and closed.match.appliance_id == final
+    assert detected.appliance_owner_resident_id == closed.appliance_owner_resident_id == owner
+    assert calls == [(first, detected.started_at), (final, detected.started_at)]
+
+
+@pytest.mark.parametrize(
+    "ownership",
+    [
+        None,
+        ApplianceOwnership(scope=ApplianceScope.common),
+        ApplianceOwnership(scope=ApplianceScope.shared, owner_resident_id=fx.BRUNO),
+    ],
+)
+def test_only_personal_ownership_supplies_presence_hint(ownership):
+    tracker = StepTracker(
+        household_id=fx.HOUSEHOLD,
+        classify=lambda _: ApplianceMatch(appliance_id=fx.HEATER, confidence=1),
+        ownership_at=lambda appliance_id, at: ownership,
+    )
+    events = feed(tracker, [(0, 0), (30, 2000), (210, 0)])
+    events += tracker.tick(fx.T0 + timedelta(seconds=811))
+    consumptions = [e.data for e in events if hasattr(e.data, "match")]
+    assert len(consumptions) == 2
+    assert all(c.match.appliance_id == fx.HEATER for c in consumptions)
+    assert all(c.appliance_owner_resident_id is None for c in consumptions)
