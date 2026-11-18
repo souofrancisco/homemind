@@ -34,6 +34,7 @@ from pydantic import Field, model_validator
 
 from homemind.contracts.common import (
     Cents,
+    Confidence,
     ContractModel,
     LongText,
     Origin,
@@ -402,6 +403,8 @@ class ConfirmationRequest(ContractModel):
 
     consumption_event_id: UUID
     appliance_name: ShortText | None = None  # só para o texto; nunca um id externo
+    likely_owner_resident_id: UUID | None = None
+    match_confidence: Confidence | None = None
     estimated_cost_cents: Cents | None = None  # None: custo não estimável
     options: Annotated[list[ConfirmationChoice], Field(min_length=1)] = [
         ConfirmationChoice.mine,
@@ -418,6 +421,13 @@ class ConfirmationRequest(ContractModel):
             raise ValueError("opções repetidas")
         if len(set(self.eligible_resident_ids)) != len(self.eligible_resident_ids):
             raise ValueError("elegíveis repetidos")
+        if (self.likely_owner_resident_id is None) != (self.match_confidence is None):
+            raise ValueError("dono provável e confiança têm de estar presentes em conjunto")
+        if (
+            self.likely_owner_resident_id is not None
+            and self.likely_owner_resident_id not in self.eligible_resident_ids
+        ):
+            raise ValueError("dono provável tem de ser um inquilino elegível")
         return self
 
 

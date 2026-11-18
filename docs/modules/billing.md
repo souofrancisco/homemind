@@ -63,6 +63,11 @@ atual à API da casa.
 | **B — perguntar** (recomendada pelo PDF) | Cria pedido na aplicação. «É minha»: basta quem assume. Atribuir a outro: pelo menos metade dos moradores aceita (fecha antes se o próprio assumir). Inconclusivo ao fim de 24 h → por igual (D-32) | P0 |
 | **C — por presença** | Divide pelos que estavam em casa (usa presença de P2) | P1 |
 
+**APP-03 #96 / P-18 (PROPOSTA):** o pedido pode incluir uma dica de dono provável só quando o
+aparelho tem vencedor identificado com confiança ≥ 0,8 e `appliance_owner_resident_id` (dono
+declarado em `Appliance.ownership`) é um inquilino elegível. A dica não usa presença, horários,
+histórico nem altera a votação D-32. Sem todas estas condições, os campos da dica ficam `None`.
+
 Só se pergunta quando o custo estimado **do consumo** (utilização completa do aparelho) é ≥ `ask_threshold_cents` (omissão 0,50 €, configurável por casa em `HouseholdPolicy`); abaixo, sem custo estimável ou com a regra A, vai direto para a conta comum. A pergunta pode sair com o consumo ainda a decorrer, logo que passa o limiar (D-32).
 
 ## Cálculo da fatura
