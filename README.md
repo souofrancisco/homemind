@@ -7,7 +7,7 @@
 Serviço para **casas partilhadas**: mede o consumo elétrico com o kit Connected Home (via MCP), reconhece aparelhos pela assinatura, atribui cada consumo a um morador ou à conta comum — **perguntando na aplicação** quando há dúvida —, divide a fatura de forma justa e explicada e avisa antes de a conta chegar ao limite de cada um. Três pilares: **Casa Justa**, **Casa Atenta**, **Casa Segura**. Visão completa em [docs/product/vision.md](docs/product/vision.md).
 
 > ### Estado do repositório — ler primeiro
-> O produto passou de **ObjectOS** (modos da casa por gesto) para **Conta Certa**. A reorganização feita (BASE-05) é **só documental**: o código na `main` é **ainda o do ObjectOS** e `make check` está verde. O que está descrito como «planeado» **não existe**. Fonte de produto: [v5.1](docs/references/Conta_Certa_Documento_Completo_v5.1.md); decisões: [docs/decisions.md](docs/decisions.md); roadmap: issue [#129](https://github.com/souofrancisco/homemind/issues/129) e GitHub Project «Conta Certa — Desenvolvimento» (**pendente de criação**, D-22). **MVP:** Justa + Atenta, com visão na porta, assinaturas, presença/atribuição/orçamentos e assistente na app; segurança AWAY e aparelhos esquecidos ficam para a fase 2.
+> O produto passou de **ObjectOS** para **Conta Certa**. Na `main` estão **implementados e ligados ao runtime** (`/healthz` + routers descobertos em `features/`): casas e memberships, catálogo de aparelhos, degraus/sessões e classificador (consumidor `energy.steps`), atribuidor com votação D-32, notificações, faturas com fecho e recibos, orçamento 50/80/100 %, presença e segurança (SIMULADAS). A app React usa estes endpoints por papel. Código ObjectOS (motor de regras, gestos, páginas antigas) **ainda existe** mas já não faz parte da navegação; remoção pendente (BASE-04 #74, depende de P2/P3). **PLANEADO / não existe:** interface do assistente, política de atribuição versionada (#87), onboarding avançado, escritas físicas além da lâmpada/tomada. Dados da demo são **SIMULADOS**. Fonte de produto: [v5.1](docs/references/Conta_Certa_Documento_Completo_v5.1.md); decisões: [docs/decisions.md](docs/decisions.md); roadmap: issue [#129](https://github.com/souofrancisco/homemind/issues/129).
 
 **Interface principal (planeada):** a aplicação React/Mantine/Capacitor, para moradores e senhorios, com centro de notificações, confirmações interativas e assistente de IA. **Não há Telegram nem bots** ([decisão D-01](docs/decisions.md)).
 
@@ -17,13 +17,13 @@ Serviço para **casas partilhadas**: mede o consumo elétrico com o kit Connecte
 
 | | Implementado (código na `main`) | Planeado (Conta Certa) |
 |---|---|---|
-| Produto | ObjectOS: caneca/livro/comando ativam modos; espera → suspensão → restauro | Medição, atribuição, fatura, orçamentos, notificações |
-| Backend | FastAPI, Pydantic v2, features `auth`, `engine`, `gestos`, `health`, `mcp`, `video`, `visao` | + `households`, `devices`, `energy`, `presence`, `billing`, `budgets`, `alerts`, `notifications`, `agent`, `automations` |
-| Persistência | `rules.json`, `events.jsonl` | SQLite + barramento de eventos |
+| Produto | Conta Certa: consumo → atribuição → fatura → recibo, por papel (morador/senhorio/operador) | Política versionada, assistente com UI, fase 2 de segurança |
+| Backend | FastAPI, Pydantic v2, SQLite + barramento; features `households`, `appliances`, `energy`, `billing`, `notifications`, `presence`, `safety`, `agent`, `integration` + legado `engine`, `gestos`, `visao`, `video`, `mcp` | Remoção do legado (BASE-04) |
+| Persistência | SQLite (`domain_event`, domínio por feature) | — |
 | Casa | `FakeHome` (SIMULADO) ou `McpHome` (MCP Altice real) | Mantém-se; leituras com proveniência |
-| Visão | YOLO11 objetos + pose + ByteTrack (extra opcional) | Pessoa + linha na porta, só eventos |
-| Frontend | React 19, Vite, TS, Mantine, Capacitor; páginas Início, Câmara, Eventos, Automações, Perfil | Páginas por papel: consumo, notificações, faturas e recibos, orçamento, casa, assistente |
-| Login | Authentik (OIDC, PKCE) | Mantém-se + papéis |
+| Visão | YOLO + linha na porta, só eventos (PRES-02) | — |
+| Frontend | Shell por papel: Início (dashboard), Casa, Consumo, Aparelhos, Contas e recibos, Notificações (voto), Orçamento, Diagnóstico, Definições | Assistente (UI), edição de aparelhos |
+| Login | Authentik (OIDC, PKCE); `sub` → membership | Utilizadores demo no Authentik (ver demo-offline.md) |
 
 ## Arquitetura
 
@@ -53,7 +53,6 @@ Alvo (Conta Certa), **planeado**: ver [docs/architecture/overview.md](docs/archi
 | Frontend | React 19, Vite, TypeScript, Mantine, Capacitor (Android) |
 | Login | Authentik (OIDC, Authorization Code + PKCE) |
 | Infra | Docker Compose, Makefile, GitHub Actions |
-| Planeado | SQLite para o domínio novo |
 
 ## Requisitos
 

@@ -2,7 +2,7 @@
 
 O senhorio copia a fatura real, vê a pré-visualização (preço médio derivado, dias) e só depois
 grava; gravar emite `billing.bill_created`. Inquilinos só veem faturas finalizadas; o
-operador não vê faturas. Repartição e fecho: BILL-02/04.
+operador não vê faturas. Repartição e fecho: BILL-02/04; explicação do recibo: BILL-05.
 """
 
 import asyncio
@@ -26,6 +26,7 @@ from homemind.contracts.billing import (
     BudgetIn,
     BudgetStatus,
     LandlordBillView,
+    ReceiptExplanation,
 )
 from homemind.contracts.common import new_id, stable_id
 from homemind.contracts.domain_events import BillingBillCreated, BillRef
@@ -41,7 +42,15 @@ from homemind.core.access import (
 )
 from homemind.core.db import Database
 from homemind.core.events import EventBus, append_event
-from homemind.features.billing import attributor, bills, budgets, closing
+from homemind.features.billing import (
+    attributor,
+    bills,
+    budgets,
+    closing,
+    comfort,
+    explanation,
+    peaks,
+)
 
 log = logging.getLogger(__name__)
 EXPIRY_INTERVAL_S = 60.0
@@ -68,6 +77,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     clock = app.dependency_overrides.get(get_clock, get_clock)()
     app.state.bus.subscribe(attributor.CONSUMER, attributor.handle, attributor.EVENT_TYPES)
     app.state.bus.subscribe(budgets.CONSUMER, budgets.handle, budgets.EVENT_TYPES)
+    app.state.bus.subscribe(peaks.CONSUMER, peaks.handle, peaks.EVENT_TYPES)
+    app.state.bus.subscribe(comfort.CONSUMER, comfort.handle, comfort.EVENT_TYPES)
 
     async def expiry_loop() -> None:
         while True:
@@ -275,6 +286,30 @@ async def my_receipt(bill_id: UUID, access: ReceiptAccess, db: DbDep) -> BillAll
         if not mine:
             raise LookupError
         return mine[0]
+
+    try:
+        return await db.run(read)
+    except LookupError:
+        raise _not_found() from None
+
+
+@router.get("/households/{household_id}/bills/{bill_id}/receipt/explanation")
+async def my_receipt_explanation(
+    bill_id: UUID, access: ReceiptAccess, db: DbDep
+) -> ReceiptExplanation:
+    """Inquilino: «porque pago isto?» (BILL-05). Os meus consumos da medição à parcela; a conta
+    comum agregada (sem horas nem pessoas); o resíduo. Reconcilia ao cêntimo com o recibo."""
+    if access.grant is not Grant.own:
+        raise HTTPException(403, {"code": "forbidden_role", "message": "Só para inquilinos"})
+
+    def read(conn):
+        row = _closed_bill(conn, access, bill_id)
+        mine = [
+            a for a in closing.allocations_of(conn, bill_id) if a.resident_id == access.resident_id
+        ]
+        if not mine:
+            raise LookupError
+        return explanation.explain(conn, row, mine[0])
 
     try:
         return await db.run(read)

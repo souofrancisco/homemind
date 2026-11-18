@@ -34,7 +34,7 @@ def _list(client, sub, **params):
     return r.json()
 
 
-def test_o_lifespan_subscreve_os_consumidores_e_nao_alert_raised(client):
+def test_o_lifespan_subscreve_os_consumidores(client):
     subs = set(client.app.state.bus._subs)
     assert {c[0] for c in CONSUMERS} <= subs
     assert {
@@ -44,8 +44,9 @@ def test_o_lifespan_subscreve_os_consumidores_e_nao_alert_raised(client):
         "notifications.attribution_changed",
         "notifications.allocation_published",
         "notifications.budget_threshold",  # ALERT-01: BudgetThreshold já traz dono e limite
+        "notifications.peak_alert",  # ALERT-03: AlertRaisedData já traz potência e início
+        "notifications.cold_room",  # ALERT-06: aviso privado de quarto frio
     } <= subs
-    assert not any("alert_raised" in name or "alerts" in name for name in subs)
 
 
 def test_presence_check_do_evento_ate_a_resposta_na_outbox(client):

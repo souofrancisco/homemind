@@ -32,7 +32,9 @@ from homemind.contracts.safety import SafetyAlert, SafetyAlertKind, SafetyAlertS
 from homemind.features.notifications.compose import (
     compose_attribution_info,
     compose_budget_alert,
+    compose_cold_room,
     compose_confirmation,
+    compose_peak_alert,
     compose_presence_check,
     compose_receipt_info,
     compose_smoke_alert,
@@ -143,6 +145,69 @@ class NotificationService:
             spent_cents=spent_cents,
             limit_cents=limit_cents,
             forecast_cents=forecast_cents,
+            origin=provenance.origin,
+            correlation_id=correlation_id,
+            source_event_id=source_event_id,
+            now=now,
+        )
+        return self._create(n, provenance, dedupe=False)
+
+    def on_peak_alert(
+        self,
+        alert: de.AlertRaisedData,
+        *,
+        source_event_id: UUID,
+        ts: datetime,
+        household_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
+    ) -> Outcome:
+        """`alerts.alert_raised` com `kind=peak` -> aviso da casa (ALERT-03).
+
+        Sem potência ou início do episódio não se escreve o aviso (não se inventam números).
+        A idempotência vem do id derivado do evento (o detetor já avisa uma vez por incidente).
+        """
+        if alert.kind is not de.AlertKind.peak or alert.power_w is None or alert.since is None:
+            return Outcome(None)
+        room = self._directory.room(household_id, alert.room_id) if alert.room_id else None
+        name = (
+            self._directory.appliance_name(household_id, alert.appliance_id)
+            if alert.appliance_id and room
+            else None
+        )
+        n = compose_peak_alert(
+            source_event_id=source_event_id,
+            household_id=household_id,
+            room=room,
+            appliance_name=name,
+            power_w=alert.power_w,
+            minutes=int((ts - alert.since).total_seconds() // 60),
+            origin=provenance.origin,
+            correlation_id=correlation_id,
+            now=self._clock(),
+        )
+        return self._create(n, provenance, dedupe=False)
+
+    def on_cold_room(
+        self,
+        d: de.ColdRoomData,
+        *,
+        source_event_id: UUID,
+        household_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
+    ) -> Outcome:
+        """`alerts.cold_room` (ALERT-06) -> aviso privado ao morador do quarto (nunca senhorio)."""
+        now = self._clock()
+        if self._directory.role_in(household_id, d.resident_id, now) is not MembershipRole.tenant:
+            return Outcome(None)
+        n = compose_cold_room(
+            household_id=household_id,
+            resident_id=d.resident_id,
+            cold_nights=d.cold_nights,
+            window_nights=d.window_nights,
+            threshold_c=d.threshold_c,
+            coldest_night_c=d.coldest_night_c,
             origin=provenance.origin,
             correlation_id=correlation_id,
             source_event_id=source_event_id,

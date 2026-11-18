@@ -124,11 +124,14 @@ async def attach_kit_collectors(
     settings: Settings,
     db: Database,
     bus: EventBus,
-    catalog: ApplianceCatalog,
+    catalog: ApplianceCatalog | None,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> None:
     """Só ativa na casa configurada; a descoberta/registo ocorre nas próximas leituras."""
     if not isinstance(home, McpHome) or settings.home_backend != "mcp":
+        return
+    if catalog is None:
+        log.warning("Collectors do kit desligados: catálogo de aparelhos indisponível")
         return
     household_id = settings.energy_household_id
     if household_id is None:

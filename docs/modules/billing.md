@@ -80,6 +80,21 @@ valor_i          = individual_kWh_i × preço + base ÷ N
 
 O recibo mostra **cada linha** com a proveniência dos kWh (`measured` / `estimated` / `inferred` / `simulated`), a percentagem atribuída a alguém e um botão de contestação. Os números do recibo vêm de código; o LLM só os explica ([agent.md](agent.md)).
 
+### Explicação do recibo (BILL-05)
+
+**IMPLEMENTADO (backend):** `GET …/bills/{bill_id}/receipt/explanation` → `ReceiptExplanation`, só para o inquilino (o seu recibo). No fecho (`closing.finalize`) guarda-se em `billing_allocation_item` uma fotografia de cada consumo do período e da decisão ativa (ou da falta dela): a explicação não muda se o consumo ou a decisão mudarem depois; uma correção da fatura é uma nova revisão com a sua própria evidência.
+
+- **Os meus consumos** (`own`): um por consumo, com a linha temporal medição → identificação (aparelho e confiança, ou «não identificado»/ambíguo) → localização → decisão (regra do quarto, «É minha», votação D-32, prazo expirado) → correções → parcela. Os textos são gerados em código a partir dos dados.
+- **Conta comum** (`common`): agregada por aparelho, localização e decisão; **sem horas nem pessoas**.
+- **Resíduo**: kWh da fatura, kWh atribuídos (casa inteira, agregado), consumos sem decisão no fecho.
+- Quem decidiu aparece como `me` / `housemates` / `system`, **nunca** com o id de outro morador. O senhorio e o operador recebem `403` (o senhorio só tem o resumo por quarto).
+- **Reconciliação ao cêntimo:** os cêntimos de cada linha `room`/`common` do recibo repartem-se pelos seus consumos (maior resto pelos Wh), logo `fixa + resíduo + Σ own + Σ common = amount_cents`. Se a evidência não bate certo com o recibo (fatura fechada antes desta versão), `evidence_available=false` e as listas vêm vazias: nunca se inventa uma repartição.
+- Inclui `equal_split_cents` (o que pagaria com a divisão igual) para responder a «porque é que pago mais?».
+
+**IMPLEMENTADO (app):** no recibo do morador (página de faturas da APP-06), «Porque pago isto?» abre a explicação, que só é pedida ao servidor nesse momento: comparação com a divisão igual, os meus consumos com a linha temporal e a proveniência, a conta comum por aparelho e o não atribuído (`components/billing/ReceiptExplanationView.tsx`; a app não faz contas).
+
+**PLANEADO:** política versionada por data (HOUSE-04: hoje mostra-se a regra da sala em vigor); contagem de votos por consumo; contestação (BILL-06).
+
 ### Exemplos de aceitação (valores do PDF; fatura de 120 € = 24 € fixos + 600 kWh × 0,16 €)
 
 **Fixture A — modelo do PDF §7.1** (individual = quarto + sala + máquina):
@@ -113,7 +128,7 @@ O sumário executivo cita 21,20 €; o corpo do documento (§6.2 e §7.1) cita 4
 
 | Alerta | Gatilho (PDF §6.9) | Prio |
 |---|---|---|
-| Pico em zona comum | > 1,5 kW durante > 30 min, ou conta da sala do dia > 2× a média | P0 (ALERT-03 #102) |
+| Pico em zona comum | > 1,5 kW durante > 30 min (IMPLEMENTADO); conta da sala do dia > 2× a média (PLANEADO) | P0 (ALERT-03 #102) |
 | Aparelho esquecido | Aparelho grande ligado com o dono fora há > 1 h (precisa de presença) | P2 |
 | Não bate certo | Assinatura do aparelho de um morador fora do quarto dele; consumo noturno anormal | P2 |
 
@@ -134,13 +149,18 @@ Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `
 | Entrada da fatura (BILL-01): `BillIn` → pré-visualização → rascunho em `billing_bill` (migração `0100`), `billing.bill_created`, leitura por papel | IMPLEMENTADO (`features/billing/{bills,router}.py`) |
 | Fecho do mês (BILL-04, `features/billing/closing.py`, migração `0102`): finalizar (parcelas imutáveis, Σ = total ao cêntimo, `409` ao repetir), correções por revisão (a anterior fica `superseded`), resumo do senhorio por quarto e recibo do inquilino | IMPLEMENTADO |
 | Orçamento pessoal e avisos 50/80/100 % (ALERT-01, `features/billing/budgets.py`, migração `0103`): gasto com todos os custos (D-31), desconhecido sem preço, um aviso por limiar e ciclo (ao saltar vários avisa só o mais alto), reset explícito ao redefinir; reavaliado em cada atribuição, fecho de fatura e a cada 60 s. `alerts.threshold_crossed` → aviso pessoal (consumidor `notifications.budget_threshold`) | IMPLEMENTADO |
-| Plafond por quarto (BILL-03), previsão (ALERT-02), picos (ALERT-03), contestação (BILL-06) | PLANEADO |
+| Picos nas zonas comuns (ALERT-03, `features/billing/peaks.py`, consumidor `billing.peaks`, migração `0105`): por tomada, a partir de `energy.reading_recorded`; > 1,5 kW durante > 30 min (leituras utilizáveis; lacuna > 10 min recomeça a contagem) → `alerts.alert_raised` (`kind=peak`, potência, início do episódio). Um aviso por incidente (só rearma depois de > 30 min abaixo do limite). Tomada de zona comum → `room_id`; sem divisão ou não registada → «pico de consumo por identificar»; quarto e `main_meter` nunca avisam. Aparelho só com um único consumo a decorrer identificado com confiança ≥ 0,8 e de âmbito `common`. Aviso da casa pelo consumidor `notifications.peak_alert` | IMPLEMENTADO |
+| Pico por baseline (conta da sala do dia > 2× a média) | PLANEADO |
+| Lâmpada do orçamento (ALERT-06, `contracts.billing.budget_light`): `BudgetStatus.light` = verde < 80 %, âmbar (`amarelo` de `CORES`) a 80 %, vermelho a 100 %, com `label` em texto (não depende só da cor); sem orçamento ou gasto desconhecido → `null`, nunca verde por omissão. Só para a lâmpada do **próprio quarto** (nunca a de uma zona comum: o orçamento é pessoal) | IMPLEMENTADO (cor na API/app) |
+| Escrita da cor na lâmpada real (MCP `color_rgb`) | Não é automática: só via ação proposta com capability verificada, grant (MCP-04) e autorização humana; efeito físico não se afirma só com ACK | PLANEADO |
+| Quartos frios (ALERT-06, `features/billing/comfort.py`, migração `0120`): consumidor `billing.cold_rooms` de `sensor.reading_recorded` (só temperatura `ok` com quarto `bedroom`; `unknown`/`stale`/sem quarto/sala ignorados). Guarda só o agregado da noite (22:00–08:00, fuso da casa); noite fria = média < 18 °C; ≥ 3 noites frias nas últimas 7 completas → `alerts.cold_room` para o inquilino do quarto, uma vez por janela. Consumidor P3 `notifications.cold_room` → `comfort_alert` pessoal (nunca senhorio), sem valores de plafond (BILL-03 ainda por fazer) | IMPLEMENTADO |
+| Plafond por quarto (BILL-03), previsão (ALERT-02), contestação (BILL-06) | PLANEADO |
 
 Validação da fatura (PROPOSTA de limiares, ajustáveis em `bills.py`): preço médio 0,01–1,00 €/kWh (apanha erros de unidades), período ≤ 62 dias e já terminado, tarifa declarada opcional que tem de fechar com `total − fixa` (folga de 1 %, mínimo 5 cêntimos). Foto/PDF lido por LLM fica para depois e passará pela mesma pré-visualização.
 
 ## Ficheiros novos previstos
 
-`features/billing/{attribution,allocation,receipt,router,tests}`, `features/budgets/`, `features/alerts/`, `contracts/billing.py`.
+`features/billing/{attribution,attributor,allocation,bills,closing,budgets,explanation,router,tests}`, `features/budgets/`, `features/alerts/`, `contracts/billing.py`.
 
 ## Dependências
 

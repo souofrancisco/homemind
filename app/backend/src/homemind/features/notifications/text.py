@@ -10,3 +10,8 @@ def format_eur(cents: int) -> str:
     euros, rest = divmod(abs(cents), 100)
     grouped = f"{euros:,}".replace(",", " ")
     return f"{sign}{grouped},{rest:02d} €"
+
+
+def format_kw(watts: float) -> str:
+    """Potência em kW com uma casa decimal, em PT-PT: `2040.0` -> `2,0 kW`."""
+    return f"{watts / 1000:.1f} kW".replace(".", ",")

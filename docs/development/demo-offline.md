@@ -62,7 +62,7 @@ transação. Nenhum outro ficheiro ou base da aplicação é removido.
   ou o aquecedor foram identificados. O consumidor P1 real (`StepTracker` +
   `make_step_consumer`) transforma estas amostras em degraus e sessões, com
   match vazio (`unknown`), localização desconhecida e sem custo estimado.
-  ENERGY-03/classificação NILM continua por implementar.
+  ENERGY-02/03 (degraus e classificador) estão integrados e subscritos no runtime; sem assinatura no catálogo o resultado fica `unknown`.
 - Leituras tipadas em W incluem **0 W válido** e ausência (`power_w=None`),
   que são estados distintos. A integração de teste executa o consumidor P1
   sobre as leituras e entrega os eventos de consumo ao atribuidor P4 real.

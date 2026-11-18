@@ -22,7 +22,7 @@ from homemind.contracts.notification import (
     RefType,
 )
 from homemind.contracts.presence import PRESENCE_CONFIRMATION_ACTIONS, UncertainReason
-from homemind.features.notifications.text import format_eur
+from homemind.features.notifications.text import format_eur, format_kw
 
 # Espaço de nomes dos ids determinísticos da P3 (idempotência: mesmo evento, mesmo id).
 _NAMESPACE_P3 = UUID("8c3f5b7e-1d24-4e6a-9b0c-5a1e7d3c2f40")
@@ -136,6 +136,41 @@ def compose_budget_alert(
         body=body,
         origin=origin,
         ref=NotificationRef(type=RefType.budget, id=budget_id),
+        correlation_id=correlation_id,
+        created_at=now,
+    )
+
+
+def compose_cold_room(
+    *,
+    household_id: UUID,
+    resident_id: UUID,
+    cold_nights: int,
+    window_nights: int,
+    threshold_c: float,
+    coldest_night_c: float,
+    origin: Origin,
+    correlation_id: UUID,
+    source_event_id: UUID,
+    now: datetime,
+) -> Notification:
+    """Quarto frio (ALERT-06): pessoal, privado e sem ações. Não promete valores de plafond."""
+    t, c = f"{threshold_c:.0f}".replace(".", ","), f"{coldest_night_c:.1f}".replace(".", ",")
+    body = (
+        f"O teu quarto esteve abaixo de {t} °C em {cold_nights} das últimas {window_nights}"
+        f" noites (a mais fria em média: {c} °C). Não deixes de aquecer por causa da conta;"
+        " se precisares, fala com a casa sobre o plafond solidário."
+    )
+    return Notification(
+        id=notification_id_for(source_event_id, NotificationKind.comfort_alert),
+        household_id=household_id,
+        scope=NotificationScope.personal,
+        recipient_resident_id=resident_id,
+        kind=NotificationKind.comfort_alert,
+        severity=NotificationSeverity.info,
+        title="O teu quarto tem estado frio",
+        body=_tag(body, origin),
+        origin=origin,
         correlation_id=correlation_id,
         created_at=now,
     )
@@ -265,6 +300,47 @@ def compose_smoke_alert(
         body=_tag(body, origin),
         origin=origin,
         ref=NotificationRef(type=RefType.safety_alert, id=alert_id),
+        correlation_id=correlation_id,
+        created_at=now,
+    )
+
+
+def compose_peak_alert(
+    *,
+    source_event_id: UUID,
+    household_id: UUID,
+    room: tuple[str, RoomKind] | None,
+    appliance_name: str | None,
+    power_w: float,
+    minutes: int,
+    origin: Origin,
+    correlation_id: UUID,
+    now: datetime,
+) -> Notification:
+    """Pico numa zona comum (ALERT-03): da casa, aviso, sem botões. Sem zona comum conhecida
+    diz «por identificar» e não sugere aparelho nem divisão."""
+    place = _place(room)
+    if place:
+        title = f"Pico de consumo na zona «{place}»"
+        body = f"A zona «{place}» está a gastar {format_kw(power_w)} há {minutes} min."
+        if appliance_name:
+            body += f" Provavelmente: {appliance_name}."
+    else:
+        title = "Pico de consumo por identificar"
+        body = (
+            f"Uma tomada está a gastar {format_kw(power_w)} há {minutes} min. "
+            "Ainda não sabemos em que zona está."
+        )
+    return Notification(
+        id=notification_id_for(source_event_id, NotificationKind.peak_alert),
+        household_id=household_id,
+        scope=NotificationScope.household,
+        kind=NotificationKind.peak_alert,
+        severity=NotificationSeverity.warning,
+        title=title,
+        body=_tag(body, origin),
+        origin=origin,
+        ref=None,
         correlation_id=correlation_id,
         created_at=now,
     )

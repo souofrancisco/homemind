@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import ValidationError
 
 from homemind.contracts.devices import DeviceView
@@ -30,7 +32,15 @@ from homemind.features.appliances.schemas import (
     MeterAssignmentView,
 )
 
-router = APIRouter(prefix="/api/households/{household_id}", tags=["appliances"])
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Outras features (energy) leem o catálogo daqui, sem importar esta feature.
+    app.state.appliance_catalog = repo.SqliteApplianceCatalog()
+    yield
+
+
+router = APIRouter(prefix="/api/households/{household_id}", tags=["appliances"], lifespan=lifespan)
 Read = Annotated[HouseholdAccess, Depends(require_access(Resource.appliance))]
 Write = Annotated[HouseholdAccess, Depends(require_access(Resource.appliance, Operation.write))]
 DeviceRead = Annotated[HouseholdAccess, Depends(require_access(Resource.device))]

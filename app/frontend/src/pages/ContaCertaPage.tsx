@@ -9,20 +9,26 @@ import type { AppRole, SectionId } from "../app/routes";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { useAuth } from "../app/providers/AuthProvider";
 import BillsContent from "./BillsPage";
+import Dashboard from "./DashboardPage";
+import AppliancesContent from "./AppliancesPage";
+import EnergyContent from "./EnergyPage";
+import BudgetContent from "./BudgetPage";
+import NotificationsContent from "./NotificationsPage";
 import { getCameraStatus, listMcpTools, type CameraStatus, type McpTool } from "../services/diagnostics/api";
-import { listNotifications, type NotificationView } from "../services/notifications/api";
 
 type Placeholder = { title: string; detail: string; dependency: string; badge?: string };
 const placeholders: Record<"consumption" | "appliances" | "notifications" | "assistant" | "diagnostics", Placeholder> = {
   consumption: {
-    title: "O consumo ainda não está disponível",
-    detail: "O collector MCP já produz leituras internamente, mas ainda não existe uma API de produto para consultar medições ou resumos nesta página.",
-    dependency: "Faltam os motores ENERGY e os endpoints de leitura. Não apresentamos métricas inventadas.",
+    title: "Sem consumo para mostrar neste papel",
+    detail: "Leituras e sessões são dados de hábitos e só estão disponíveis ao morador. O senhorio consulta totais mensais por quarto em «Contas e recibos».",
+    dependency: "Isolamento de privacidade (PRIV-01).",
+    badge: "Restrito",
   },
   appliances: {
-    title: "O catálogo de aparelhos ainda não está disponível",
-    detail: "O contrato distingue aparelhos consumidores de dispositivos físicos e medidores. Não existe ainda uma API de catálogo integrada.",
-    dependency: "HOUSE-03 (#86, PR #142) continua aberto. Não inferimos propriedade nem quem paga.",
+    title: "Catálogo restrito ao morador",
+    detail: "O operador vê apenas diagnóstico técnico de dispositivos; aparelhos e proprietários são dados do morador.",
+    dependency: "Isolamento de privacidade (PRIV-01).",
+    badge: "Restrito",
   },
   notifications: {
     title: "Não existem notificações visíveis",
@@ -64,6 +70,7 @@ const screenLabels: Record<SectionId, string> = {
   bills: "Contas e recibos",
   notifications: "Notificações",
   assistant: "Assistente",
+  budget: "Orçamento",
   diagnostics: "Diagnóstico",
   settings: "Definições",
 };
@@ -96,67 +103,6 @@ function useHouseholdData<T>(
     status: householdId ? current?.status ?? "loading" : "error",
     retry: () => setRetry((value) => value + 1),
   } as const;
-}
-
-const dateTimeFormat = new Intl.DateTimeFormat("pt-PT", { dateStyle: "medium", timeStyle: "short" });
-const notificationStatusLabels: Record<NotificationView["status"], string> = {
-  unread: "Por ler",
-  read: "Lida",
-  actioned: "Concluída",
-  expired: "Expirada",
-  dismissed: "Dispensada",
-};
-
-const verdictLabels: Record<NonNullable<NotificationView["voting"]>["verdict"], string> = {
-  pending: "Votação em curso",
-  self_claimed: "Consumo assumido",
-  accusation_accepted: "Atribuição aceite por votação",
-  everyone: "Atribuído à casa",
-};
-
-function NotificationsContent() {
-  const session = useHouseholdSession();
-  const householdId = session.membership?.household_id;
-  const result = useHouseholdData<NotificationView[]>(householdId, listNotifications);
-
-  if (result.status === "loading") return <Group role="status"><Loader size="sm" /><Text>A carregar notificações…</Text></Group>;
-  if (result.status === "error") return (
-    <Alert color="red" icon={<IconAlertCircle />} title="Não foi possível consultar as notificações">
-      <Stack gap="sm"><Text size="sm">A API não devolveu dados. Tenta novamente.</Text>
-        <Button w="fit-content" color="red" variant="light" onClick={result.retry}>Tentar novamente</Button>
-      </Stack>
-    </Alert>
-  );
-  if (!result.data?.length) return <NoData value={{
-    title: "Não existem notificações visíveis",
-    detail: "O backend filtra a lista pela tua membership, papel e destinatário.",
-    dependency: "O centro de leitura está ligado; votar, responder e gerir preferências ficam para APP-02/03.",
-    badge: "Sem resultados",
-  }} />;
-
-  return <Stack gap="md">
-    {result.data.map((notification) => (
-      <Card key={notification.id} withBorder radius="lg" p="lg">
-        <Stack gap="sm">
-          <Group justify="space-between" align="flex-start" wrap="wrap">
-            <Title order={3} size="h4">{notification.title}</Title>
-            <Group gap="xs">
-              <Badge variant="light">{notificationStatusLabels[notification.status]}</Badge>
-              {notification.origin === "simulated" && <Badge color="yellow" variant="light">SIMULADO</Badge>}
-            </Group>
-          </Group>
-          <Text>{notification.body}</Text>
-          {notification.voting && (
-            <Alert color={notification.voting.verdict === "pending" ? "blue" : "gray"} variant="light" title={verdictLabels[notification.voting.verdict]}>
-              {notification.voting.votes} votos registados; o backend calcula o desfecho segundo a regra D-32. Esta vista não recolhe votos.
-            </Alert>
-          )}
-          <Text size="sm" c="dimmed">{notification.scope === "personal" ? "Pessoal" : "Da casa"} · {dateTimeFormat.format(new Date(notification.created_at))}</Text>
-        </Stack>
-      </Card>
-    ))}
-    <Text size="sm" c="dimmed">Lista de leitura. Esta página não regista votos nem expõe a identidade de quem respondeu.</Text>
-  </Stack>;
 }
 
 function DiagnosticCard<T>({
@@ -336,6 +282,12 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
   const session = useHouseholdSession();
   const role = session.membership?.role;
   if (!role) return null;
+  if (section === "home" && role === "tenant") return (
+    <Stack gap="xl">
+      <PageHeading title="A tua energia, com contas claras" description="Tudo o que o servidor sabe agora; o que falta aparece como «Sem dados»." />
+      <Dashboard />
+    </Stack>
+  );
   if (section === "home") return <HomeContent role={role} />;
   if (section === "house") return (
     <Stack gap="xl">
@@ -349,6 +301,24 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
         ? "Faturas registadas e estado do processamento. Os rascunhos são visíveis apenas ao senhorio."
         : "Faturas finalizadas que o backend disponibiliza à tua membership."} />
       <BillsContent />
+    </Stack>
+  );
+  if (section === "consumption" && role === "tenant") return (
+    <Stack gap="xl">
+      <PageHeading title={screenLabels.consumption} description="Leituras por tomada e sessões detetadas, com origem e confiança." />
+      <EnergyContent />
+    </Stack>
+  );
+  if (section === "appliances" && role === "tenant") return (
+    <Stack gap="xl">
+      <PageHeading title={screenLabels.appliances} description="Catálogo dos aparelhos da casa (HOUSE-03)." />
+      <AppliancesContent />
+    </Stack>
+  );
+  if (section === "budget") return (
+    <Stack gap="xl">
+      <PageHeading title={screenLabels.budget} description="O teu objetivo do mês e quanto já gastaste. Cálculos feitos no servidor." />
+      <BudgetContent />
     </Stack>
   );
   if (section === "notifications") return (

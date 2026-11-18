@@ -28,3 +28,7 @@ class ResidentDirectory(Protocol):
     def room_tenants(self, household_id: UUID, room_id: UUID, at: datetime) -> list[UUID]:
         """Inquilinos ativos nessa divisão no instante `at` (vazio: quarto vago ou sala)."""
         ...
+
+    def appliance_name(self, household_id: UUID, appliance_id: UUID) -> str | None:
+        """Nome do aparelho registado (`None` se não existe nessa casa)."""
+        ...

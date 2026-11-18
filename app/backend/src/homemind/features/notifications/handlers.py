@@ -36,6 +36,12 @@ ALLOCATION_EVENT_TYPES = ("billing.allocation_published",)
 BUDGET_CONSUMER = "notifications.budget_threshold"
 BUDGET_EVENT_TYPES = ("alerts.threshold_crossed",)
 
+PEAK_CONSUMER = "notifications.peak_alert"
+PEAK_EVENT_TYPES = ("alerts.alert_raised",)
+
+COLD_ROOM_CONSUMER = "notifications.cold_room"
+COLD_ROOM_EVENT_TYPES = ("alerts.cold_room",)
+
 Handler = Callable[[sqlite3.Connection, StoredEvent], list[de.DomainEvent]]
 
 
@@ -151,8 +157,47 @@ def make_budget_handler(clock: Callable[[], datetime]) -> Handler:
     return handler
 
 
-# Todos os consumidores da feature: (nome, fábrica, tipos). `alerts.alert_raised` ainda NÃO está
-# aqui de propósito (AlertRaisedData ainda não chega para escrever o aviso).
+def make_peak_handler(clock: Callable[[], datetime]) -> Handler:
+    """`alerts.alert_raised` (`kind=peak`, ALERT-03) -> aviso de pico da casa. Os outros
+    `kind` (aparelho esquecido, «não bate certo») ainda não têm produtor nem texto: ignorados."""
+
+    def handler(conn: sqlite3.Connection, stored: StoredEvent) -> list[de.DomainEvent]:
+        ev = stored.event
+        if not isinstance(ev, de.AlertsAlertRaised):
+            return []
+        out = _service(conn, clock).on_peak_alert(
+            ev.data,
+            source_event_id=ev.id,
+            ts=ev.ts,
+            household_id=ev.household_id,
+            correlation_id=ev.correlation_id,
+            provenance=ev.provenance,
+        )
+        return list(out.events)
+
+    return handler
+
+
+def make_cold_room_handler(clock: Callable[[], datetime]) -> Handler:
+    """`alerts.cold_room` (ALERT-06) -> aviso privado ao morador do quarto frio."""
+
+    def handler(conn: sqlite3.Connection, stored: StoredEvent) -> list[de.DomainEvent]:
+        ev = stored.event
+        if not isinstance(ev, de.AlertsColdRoom):
+            return []
+        out = _service(conn, clock).on_cold_room(
+            ev.data,
+            source_event_id=ev.id,
+            household_id=ev.household_id,
+            correlation_id=ev.correlation_id,
+            provenance=ev.provenance,
+        )
+        return list(out.events)
+
+    return handler
+
+
+# Todos os consumidores da feature: (nome, fábrica, tipos).
 CONSUMERS: tuple[tuple[str, Callable[[Callable[[], datetime]], Handler], tuple[str, ...]], ...] = (
     (CONFIRMATION_CONSUMER, make_confirmation_handler, CONFIRMATION_EVENT_TYPES),
     (PRESENCE_CHECK_CONSUMER, make_presence_check_handler, PRESENCE_CHECK_EVENT_TYPES),
@@ -160,4 +205,6 @@ CONSUMERS: tuple[tuple[str, Callable[[Callable[[], datetime]], Handler], tuple[s
     (ATTRIBUTION_CONSUMER, make_attribution_handler, ATTRIBUTION_EVENT_TYPES),
     (ALLOCATION_CONSUMER, make_allocation_handler, ALLOCATION_EVENT_TYPES),
     (BUDGET_CONSUMER, make_budget_handler, BUDGET_EVENT_TYPES),
+    (PEAK_CONSUMER, make_peak_handler, PEAK_EVENT_TYPES),
+    (COLD_ROOM_CONSUMER, make_cold_room_handler, COLD_ROOM_EVENT_TYPES),
 )
