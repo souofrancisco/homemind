@@ -37,7 +37,9 @@ from homemind.core.config import get_settings
 from homemind.core.events import EventBus
 from homemind.features.presence.camera import CameraProbe, origin_of, resolve_kind
 from homemind.features.presence.door import ContadorPorta, Soleira, parse_retangulo
+from homemind.features.presence.export import PresenceExport, export_own
 from homemind.features.presence.fusion import FusionParams
+from homemind.features.presence.retention import compact, erase_unconsented
 from homemind.features.presence.runner import (
     ProcessadorPorta,
     ThreadPorta,
@@ -198,10 +200,50 @@ async def _door_lifespan(app: FastAPI):
         thread.parar()
 
 
+RETENTION_FIRST_RUN_S = 60.0
+RETENTION_INTERVAL_S = 600.0
+
+
+@asynccontextmanager
+async def _retention_lifespan(app: FastAPI):
+    """PRIV-03: elimina os dados de quem revogou o opt-in ou saiu da casa e compacta os eventos
+    brutos antigos em agregados diários. Uma falha só deixa o tipo no log; tenta-se no ciclo
+    seguinte. A eliminação corre sempre; a compactação desliga-se com
+    `PRESENCE_RETENTION_DAYS=0`."""
+    days = get_settings().presence_retention_days
+
+    async def loop() -> None:
+        await asyncio.sleep(RETENTION_FIRST_RUN_S)
+        while True:
+            now = app.state.presence.clock()
+            try:
+                erased = await asyncio.to_thread(erase_unconsented, app.state.db.run_sync, now)
+                if erased.residents:
+                    log.info("presença: dados de %d morador(es) eliminados", erased.residents)
+                done = await asyncio.to_thread(compact, app.state.db.run_sync, now, days)
+                if done:
+                    log.info(
+                        "presença: %d eventos brutos compactados em %d dia(s)",
+                        done.events,
+                        done.days,
+                    )
+            except Exception as e:  # nunca derruba o servidor; tenta no próximo ciclo
+                log.warning("presença: retenção falhou (%s)", type(e).__name__)
+            await asyncio.sleep(RETENTION_INTERVAL_S)
+
+    task = asyncio.create_task(loop(), name="presence-retention")
+    try:
+        yield
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(_wifi_lifespan(app))
+        await stack.enter_async_context(_retention_lifespan(app))
         await stack.enter_async_context(_door_lifespan(app))
         yield
 
@@ -231,6 +273,16 @@ def _http(e: DeviceError) -> HTTPException:
 async def get_presence(access: Read, service: Service) -> PersonPresence:
     """O meu estado. Ninguém mais o vê (nem colegas, nem senhorio, nem operador)."""
     return await service.own_state(access.household_id, access.resident_id)
+
+
+@router.get("/export")
+async def export_my_data(access: Read, service: Service) -> PresenceExport:
+    """Todos os MEUS dados de presença nesta casa (PRIV-03). Nunca os de colegas, nem o senhorio."""
+    now = service.clock()
+    days = get_settings().presence_retention_days
+    return await service.db.run(
+        lambda c: export_own(c, access.household_id, access.resident_id, now, days)
+    )
 
 
 @router.get("/occupancy")
