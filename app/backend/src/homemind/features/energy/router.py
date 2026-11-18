@@ -1,143 +1,162 @@
-"""House-scoped signature inspection and explicit pattern locks."""
+"""Runtime da energia: liga o `StepTracker` ao barramento e expõe a leitura ao morador.
+
+Não reimplementa deteção nem classificação (ENERGY-02/03): só subscreve o consumidor existente.
+O senhorio e o operador nunca recebem leituras nem sessões (RBAC: só o morador, âmbito casa).
+"""
 
 import json
 import sqlite3
-from datetime import UTC
-from typing import Annotated
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import ValidationError
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 
-from homemind.contracts.common import ContractModel, UtcDatetime, stable_id
-from homemind.contracts.devices import SignatureOrigin, SignaturePattern
+from homemind.contracts.common import ContractModel, Provenance
+from homemind.contracts.domain_events import StoredEvent
+from homemind.contracts.energy import ConsumptionEvent, EnergyReading
 from homemind.core.access import (
     ClockDep,
     DbDep,
     Grant,
     HouseholdAccess,
-    Operation,
     Resource,
     require_access,
 )
+from homemind.core.events import Handler
+from homemind.features.appliances.repo import SqliteApplianceCatalog
+from homemind.features.energy.consumer import make_step_consumer
+from homemind.features.energy.learning_consumer import INPUT_TYPES as LEARNING_TYPES
+from homemind.features.energy.learning_consumer import make_learning_consumer
+from homemind.features.energy.signatures import signatures_router
+from homemind.features.energy.steps import StepTracker
 
-router = APIRouter(prefix="/api/households/{household_id}", tags=["energy"])
-Read = Annotated[HouseholdAccess, Depends(require_access(Resource.appliance))]
-Write = Annotated[HouseholdAccess, Depends(require_access(Resource.appliance, Operation.write))]
-
-
-class SignaturePatch(ContractModel):
-    model_config = ContractModel.model_config | {"extra": "forbid"}
-    pattern: SignaturePattern
-
-
-class SignatureDiagnosticView(ContractModel):
-    appliance_id: UUID
-    watts_mean: float
-    watts_tolerance: float
-    duration_typical_s: int | None
-    pattern: SignaturePattern
-    pattern_locked: bool
-    samples: int
-    origin: SignatureOrigin
-    updated_at: UtcDatetime
+CONSUMER = "energy.steps"
+LEARNING_CONSUMER = "energy.learning"
+EVENT_TYPES = ["energy.reading_recorded"]
 
 
-class SignatureView(SignatureDiagnosticView):
-    typical_hours: list[int] | None
+def make_dispatcher() -> Handler:
+    """Um `StepTracker` por casa, criado à primeira leitura.
+
+    shortcut: o estado dos trackers vive só em memória; após reinício a sessão em curso perde-se
+    e recomeça na próxima leitura. Persistir o estado quando houver medição real contínua.
+    """
+    catalog = SqliteApplianceCatalog()
+    handlers: dict[UUID, Handler] = {}
+
+    def handle(conn: sqlite3.Connection, stored: StoredEvent):
+        house = stored.event.household_id
+        if house not in handlers:
+            handlers[house] = make_step_consumer(StepTracker(household_id=house), catalog=catalog)
+        return handlers[house](conn, stored)
+
+    return handle
 
 
-Visible = SignatureView | SignatureDiagnosticView
-
-
-def _error(status: int, code: str, message: str) -> HTTPException:
-    return HTTPException(status, {"code": code, "message": message})
-
-
-def _rows(conn: sqlite3.Connection, access: HouseholdAccess) -> list[sqlite3.Row]:
-    # Match HOUSE-03 current visibility: diagnostic, common, or caller's ownership.
-    return conn.execute(
-        "SELECT sig.*,a.registered_by_resident_id,s.scope,s.owner_resident_id,"
-        " lock.pattern AS locked_pattern FROM appliance_signature sig"
-        " JOIN appliance a ON a.id=sig.appliance_id"
-        " JOIN appliance_state s ON s.id=(SELECT latest.id FROM appliance_state latest"
-        " WHERE latest.appliance_id=a.id ORDER BY latest.valid_from DESC,latest.id DESC LIMIT 1)"
-        " LEFT JOIN energy_signature_lock lock ON lock.signature_id=sig.id"
-        " WHERE a.household_id=? AND a.status='active'"
-        " AND (? OR s.scope='common' OR s.owner_resident_id=?) ORDER BY a.id,sig.id",
-        (str(access.household_id), access.grant is Grant.diagnostic, str(access.resident_id)),
-    ).fetchall()
-
-
-def _view(row: sqlite3.Row, access: HouseholdAccess) -> Visible:
-    data = {
-        name: row[name]
-        for name in SignatureDiagnosticView.model_fields
-        if name not in {"pattern_locked", "pattern"}
-    }
-    data["pattern"] = row["locked_pattern"] or row["pattern"]
-    data["pattern_locked"] = row["locked_pattern"] is not None
-    if access.grant is Grant.diagnostic:
-        return SignatureDiagnosticView(**data)
-    return SignatureView(
-        **data,
-        typical_hours=json.loads(row["typical_hours_json"])
-        if row["typical_hours_json"] is not None
-        else None,
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    app.state.bus.subscribe(CONSUMER, make_dispatcher(), EVENT_TYPES)
+    # ENERGY-01: aprendizagem automática de assinaturas a partir das sessões fechadas.
+    app.state.bus.subscribe(
+        LEARNING_CONSUMER, make_learning_consumer(SqliteApplianceCatalog()), LEARNING_TYPES
     )
+    yield
 
 
-async def _run(db, fn):
-    try:
-        return await db.run(fn)
-    except sqlite3.IntegrityError:
-        raise _error(409, "signature_conflict", "Conflito ao guardar assinatura") from None
-    except ValidationError:
-        raise _error(422, "invalid_request", "Dados da assinatura inválidos") from None
+router = APIRouter(
+    prefix="/api/households/{household_id}/energy", tags=["energy"], lifespan=lifespan
+)
+Read = Annotated[HouseholdAccess, Depends(require_access(Resource.consumption))]
+router.include_router(signatures_router)  # ENERGY-01: /signatures
+
+SESSIONS_LIMIT = 20
+SCAN_LIMIT = 500
 
 
-@router.get("/energy/signatures")
-async def list_signatures(access: Read, db: DbDep) -> list[Visible]:
-    return await _run(db, lambda conn: [_view(r, access) for r in _rows(conn, access)])
+class MeterReadingView(ContractModel):
+    """Última leitura de UMA tomada. Não é o total da casa."""
+
+    device_id: UUID
+    read_at: datetime
+    status: Literal["ok", "missing", "unit_unknown", "stale"]
+    power_w: float | None  # None = sem valor (nunca 0 W por omissão)
+    provenance: Provenance
 
 
-@router.patch("/energy/signatures/{appliance_id}")
-async def patch_signature(
-    appliance_id: UUID,
-    body: SignaturePatch,
-    access: Write,
-    db: DbDep,
-    clock: ClockDep,
-) -> Visible:
-    def operation(conn):
-        sid = str(stable_id("energy.signature", str(appliance_id)))
-        row = next(
-            (
-                r
-                for r in _rows(conn, access)
-                if r["appliance_id"] == str(appliance_id) and r["id"] == sid
-            ),
-            None,
-        )
-        if row is None:
-            raise _error(404, "signature_not_found", "Assinatura não encontrada")
-        if access.grant is not Grant.own or not (
-            row["owner_resident_id"] == str(access.resident_id)
-            or (
-                row["scope"] == "common"
-                and row["registered_by_resident_id"] == str(access.resident_id)
+class ConsumptionSessionView(ContractModel):
+    id: UUID
+    device_id: UUID
+    started_at: datetime
+    ended_at: datetime | None
+    status: Literal["ongoing", "closed"]
+    peak_w: float
+    energy_wh: float | None
+    location: Literal["room", "common", "unknown"]
+    appliance_id: UUID | None  # None = aparelho não identificado
+    confidence: float | None
+    cost_cents: int | None
+    provenance: Provenance
+
+
+class EnergyOverview(ContractModel):
+    now: datetime
+    meters: list[MeterReadingView]
+    sessions: list[ConsumptionSessionView]
+
+
+def _overview(conn: sqlite3.Connection, house: UUID, now: datetime) -> EnergyOverview:
+    meters: dict[UUID, MeterReadingView] = {}
+    rows = conn.execute(
+        "SELECT payload_json FROM domain_event WHERE household_id = ?"
+        " AND type = 'energy.reading_recorded' ORDER BY seq DESC LIMIT ?",
+        (str(house), SCAN_LIMIT),
+    )
+    for row in rows:
+        r = EnergyReading.model_validate(json.loads(row["payload_json"]))
+        if r.device_id not in meters:
+            meters[r.device_id] = MeterReadingView(
+                device_id=r.device_id,
+                read_at=r.ts,
+                status=r.status.value,
+                power_w=r.power_w,
+                provenance=r.provenance,
             )
-        ):
-            raise _error(403, "forbidden_role", "Sem permissão para corrigir este aparelho")
-        conn.execute(
-            "UPDATE appliance_signature SET pattern=? WHERE id=?", (body.pattern.value, sid)
+    sessions: dict[UUID, ConsumptionSessionView] = {}
+    rows = conn.execute(
+        "SELECT payload_json FROM domain_event WHERE household_id = ?"
+        " AND type IN ('energy.consumption_detected','energy.consumption_closed')"
+        " ORDER BY seq DESC LIMIT ?",
+        (str(house), SCAN_LIMIT),
+    )
+    for row in rows:
+        c = ConsumptionEvent.model_validate(json.loads(row["payload_json"]))
+        if c.id in sessions or c.status.value == "discarded":
+            continue
+        sessions[c.id] = ConsumptionSessionView(
+            id=c.id,
+            device_id=c.device_id,
+            started_at=c.started_at,
+            ended_at=c.ended_at,
+            status=c.status.value,
+            peak_w=c.peak_w,
+            energy_wh=c.energy_wh,
+            location=c.location.value,
+            appliance_id=c.match.appliance_id,
+            confidence=c.match.confidence,
+            cost_cents=c.cost_estimate.cents if c.cost_estimate else None,
+            provenance=c.provenance,
         )
-        conn.execute(
-            "INSERT INTO energy_signature_lock(signature_id,pattern,locked_at) VALUES (?,?,?)"
-            " ON CONFLICT(signature_id) DO UPDATE SET"
-            " pattern=excluded.pattern,locked_at=excluded.locked_at",
-            (sid, body.pattern.value, clock().astimezone(UTC).isoformat(timespec="microseconds")),
-        )
-        return _view(next(r for r in _rows(conn, access) if r["id"] == sid), access)
+    recent = sorted(sessions.values(), key=lambda s: s.started_at, reverse=True)
+    return EnergyOverview(now=now, meters=list(meters.values()), sessions=recent[:SESSIONS_LIMIT])
 
-    return await _run(db, operation)
+
+@router.get("/overview")
+async def energy_overview(access: Read, db: DbDep, clock: ClockDep) -> EnergyOverview:
+    """Leituras por tomada e sessões recentes. Só moradores (dados de hábitos)."""
+    if access.grant is not Grant.household:
+        raise HTTPException(403, {"code": "forbidden_role", "message": "Só para moradores"})
+    now = clock()
+    return await db.run(lambda c: _overview(c, access.household_id, now))

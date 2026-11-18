@@ -351,12 +351,52 @@ class Budget(ContractModel):
 
 
 class BudgetThreshold(ContractModel):
-    """Uma passagem de limiar (carga do evento `alerts.threshold_crossed`)."""
+    """Uma passagem de limiar (carga do evento `alerts.threshold_crossed`). Leva o dono, o
+    período e o limite para notifications escrever o aviso pessoal sem ler tabelas de billing.
+    `spent_cents` inclui TODOS os custos (D-31): consumo próprio, parte da conta comum e parte
+    do termo fixo e do resíduo (estimada até haver fatura)."""
 
     budget_id: UUID
+    resident_id: UUID
+    period: Period
     pct: Pct
     spent_cents: Cents
-    forecast_cents: Cents | None = None  # None: sem dados para prever
+    limit_cents: Cents
+    forecast_cents: Cents | None = None  # None: sem dados para prever (ALERT-02)
+
+
+class BudgetIn(ContractModel):
+    """`PUT …/budgets/me`: o próprio inquilino define o seu objetivo mensal. Redefinir é um
+    reset explícito: os limiares voltam a poder ser avisados."""
+
+    period: Period | None = None  # omissão: o mês corrente (fuso da casa)
+    limit_cents: Annotated[Cents, Field(gt=0)]
+    thresholds: Annotated[list[Pct], Field(min_length=1)] = [50, 80, 100]
+
+    @model_validator(mode="after")
+    def _sorted(self) -> Self:
+        if self.thresholds != sorted(set(self.thresholds)):
+            raise ValueError("limiares crescentes e sem repetição")
+        return self
+
+
+class BudgetStatus(ContractModel):
+    """Quanto já gastei este mês face ao meu objetivo (D-31: todos os custos).
+
+    Sem preço de referência nem fatura não há custo: `spent_cents=None` (desconhecido), nunca
+    0 €. `base_cents=None`: ainda não há fatura anterior para estimar o termo fixo e o resíduo,
+    por isso o gasto mostrado não os inclui. `final=True`: valores da fatura fechada do mês."""
+
+    period: Period
+    budget: Budget | None
+    spent_cents: Cents | None
+    confirmed_cents: Cents | None  # consumo atribuído a mim (quarto ou confirmado)
+    shared_cents: Cents | None  # a minha parte igual da conta comum (estimada)
+    base_cents: Cents | None  # parte do termo fixo + resíduo (estimada do último recibo)
+    pct: Annotated[int, Field(strict=True, ge=0)] | None
+    final: bool
+    provenance: Provenance | None
+    as_of: UtcDatetime
 
 
 class ContestationStatus(StrEnum):

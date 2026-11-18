@@ -12,12 +12,14 @@ without a PowerStep or any energy attributed to the gap. Loads that fit stay ope
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from decimal import Decimal
 from uuid import UUID
 
 from homemind.contracts.common import EnergyWh, Provenance, stable_id
+from homemind.contracts.devices import ApplianceOwnership, ApplianceScope
 from homemind.contracts.domain_events import (
     DomainEvent,
     EnergyConsumptionClosed,
@@ -32,6 +34,8 @@ from homemind.contracts.energy import (
     LocationKind,
     PowerStep,
 )
+from homemind.features.energy.classifier import SessionFeatures
+from homemind.features.energy.patterns import infer_pattern
 
 
 def reading_time(reading: EnergyReading) -> datetime:
@@ -46,6 +50,32 @@ class _Session:
     provenance: Provenance
     watt_seconds: Decimal = Decimal(0)
     stopped_at: datetime | None = None
+    cycles: int = 0
+    # Supported ON intervals only: (seconds, watts), concatenated across pauses.
+    power_intervals: list[tuple[float, float]] = field(default_factory=list)
+
+    def record_power(self, seconds: float, watts: float) -> None:
+        if seconds <= 0 or watts <= 0:
+            return
+        if self.power_intervals and self.power_intervals[-1][1] == watts:
+            previous_seconds, _ = self.power_intervals[-1]
+            self.power_intervals[-1] = (previous_seconds + seconds, watts)
+        else:
+            self.power_intervals.append((seconds, watts))
+
+    def quarter_powers(self) -> tuple[float, float]:
+        """Time-weighted quarters of supported ON time, excluding gaps and OFF pauses."""
+        total = sum(seconds for seconds, _ in self.power_intervals)
+        if total == 0:
+            return self.watts, self.watts
+        quarter = total / 4
+        first = last = cursor = 0.0
+        for seconds, watts in self.power_intervals:
+            end = cursor + seconds
+            first += max(0.0, min(end, quarter) - cursor) * watts
+            last += max(0.0, end - max(cursor, total - quarter)) * watts
+            cursor = end
+        return first / quarter, last / quarter
 
 
 @dataclass
@@ -66,6 +96,9 @@ class StepTracker:
         threshold_w: float = 100.0,
         thermostat_band_w: float = 50.0,
         thermostat_gap: timedelta = timedelta(minutes=10),
+        classify: Callable[[SessionFeatures], ApplianceMatch] | None = None,
+        timezone: tzinfo = UTC,
+        ownership_at: Callable[[UUID, datetime], ApplianceOwnership | None] | None = None,
     ) -> None:
         if not math.isfinite(threshold_w) or threshold_w <= 0:
             raise ValueError("threshold_w must be finite and positive")
@@ -77,6 +110,9 @@ class StepTracker:
         self.threshold_w = threshold_w
         self.thermostat_band_w = thermostat_band_w
         self.thermostat_gap = thermostat_gap
+        self.classify = classify
+        self.timezone = timezone
+        self.ownership_at = ownership_at
         self._sockets: dict[UUID, _Socket] = {}
 
     def _id(self, kind: str, device_id: UUID, at: datetime) -> UUID:
@@ -89,11 +125,38 @@ class StepTracker:
     ) -> ConsumptionEvent:
         # Decimal accumulation; round once, ties to even, as in the common contracts.
         energy: EnergyWh = int(round(session.watt_seconds / Decimal(3600)))
+        match = ApplianceMatch()
+        owner = None
+        if self.classify is not None:
+            duration = None
+            pattern = None
+            if closed:
+                assert session.stopped_at is not None
+                duration = (session.stopped_at - session.started_at).total_seconds()
+                first, last = session.quarter_powers()
+                pattern = infer_pattern(
+                    duration_s=duration,
+                    cycles=session.cycles,
+                    first_quarter_w=first,
+                    last_quarter_w=last,
+                )
+            match = self.classify(
+                SessionFeatures(
+                    power_w=session.watts,
+                    start_hour_local=session.started_at.astimezone(self.timezone).hour,
+                    duration_s=duration,
+                    pattern=pattern,
+                )
+            )
+            if match.appliance_id is not None and self.ownership_at is not None:
+                ownership = self.ownership_at(match.appliance_id, session.started_at)
+                if ownership is not None and ownership.scope is ApplianceScope.personal:
+                    owner = ownership.owner_resident_id
         return ConsumptionEvent(
             id=session.id,
             household_id=self.household_id,
             device_id=device_id,
-            match=ApplianceMatch(),
+            match=match,
             started_at=session.started_at,
             ended_at=session.stopped_at if closed else None,
             status=ConsumptionStatus.closed if closed else ConsumptionStatus.ongoing,
@@ -102,7 +165,7 @@ class StepTracker:
             location=LocationKind.unknown,
             room_id=None,
             cost_estimate=None,
-            appliance_owner_resident_id=None,
+            appliance_owner_resident_id=owner,
             provenance=session.provenance,
         )
 
@@ -160,6 +223,8 @@ class StepTracker:
                 else session.watts
             )
             session.watt_seconds += Decimal(str(watts)) * seconds
+            if self.classify is not None:
+                session.record_power(float(seconds), watts)
             session.provenance = Provenance.combine(
                 session.provenance, previous.provenance, reading.provenance
             )
@@ -198,6 +263,7 @@ class StepTracker:
             ]
             if waiting:
                 session = min(waiting, key=lambda s: abs(s.watts - delta))
+                session.cycles += 1
                 session.stopped_at = None
                 session.provenance = Provenance.combine(session.provenance, provenance)
             else:

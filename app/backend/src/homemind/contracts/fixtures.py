@@ -663,7 +663,13 @@ def event_samples() -> list[domain_events.EventBase]:
             **d,
             provenance=SIM_ESTIMATED,
             data=billing.BudgetThreshold(
-                budget_id=budget().id, pct=80, spent_cents=2000, forecast_cents=3100
+                budget_id=budget().id,
+                resident_id=CARLA,
+                period=budget().period,
+                pct=80,
+                spent_cents=2000,
+                limit_cents=budget().limit_cents,
+                forecast_cents=3100,
             ),
         ),
         e.AlertsAlertRaised(
