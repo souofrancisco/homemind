@@ -217,6 +217,20 @@ def test_operator_is_limited_to_diagnostic_resources(client):
     )
 
 
+def test_mcp_tools_are_only_available_to_an_operator(client, monkeypatch):
+    from homemind.connectors import altice
+
+    async def tools():
+        return [{"name": "get_home_devices"}]
+
+    monkeypatch.setattr(altice, "list_tools", tools)
+    for sub in (ANA, LANDLORD, "sub-sem-membership"):
+        assert err(client.get("/api/mcp/tools", headers=as_(sub))) == (403, "forbidden_role")
+    response = client.get("/api/mcp/tools", headers=as_(OPERATOR))
+    assert response.status_code == 200
+    assert response.json() == [{"name": "get_home_devices"}]
+
+
 def test_tenant_patches_only_own_membership(client, app):
     mine = str(fx.memberships()[0].id)  # Ana
     theirs = str(fx.memberships()[1].id)  # Bruno
