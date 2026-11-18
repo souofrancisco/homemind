@@ -71,21 +71,21 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `presence.door_crossed` | P2 | `DoorCrossed` (anónimo) | P2 | idem |
 | `presence.changed` | P2 | `PersonPresence` | P4, P3 | idem |
 | `presence.cue_recorded` (PROPOSTA) | P2 | `PresenceEvent` (Wi-Fi, manual, aparelho) | P2 | idem |
-| `presence.confirmation_needed` (PROPOSTA) | P2 | `PresenceConfirmationRequest` | P3 | idem |
+| `presence.confirmation_needed` (PROPOSTA) | P2 | `PresenceConfirmationRequest` | P3 (`notifications.presence_check`, **IMPLEMENTADO**) | idem |
 | `presence.occupancy_changed` (PROPOSTA) | P2 | `HouseOccupancy` (anónimo) | P2, P3 | idem |
 | `sensor.reading_recorded` (PROPOSTA) | P1 | `SensorReading` | P2 | idem |
-| `safety.alert_raised` (PROPOSTA) | P2 | `SafetyAlert` (o mesmo `id` volta com `status=resolved`) | P3 | idem |
+| `safety.alert_raised` (PROPOSTA) | P2 | `SafetyAlert` (o mesmo `id` volta com `status=resolved`) | P3 (`notifications.safety_alert`, **IMPLEMENTADO**); `agent.safety_suggestion` (PLANEADO, AGENT-03b, PR do assistente) | idem |
 | `billing.confirmation_needed` | P4 | `ConfirmationRequest` | P3 (consumidor `notifications.confirmation_needed`, **IMPLEMENTADO**) | idem |
-| `billing.attribution_changed` | P4 | `Attribution` | P3, P4 | idem |
+| `billing.attribution_changed` | P4 | `Attribution` | P3 (`notifications.attribution_changed`, **IMPLEMENTADO**), P4 | idem |
 | `billing.bill_created` / `bill_finalized` | P4 | `BillRef` | P3, UI | idem |
-| `billing.allocation_published` | P4 | `AllocationPublished` | P3 | idem |
-| `billing.contestation_changed` | P4 | `Contestation` (BILL-06: aberta → aviso ao senhorio; decidida → aviso a quem contestou) | P3 | idem |
+| `billing.allocation_published` | P4 | `AllocationPublished` | P3 (`notifications.allocation_published`, **IMPLEMENTADO**) | idem |
+| `billing.contestation_changed` | P4 | `Contestation` (BILL-06: aberta → aviso ao senhorio; decidida → aviso a quem contestou) | P3 (`notifications.contestation`, **IMPLEMENTADO**) | idem |
 | `notification.created` | P3 | `NotificationCreatedData` | UI (DTO) | idem |
 | `notification.responded` | P3 | `NotificationRespondedData` (resposta + `ref` + `outcome` nas confirmações: um evento por voto; P4 só atribui com `outcome.decided`) | P4 | idem |
-| `alerts.threshold_crossed` | P4 | `BudgetThreshold` | P3 | idem |
-| `alerts.alert_raised` | P4 | `AlertRaisedData` | P3 | idem |
-| `alerts.cold_room` | P4 | `ColdRoomData` (ALERT-06: quarto do morador várias noites < 18 °C; privado) | P3 | idem |
-| `agent.action_proposed` | P3 | `ProposedAction` | P3 | idem |
+| `alerts.threshold_crossed` | P4 | `BudgetThreshold` | P3 (`notifications.budget_threshold`, **IMPLEMENTADO**) | idem |
+| `alerts.alert_raised` | P4 | `AlertRaisedData` | P3 (`notifications.peak_alert`, só `kind=peak`, **IMPLEMENTADO**) | idem |
+| `alerts.cold_room` | P4 | `ColdRoomData` (ALERT-06: quarto do morador várias noites < 18 °C; privado) | P3 (`notifications.cold_room`, **IMPLEMENTADO**) | idem |
+| `agent.action_proposed` | P3 | `ProposedAction` | P3 (`notifications.agent_action`, **IMPLEMENTADO**: aviso pessoal sem botões; o chat também o emite e o contrato não tem `source`, #157) | idem |
 | `automation.proposed` | P3 | `AutomationRule` | P3 | idem |
 | `automation.executed` | P1 | `AutomationExecutedData` | P3 | idem |
 
@@ -184,8 +184,8 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 
 | Método | Rota | Papéis | Notas |
 |---|---|---|---|
-| `POST` | `/api/households/{household_id}/agent/messages` | T | **IMPLEMENTADO** (parcial). `{ "text": "…" }` → `AgentResponse` (`proposed_actions` sempre vazio). Dados **SIMULADOS** da casa demo (as outras casas não têm dados); LLM desligado por omissão (`AGENT_LLM_ENABLED`); sem escrita. Caminho por casa; revisão P5 |
-| `POST` | `/api/agent/actions/{id}/confirm` · `/reject` | T | Só aqui uma ação sugerida é executada |
+| `POST` | `/api/households/{household_id}/agent/messages` | T | **IMPLEMENTADO** (parcial). `{ "text": "…" }` → `AgentResponse`. Dados **SIMULADOS** da casa demo (as outras casas não têm dados); LLM desligado por omissão (`AGENT_LLM_ENABLED`). Um pedido de ação («desliga a luz») devolve `proposed_actions` com uma `ProposedAction` por confirmar (AGENT-03); nunca executa nada. Caminho por casa; revisão P5 |
+| `GET` | `/api/households/{id}/agent/actions[/{aid}]` · `POST …/agent/actions/{aid}/confirm` · `…/reject` | T | **IMPLEMENTADO** (AGENT-03; ver `api-implementada.md`). Só no `confirm` uma ação é executada, no máximo uma vez; na casa demo o executor é SIMULADO. O executor real (hardware) é **PLANEADO** (P1). Caminho por casa (substitui o `/api/agent/actions/{id}/…` proposto); revisão P5 |
 | `GET` `POST` | `/api/households/{id}/automations` | T, O | |
 | `PATCH` | `/api/automations/{id}` | T, O | `{ "status" }`; ativação é passo explícito |
 | `POST` | `/api/automations/parse` | T, O | Reaproveita `POST /api/rules/parse` (NVIDIA); não grava |

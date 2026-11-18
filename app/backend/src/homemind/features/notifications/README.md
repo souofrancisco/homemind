@@ -1,7 +1,7 @@
 # `features/notifications` — centro de notificações (APP-02, parcial)
 
 Dono: P3. Documento do módulo: [`docs/modules/notifications.md`](../../../../../../docs/modules/notifications.md).
-Refs #95 (APP-02) e #96 (APP-03); não as fecha (faltam UI, WebSocket e os produtores da P4).
+Refs #95 (APP-02), #96 (APP-03) e #112 (AGENT-03); não as fecha (faltam UI e WebSocket). Os produtores de billing, alertas, presença, segurança, energia e assistente já existem na `main`; o fluxo voto -> atribuição -> aviso e o fecho do mês -> «Recibo disponível» têm teste ponta a ponta com billing real (`app/backend/tests/test_p3_billing_notifications_e2e.py`).
 
 ## IMPLEMENTADO
 
@@ -14,7 +14,7 @@ Refs #95 (APP-02) e #96 (APP-03); não as fecha (faltam UI, WebSocket e os produ
 | `sqlite.py` | `SqliteNotificationRepository` (compare-and-set real sobre estado e n.º de votos), recibos de leitura e preferências. |
 | `sweeper.py`, `config.py` | Varrimento de expiração a cada 60 s no lifespan (`NOTIFICATIONS_EXPIRY_SWEEP_S`, 0 desliga): chama `expire_due`, sem eventos; cancelado no `finally`. |
 | `directory.py` | `SqliteResidentDirectory`: papel de um residente numa casa e data (cópia de `core.access.find_membership`, por `resident_id`; pedir à P5 um helper), `room` (nome e tipo da divisão) e `room_tenants` (inquilinos ativos do quarto). |
-| `handlers.py` | Os cinco consumidores (nomes permanentes) e `CONSUMERS`, que o lifespan subscreve: `notifications.confirmation_needed`, `notifications.presence_check`, `notifications.safety_alert`, `notifications.attribution_changed`, `notifications.allocation_published`. `alerts.*` não tem consumidor de propósito. |
+| `handlers.py` | Os onze consumidores (nomes permanentes) e `CONSUMERS`, que o lifespan subscreve: `notifications.confirmation_needed`, `notifications.presence_check`, `notifications.safety_alert`, `notifications.attribution_changed`, `notifications.allocation_published`, `notifications.budget_threshold` (`alerts.threshold_crossed`), `notifications.peak_alert` (`alerts.alert_raised`, só `kind=peak`), `notifications.cold_room` (`alerts.cold_room`), `notifications.contestation` (`billing.contestation_changed`), `notifications.appliance_identification` (`energy.identification_needed`) e `notifications.agent_action` (`agent.action_proposed`: «Ação por confirmar», pessoal, **sem botões**; `ref = agent_action` com o id da ação; a confirmação faz-se em `POST …/agent/actions/{id}/confirm\|reject`, nunca aqui). |
 | `preferences.py` | `delivery_for`: `now`/`deferred`/`suppressed` (só afeta o push, ainda inexistente). |
 | `core/migrations/0300_notifications_core.sql` | Tabelas `notification`, `notification_read`, `notification_preferences` (por residente e casa; dono P3; nunca editar depois do merge: `0301_...`). |
 
@@ -66,8 +66,7 @@ Regras que os testes garantem:
   commit (os eventos já estão na outbox), por isso usa `publish`.
 - O evento `notification.expired` para a P4 (o varrimento periódico já existe, `sweeper.py`, mas
   não emite eventos).
-- Subscrição de `alerts.threshold_crossed` e `alerts.alert_raised` (faltam destinatário/limite e
-  potência/duração nos contratos; subscrever agora perderia eventos).
+- Botões «Confirmar/Rejeitar» na própria notificação `agent_action` (a UI usa o `ref` para chamar a rota do agente) e filtrar as propostas do chat (`agent.action_proposed` não tem `source` no contrato; ver #157).
 - Aplicação das preferências (push, silêncio noturno), dispensar, histórico com filtros, produtor
   de demonstração (`seed_demo` só existe em testes).
 

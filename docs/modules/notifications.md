@@ -1,6 +1,6 @@
 # Módulo `notifications` — centro de notificações
 
-**Dono: P3 (RafaelMat0s-Dev).** UI: páginas desenhadas por P5 com P3. **Estado: IMPLEMENTADO (backend parcial)**: persistência SQLite, lista, leitura, votação/resposta, preferências e os consumidores de `billing.confirmation_needed`, `presence.confirmation_needed`, `safety.alert_raised`, `billing.attribution_changed`, `billing.allocation_published`, `alerts.threshold_crossed` (orçamento) e `alerts.alert_raised` (só picos) (ver «Estado de implementação»); UI, WebSocket e push são **PLANEADO**.
+**Dono: P3 (RafaelMat0s-Dev).** UI: páginas desenhadas por P5 com P3. **Estado: IMPLEMENTADO (backend parcial)**: persistência SQLite, lista, leitura, votação/resposta, preferências e os consumidores de `billing.confirmation_needed`, `presence.confirmation_needed`, `safety.alert_raised`, `billing.attribution_changed`, `billing.allocation_published`, `billing.contestation_changed`, `energy.identification_needed`, `alerts.threshold_crossed` (orçamento), `alerts.alert_raised` (só picos), `alerts.cold_room` e `agent.action_proposed` (ver «Estado de implementação»); UI, WebSocket e push são **PLANEADO**.
 
 > **REGRA B = VOTAÇÃO (D-32, prevalece):** em `confirmation_request` cada inquilino vota uma vez; um «É minha» fecha; atribuir a outro exige ≥ metade dos elegíveis com o mesmo alvo (fecha antes se o próprio assumir); todos votaram sem decisão ou 24 h → por todos. Fonte única: `confirmation_outcome` em `contracts/notification.py`. **Quem fizer merge (pessoa ou agente) adapta o código de P3/P5/billing a esta regra; não reintroduzir «primeira resposta vence» nas confirmações.** Substitui todas as interações que o PDF previa no Telegram (D-01 em [decisions.md](../decisions.md)).
 
@@ -22,7 +22,7 @@ Ser o **único canal de comunicação com o utilizador**: avisos, perguntas inte
 | `appliance_identification` | `energy.identification_needed` (P1, ENERGY-04) | Casa (inquilinos ativos) | Sim, a primeira resposta fecha | «Um aparelho de ~800 W liga muitas vezes por volta das 8h. O que é?» [É meu] [É da casa] [Ignorar] |
 | `saving_tip` | `alerts`/agente | Pessoal | Não | Recomendação de poupança |
 | `automation_proposal` | `automations` | Casa | Sim | Proposta de regra para aprovar |
-| `agent_action` | agente | Pessoal | Sim | Ação sugerida com confirmação |
+| `agent_action` | `agent.action_proposed` (assistente, AGENT-03) | Pessoal (só o inquilino a quem se propõe) | Não na notificação (sem botões): a app usa o `ref` (`agent_action`) para chamar `POST …/agent/actions/{id}/confirm\|reject` | «Ação por confirmar»: «Janela aberta com o aquecimento ligado. Queres desligar a tomada do aquecedor? Nada é executado sem a tua confirmação.» |
 | `info` | `billing.attribution_changed`, `billing.allocation_published` | Pessoal | Não | «Registado na tua conta», «Dividido por todos», «Recibo disponível» |
 
 Um aviso «da casa» é o que o PDF punha no grupo; um aviso «pessoal» é o que punha em privado.
@@ -31,7 +31,7 @@ Um aviso «da casa» é o que o PDF punha no grupo; um aviso «pessoal» é o qu
 
 | Recebe | Produz |
 |---|---|
-| **IMPLEMENTADO:** `billing.confirmation_needed` (`notifications.confirmation_needed`), `presence.confirmation_needed` (`notifications.presence_check`), `safety.alert_raised` (`notifications.safety_alert`), `billing.attribution_changed` (`notifications.attribution_changed`), `billing.allocation_published` (`notifications.allocation_published`). PLANEADO: `alerts.*`, `billing.bill_*`, `automation.proposed`, `agent.action_proposed` | `Notification`, `notification.created` (→ WebSocket, PLANEADO) |
+| **IMPLEMENTADO:** `billing.confirmation_needed` (`notifications.confirmation_needed`), `presence.confirmation_needed` (`notifications.presence_check`), `safety.alert_raised` (`notifications.safety_alert`), `billing.attribution_changed` (`notifications.attribution_changed`), `billing.allocation_published` (`notifications.allocation_published`), `alerts.threshold_crossed` (`notifications.budget_threshold`), `alerts.alert_raised` (`notifications.peak_alert`), `alerts.cold_room` (`notifications.cold_room`), `billing.contestation_changed` (`notifications.contestation`), `energy.identification_needed` (`notifications.appliance_identification`), `agent.action_proposed` (`notifications.agent_action`). PLANEADO: `billing.bill_*`, `automation.proposed` | `Notification`, `notification.created` (→ WebSocket, PLANEADO) |
 | `POST /api/households/{household_id}/notifications/{id}/respond` (**IMPLEMENTADO**) | `notification.responded` (→ billing/agente/automações) |
 | `PUT /api/households/{household_id}/notification-preferences` (**IMPLEMENTADO**) | Preferências guardadas (a aplicação ao push é PLANEADO) |
 
@@ -86,7 +86,7 @@ Serviço com relógio injetado e barramento falso; permissões por papel; idempo
 
 ## Estado de implementação (backend parcial)
 
-Refs #95 (APP-02) e #96 (APP-03); não as fecham (faltam UI, WebSocket e os produtores da P4). Detalhe e ficheiros em [`features/notifications/README.md`](../../app/backend/src/homemind/features/notifications/README.md).
+Refs #95 (APP-02), #96 (APP-03) e #112 (AGENT-03); não as fecham (faltam UI e WebSocket). Detalhe e ficheiros em [`features/notifications/README.md`](../../app/backend/src/homemind/features/notifications/README.md).
 
 | Feito (**IMPLEMENTADO**) | Como |
 |---|---|
@@ -107,6 +107,9 @@ Refs #95 (APP-02) e #96 (APP-03); não as fecham (faltam UI, WebSocket e os prod
 | `notifications.allocation_published` | `billing.allocation_published` | info pessoal «Recibo disponível» (`ref = allocation`) ao inquilino ativo; o valor fica na app |
 | `notifications.budget_threshold` | `alerts.threshold_crossed` | `budget_alert` pessoal ao dono do orçamento (ALERT-01) |
 | `notifications.appliance_identification` | `energy.identification_needed` | `appliance_identification` **da casa** para os inquilinos ativos (`ResidentDirectory.tenants`), `info`; ações `mine` («É meu»), `household` («É da casa»), `ignore` («Ignorar»); `expires_at` do pedido; `ref = appliance_identification`; id derivado do pedido; saltado se já caducou ou sem inquilinos; texto só com potência arredondada e hora local, sem nomes. A primeira resposta fecha; a energia trata `notification.responded` (ENERGY-04). O senhorio não a vê (allow-list) |
+| `notifications.cold_room` | `alerts.cold_room` | `comfort_alert` **pessoal** ao morador do quarto frio (ALERT-06), `info`, sem botões; nunca ao senhorio; não promete valores de plafond; saltado se não for inquilino ativo |
+| `notifications.contestation` | `billing.contestation_changed` | Aberta: `info` (`warning`) aos senhorios, sem motivo nem consumo; decidida: `info` pessoal a quem contestou, com a justificação (BILL-06) |
+| `notifications.agent_action` | `agent.action_proposed` | `agent_action` **pessoal** para `proposed_for_resident_id`, só se for inquilino ativo; `info`; título «Ação por confirmar»; corpo = `rationale` + «Nada é executado sem a tua confirmação.» (+ «(SIMULADO)»); **sem botões** (`actions=[]`); `ref = agent_action` com o id da ação; `expires_at` da proposta; saltado se já expirou; id derivado do evento de origem. Confirmar ou rejeitar é na rota do agente (a UI usa o `ref`); este consumidor nunca executa nada. O senhorio não a vê (allow-list). **Limite:** o chat também emite `agent.action_proposed`; sem `source` no contrato não se distingue a proposta do chat (que o utilizador já vê na resposta) da de um alerta (bloqueado: #157) |
 | `notifications.peak_alert` | `alerts.alert_raised` (`kind=peak`) | `peak_alert` da casa, `warning`, sem botões (ALERT-03): «A zona «Sala» está a gastar 2,0 kW há 35 min.»; aparelho só se vier no evento (comum, identificado com confiança); sem zona comum → «Pico de consumo por identificar»; sem potência ou início → nada. Os outros `kind` ainda não têm produtor e são ignorados |
 
 Todos: membership terminada ou papel que não seja inquilino -> nada; origem simulada -> «(SIMULADO)»; o senhorio continua a ver só `info` (allow-list), e as informações são pessoais, por isso não lhe chegam.
@@ -114,12 +117,12 @@ Todos: membership terminada ou papel que não seja inquilino -> nada; origem sim
 | Adiado (**PLANEADO**) | Porquê |
 |---|---|
 | WebSocket | só existe o `/api/ws` do ObjectOS, sem hook para notificações |
-| Limiar de orçamento (`alerts.threshold_crossed`) | `BudgetThreshold` sem destinatário nem limite; subscrever marcaria eventos como processados e perdê-los-ia |
 | Aparelho esquecido e «não bate certo» (`alerts.alert_raised`) | sem produtor (ALERT-04, fase 2); o consumidor `notifications.peak_alert` já subscreve o tipo e ignora estes `kind`, por isso um produtor novo precisa de outro consumidor (nome novo) |
-| Botões nos alertas de conforto e `notify_landlord` do fumo | sem executor físico (P1) nem decisão de audiência; o senhorio continua sem ver `security_alert` |
+| Botões nos alertas de conforto | **Mudou:** a proposta de desligar a tomada chega como notificação `agent_action` (sem botões) e confirma-se na rota do agente; a execução real depende do executor da P1 (hoje só SIMULADO na casa demo) |
+| `notify_landlord` do fumo | sem decisão de audiência; o senhorio continua sem ver `security_alert` |
 | Push, aplicação das preferências, dispensar, histórico | sem serviço de push; sem operação de dispensar |
 | Acordar consumidores após o commit | `_publish` na rota só acorda consumidores (os eventos já estão na outbox); falta um `bus.wake()` público (pedido à P5) em vez de `publish` |
-| Produtores | `safety.alert_raised` (SAFE-01/03) e `presence.confirmation_needed` (PRES-04) já produzem na `main`; `billing.confirmation_needed`, `billing.attribution_changed` e `billing.allocation_published` ainda não (P4): os consumidores estão prontos e só testados com eventos das fixtures |
+| Produtores | Já produzem na `main`: `safety.alert_raised`, `presence.confirmation_needed`, `billing.confirmation_needed`, `billing.attribution_changed`, `billing.allocation_published`, `billing.contestation_changed`, `alerts.*`, `energy.identification_needed` e `agent.action_proposed`. Teste ponta a ponta com **billing real** (`app/backend/tests/test_p3_billing_notifications_e2e.py`, SIMULADO): consumo na sala -> voto «É minha» -> «Registado na tua conta» só ao pagador; voto inconclusivo + expiração (`run_expiry`) -> «Dividido por todos» a cada votante; fecho do mês -> «Recibo disponível» só ao dono de cada parcela, sem valores no texto |
 
 ## Pedidos pendentes (ver issue a criar)
 
