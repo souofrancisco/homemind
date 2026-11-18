@@ -23,7 +23,7 @@ executado.
 | `get_home_security_status` | sem parâmetros |
 | `get_home_status_brief` | sem parâmetros |
 | `get_scenario` | `scenarioId` obrigatório |
-| `patch_home_security_status` | `body` obrigatório; altera estado de segurança e não é permitido pelo ObjectOS |
+| `patch_home_security_status` | `body` obrigatório; altera estado de segurança e não é permitido pela política atual da Conta Certa |
 | `patch_scenario_activation` | `scenarioId` obrigatório; estado/cenário opcional |
 | `post_execute_scenario` | `scenarioId` obrigatório |
 | `post_new_scenario` | objeto de cenário com triggers e start/end actions |
@@ -56,11 +56,11 @@ permitidas pelo conector:
 {"deviceId":"<descoberto em runtime>","body":{"type":"color_rgb","redValue":255,"greenValue":0,"blueValue":0}}
 ```
 
-O schema também anuncia `temperature`, mas o conector não permite essa operação. O ObjectOS não
+O schema também anuncia `temperature`, mas o conector não permite essa operação. A Conta Certa não
 usa ferramentas de alarme/segurança, cenários ou timers. Atualizações físicas continuam
 desativadas por `ENABLE_PHYSICAL_WRITES=false`. Além do flag, `McpHome` exige um grant temporário
-criado pelo operador (`make mcp-writes-on`, ver [mcp-demo.md](mcp-demo.md)), partilhado pelo motor e pelo
-`McpHome`; expirado ou revogado, todas as escritas são recusadas. A whitelist é exata:
+criado pelo operador (`make mcp-writes-on`, ver [mcp-demo.md](mcp-demo.md)); `McpHome` recusa
+escritas quando o grant expira ou é revogado. A whitelist é exata:
 `get_home_devices`, `get_device_details`, `update_device_capabilities`; lâmpada `power`,
 `brightness`, `color_rgb`; tomada só `power`. Os schemas são validados antes da primeira chamada.
 
@@ -84,7 +84,7 @@ Na resposta real da tomada (`get_device_details`), foram observadas as capabilit
 `power`, `todayConsumption` e `yesterdayConsumption`. `power` usa `availableValues: ["on",
 "off"]`. `instantPower` inclui um valor numérico e min/max, mas a resposta e o schema MCP não
 declaram unidade. A unidade foi **confirmada em W** por medição (ver «Consumo (`instantPower`, #12)»
-abaixo), mas o estado ObjectOS só converte o valor se `MCP_INSTANTPOWER_UNIT` estiver definida:
+abaixo), mas `McpHome` só converte o valor se `MCP_INSTANTPOWER_UNIT` estiver definida:
 sem ela `consumo_w` mantém-se `null` e o valor bruto não é apresentado como watts. A leitura é
 consultada em polling de 5 s e `ler_consumo()` apenas devolve o cache.
 
@@ -290,5 +290,5 @@ Três observações com o operador a olhar para a lâmpada (`workMode: colour`):
   medição com carga de referência (ver «Consumo (`instantPower`, #12)»); o consumo em watts só se
   obtém com `MCP_INSTANTPOWER_UNIT=W`.
 - `get_home_devices` e `get_device_details` devolvem as mesmas capabilities (comparado em leitura).
-  O polling ObjectOS regista separadamente o instante da sua última leitura.
+  O runtime de energia regista separadamente o instante da última leitura MCP.
 - Latência observada: 1.ª chamada de cada sessão ~2 s, seguintes ~0,5–0,8 s.

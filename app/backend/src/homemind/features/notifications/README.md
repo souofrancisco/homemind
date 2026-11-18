@@ -61,7 +61,7 @@ Regras que os testes garantem:
 
 ## PLANEADO (não existe)
 
-- WebSocket (`notification`, `notification_update`): o único `/api/ws` é o do ObjectOS, sem hook.
+- WebSocket (`notification`, `notification_update`): não há rota WebSocket ativa; o transporte continua planeado.
 - `bus.wake()` público (pedido à P5): `_publish` no router só acorda consumidores depois do
   commit (os eventos já estão na outbox), por isso usa `publish`.
 - O evento `notification.expired` para a P4 (o varrimento periódico já existe, `sweeper.py`, mas

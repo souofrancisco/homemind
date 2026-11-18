@@ -114,7 +114,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.bus.subscribe(
         IDENTIFICATION_CONSUMER, make_identification_dispatcher(app), IDENTIFICATION_TYPES
     )
-    # O `Home` do kit (MCP) e os seus coletores/atuador (antes no lifespan do motor ObjectOS).
+    # O `Home` do kit (MCP) e os seus coletores/atuador arrancam com esta feature.
     async with home_runtime(app):
         yield
 

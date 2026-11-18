@@ -1,6 +1,6 @@
 # MCP Altice — ponto de entrada
 
-A integração MCP é **central** para a Conta Certa: é por ela que a casa lê dispositivos e (quando autorizado) atua. Esta página resume as regras e a evidência; o detalhe técnico está nos documentos abaixo, **preservados do ObjectOS sem perda**.
+A integração MCP é **central** para a Conta Certa: é por ela que a casa lê dispositivos e (quando autorizado) atua. Esta página resume as regras e a evidência; os documentos abaixo preservam a investigação e as medições do ObjectOS.
 
 | Documento | Conteúdo |
 |---|---|
@@ -24,7 +24,7 @@ Guia oficial de ligação da organização: [references/altice-mcp-guia-ligacao.
 
 ## Política de escrita por regra (MCP-04) — **IMPLEMENTADO** (sem escritas físicas executadas)
 
-Código: `connectors/write_policy.py` (pura) e `McpHome.tomada_por_regra` / `McpHome.lampada_por_regra`. O caminho manual/ObjectOS (`definir_tomada`, `definir_lampada` → `bool`) **não mudou**.
+Código: `connectors/write_policy.py` (pura) e `McpHome.tomada_por_regra` / `McpHome.lampada_por_regra`. O caminho manual do conector (`definir_tomada`, `definir_lampada` → `bool`) mantém-se separado da política de escrita por regra.
 
 **Resultado explícito** (`WriteResult`: `outcome` + `reason` sem IDs nem segredos):
 

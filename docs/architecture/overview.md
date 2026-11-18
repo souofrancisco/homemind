@@ -109,7 +109,7 @@ Os nomes de módulos novos são em inglês (como as entidades do pedido); as pas
 
 ### Persistência — IMPLEMENTADA
 
-SQLite da biblioteca standard (sem SQLAlchemy/aiosqlite/Alembic, **sem dependências novas**): uma ligação, lock, transações explícitas, WAL, `foreign_keys`. Migrações SQL por nome. Pormenores e limitações em [data-model.md](data-model.md#persistência). O armazenamento `rules.json` e `events.jsonl` do ObjectOS foi removido com o motor na BASE-04.
+SQLite da biblioteca standard (sem SQLAlchemy/aiosqlite/Alembic, **sem dependências novas**): uma ligação, lock, transações explícitas, WAL, `foreign_keys`. Migrações SQL por nome. Pormenores e limitações em [data-model.md](data-model.md#persistência). A persistência atual é SQLite; `rules.json` e `events.jsonl` pertenciam ao motor removido na BASE-04.
 
 ### MVP com uma única tomada, expansível
 

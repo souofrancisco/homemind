@@ -62,7 +62,7 @@ sequenceDiagram
 
 ## Ficheiros existentes reutilizáveis
 
-`features/agent/llm.py` e `features/agent/config.py` (cliente NVIDIA do assistente, separado do motor removido), mais as ferramentas tipadas existentes. As páginas ObjectOS do frontend estão fora desta tarefa.
+`features/agent/llm.py` e `features/agent/config.py` (cliente NVIDIA do assistente, separado do motor removido), mais as ferramentas tipadas existentes. As páginas antigas do frontend foram removidas na BASE-04; a interface atual está na aplicação Conta Certa.
 
 ## Ficheiros novos previstos
 

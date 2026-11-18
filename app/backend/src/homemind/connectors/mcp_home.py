@@ -38,7 +38,7 @@ TOOL_HOME_DEVICES = "get_home_devices"
 TOOL_DEVICE_DETAILS = "get_device_details"
 TOOL_UPDATE = "update_device_capabilities"
 
-# Capabilities que o ObjectOS pode alterar, por tipo de dispositivo. Nada mais.
+# Capabilities que o conector pode alterar, por tipo de dispositivo. Nada mais.
 _WRITABLE = {"lamp": {"power", "brightness", "color_rgb"}, "plug": {"power"}}
 _POLL_SECONDS = 5
 _READ_TIMEOUT_S = 8

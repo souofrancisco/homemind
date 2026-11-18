@@ -198,7 +198,7 @@ Plano alternativo (PDF §20 #2): se não houver watts, potência nominal × esta
 
 ## Ficheiros existentes reutilizáveis
 
-`connectors/mcp_home.py`, `altice_auth.py`, `altice.py`, `write_grant.py`, `mcp_verify.py`, `fake_home.py`, `contracts/home.py`, `contracts/simulacao.py`, `features/mcp/router.py`; Makefile `mcp-*`.
+`connectors/mcp_home.py`, `altice_auth.py`, `altice.py`, `write_grant.py`, `mcp_verify.py`, `fake_home.py`, `contracts/home.py`, `features/mcp/router.py`; Makefile `mcp-*`.
 
 ## Ficheiros novos previstos
 

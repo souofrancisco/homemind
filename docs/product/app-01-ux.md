@@ -6,7 +6,7 @@
 
 - **KEEP:** React 19, TypeScript, Mantine 9, Vite, Capacitor, OIDC Authentik/PKCE, cliente HTTP com Bearer e redirect no 401, tema automático claro/escuro, componentes acessíveis de Mantine, importação de tipos `components["schemas"]` do OpenAPI gerado.
 - **ADAPT (APP-01):** `app/App.tsx`, `routes.tsx`, `components/layout/Shell.tsx`, título do HTML e rótulos de navegação; serviços tipados pelo OpenAPI para membership/casa, notificações, faturas, assistente e diagnóstico.
-- **PRESERVAR PARA BASE-04:** `HomeProvider`, `useHome`, páginas antigas `HomePage`, `CameraPage`, `EventsPage`, `AutomationsPage`, `ProfilePage`, mocks e serviços ObjectOS. Não ficam em rotas ativas do novo produto, mas não são apagados nesta issue. A remoção segue `docs/architecture/migration.md`.
+- **Removido na BASE-04 (#74):** `HomeProvider`, `useHome`, páginas antigas, mocks e serviços ObjectOS. A aplicação atual usa as páginas e serviços da Conta Certa.
 - **DEFER:** respostas/votos e preferências de notificações APP-02/03, recibos e alocações APP-05/06, consumo P1/P4 (sem endpoint de produto), catálogo HOUSE-03, conversa APP-06, push Capacitor, branding nativo Android e alterações ao login Authentik. O OIDC permanece intacto.
 - **Contratos e APIs implementados:** `MeContext`, casa/divisões, `NotificationView`/`VotingView`, `BillView`, `AgentResponse`, `CameraStatus` e resultados de `GET /api/mcp/tools`. O collector de energia ainda não está montado no barramento e não há endpoint de medições/resumos. Uma casa `source_kind=demo` pode conter medições reais e simuladas: o rótulo da casa **não** é proveniência energética.
 

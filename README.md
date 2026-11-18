@@ -62,5 +62,5 @@ Como trabalhamos (issue → worktree → PR; Claude Code e Codex): [`CLAUDE.md`]
 ## Limitações conhecidas
 
 - Tudo na demo é **SIMULADO**; nada foi validado com hardware real nesta fase.
-- O código ObjectOS (motor de regras, gestos) ainda existe até à BASE-04 (#74); não faz parte da app.
+- O código ObjectOS (motor de regras e gestos) foi removido na BASE-04 (#74); o histórico está em [`docs/architecture/migration.md`](docs/architecture/migration.md).
 - Sem CI ativa (GitHub Actions desligado); a verificação é `make check` local.

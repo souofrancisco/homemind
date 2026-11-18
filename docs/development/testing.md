@@ -1,6 +1,6 @@
 # Testes e critérios de qualidade
 
-Regras herdadas do ObjectOS (mantidas) e acrescentos para a Conta Certa. **IMPLEMENTADO** = existe hoje; **PLANEADO** = a criar.
+Regras de qualidade mantidas durante a migração e critérios da Conta Certa. **IMPLEMENTADO** = existe hoje; **PLANEADO** = a criar.
 
 ## Comandos (só os do `Makefile`)
 
@@ -16,7 +16,7 @@ Regras herdadas do ObjectOS (mantidas) e acrescentos para a Conta Certa. **IMPLE
 1. **Lógica pura com fakes e relógio simulado.** Nunca depender de hardware, rede, NVIDIA/LLM ou MCP real em `pytest`.
 2. **Uma correção de bug traz um teste que falha sem ela.**
 3. O hardware valida-se à mão pelo [guia de validação](guia-validacao-manual.md); o resultado regista-se lá e **nunca** se marca PASS o que não foi executado.
-4. Testes ao lado da feature (`features/<nome>/tests/`), com fakes em `tests/_fakes.py` e `contracts/simulacao.py`.
+4. Testes ao lado da feature (`features/<nome>/tests/`), com fakes em `tests/_fakes.py` e fixtures próprias dos contratos.
 5. Sem frames reais, sem segredos, sem IDs de dispositivos nos testes, logs ou fixtures.
 
 ## Por módulo (PLANEADO)
