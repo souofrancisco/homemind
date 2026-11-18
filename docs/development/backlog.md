@@ -1,6 +1,6 @@
 # Backlog: mapa de issues e destino das antigas
 
-**IMPLEMENTADO no GitHub** (lido a 17/11/2026): 13 épicos (#58–#70), 68 issues de implementação `[CC · CÓDIGO]` e a roadmap mestre #129. Os IDs provisórios `C-Px-nn` das versões anteriores deste ficheiro **ficam substituídos** por estes códigos. Prioridades, fases e dependências: [roadmap.md](roadmap.md); responsabilidades: [team.md](team.md). Cada épico agrupa as suas tarefas como **sub-issues nativas** (ver [roadmap.md](roadmap.md) e a issue do épico).
+**Mapa histórico dos épicos e códigos de trabalho (17/11/2026), não contagem atual de tarefas abertas.** Em 18/11/2026 a pesquisa GitHub devolveu 54 issues abertas, 53 fechadas e 0 PRs abertos (incluindo épicos e histórico ObjectOS). O [GitHub Project #1](https://github.com/users/souofrancisco/projects/1/views/1) foi criado, mas ainda necessita de configuração e verificação dos itens: [guia](github-project.md). Os IDs provisórios `C-Px-nn` foram substituídos pelos códigos de módulo. Prioridades e fases originais: [roadmap.md](roadmap.md); responsabilidades: [team.md](team.md). A tabela seguinte mapeia a hierarquia prevista; confirmar no GitHub que cada relação de sub-issue nativa existe. Não confundir hierarquia com dependência `blocked by`.
 
 ## Épicos e tarefas
 
