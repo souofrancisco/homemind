@@ -46,6 +46,7 @@ def test_o_lifespan_subscreve_os_consumidores(client):
         "notifications.budget_threshold",  # ALERT-01: BudgetThreshold já traz dono e limite
         "notifications.peak_alert",  # ALERT-03: AlertRaisedData já traz potência e início
         "notifications.cold_room",  # ALERT-06: aviso privado de quarto frio
+        "notifications.contestation",  # BILL-06: aberta -> senhorio; decidida -> morador
     } <= subs
 
 

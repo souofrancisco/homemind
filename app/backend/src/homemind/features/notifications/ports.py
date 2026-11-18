@@ -32,3 +32,7 @@ class ResidentDirectory(Protocol):
     def appliance_name(self, household_id: UUID, appliance_id: UUID) -> str | None:
         """Nome do aparelho registado (`None` se não existe nessa casa)."""
         ...
+
+    def landlords(self, household_id: UUID, at: datetime) -> list[UUID]:
+        """Senhorios ativos da casa no instante `at`."""
+        ...

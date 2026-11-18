@@ -93,7 +93,7 @@ O recibo mostra **cada linha** com a proveniência dos kWh (`measured` / `estima
 
 **IMPLEMENTADO (app):** no recibo do morador (página de faturas da APP-06), «Porque pago isto?» abre a explicação, que só é pedida ao servidor nesse momento: comparação com a divisão igual, os meus consumos com a linha temporal e a proveniência, a conta comum por aparelho e o não atribuído (`components/billing/ReceiptExplanationView.tsx`; a app não faz contas).
 
-**PLANEADO:** política versionada por data (HOUSE-04: hoje mostra-se a regra da sala em vigor); contagem de votos por consumo; contestação (BILL-06).
+**PLANEADO:** política versionada por data (HOUSE-04: hoje mostra-se a regra da sala em vigor); contagem de votos por consumo. Contestação: ver BILL-06 abaixo (IMPLEMENTADO).
 
 ### Exemplos de aceitação (valores do PDF; fatura de 120 € = 24 € fixos + 600 kWh × 0,16 €)
 
@@ -155,7 +155,8 @@ Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `
 | Escrita da cor na lâmpada real (MCP `color_rgb`) | Não é automática: só via ação proposta com capability verificada, grant (MCP-04) e autorização humana; efeito físico não se afirma só com ACK | PLANEADO |
 | Quartos frios (ALERT-06, `features/billing/comfort.py`, migração `0120`): consumidor `billing.cold_rooms` de `sensor.reading_recorded` (só temperatura `ok` com quarto `bedroom`; `unknown`/`stale`/sem quarto/sala ignorados). Guarda só o agregado da noite (22:00–08:00, fuso da casa); noite fria = média < 18 °C; ≥ 3 noites frias nas últimas 7 completas → `alerts.cold_room` para o inquilino do quarto, uma vez por janela. Consumidor P3 `notifications.cold_room` → `comfort_alert` pessoal (nunca senhorio), sem valores de plafond (aviso «ainda tens X kWh do plafond»: PLANEADO) | IMPLEMENTADO |
 | Plafond solidário de aquecimento (BILL-03, `features/billing/allowance.py`, migração `0106`): ver «Plafond solidário» abaixo | IMPLEMENTADO |
-| Previsão (ALERT-02), contestação (BILL-06) | PLANEADO |
+| Contestar e reemitir (BILL-06, `features/billing/contestations.py`, migração `0130`): o inquilino contesta o **próprio** recibo (opcionalmente um consumo atribuído a si; uma aberta por fatura); só o senhorio decide, sempre com justificação. Rejeitar não muda nada. Aceitar passa o consumo contestado para a conta comum (`manual`, auditado com o senhorio como autor; nunca pior do que a divisão igual), corrige opcionalmente os dados da fatura e **reemite sempre como nova revisão** (a anterior fica `superseded`), guardando o antes/depois da parcela. Correções diretas (`/revisions`) levam as contestações abertas para a nova revisão. O senhorio vê quarto, motivo e decisão, nunca o consumo nem presença. `billing.contestation_changed` → consumidor P3 `notifications.contestation` (aberta: aviso aos senhorios sem o motivo; decidida: aviso a quem contestou com justificação e antes/depois). Respostas tardias a «de quem é esta conta?» não mudam faturas fechadas (o atribuidor ignora-as após o prazo) | IMPLEMENTADO |
+| Previsão (ALERT-02) | PLANEADO |
 
 Validação da fatura (PROPOSTA de limiares, ajustáveis em `bills.py`): preço médio 0,01–1,00 €/kWh (apanha erros de unidades), período ≤ 62 dias e já terminado, tarifa declarada opcional que tem de fechar com `total − fixa` (folga de 1 %, mínimo 5 cêntimos). Foto/PDF lido por LLM fica para depois e passará pela mesma pré-visualização.
 

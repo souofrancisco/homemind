@@ -526,12 +526,25 @@ def test_budget_rules():
     bad(billing.Budget, **{**d, "kind": "room_allowance"})
 
 
+def fx_bill_in():
+    return billing.BillIn(
+        period=billing.BillPeriod(start=date(2026, 11, 1), end=date(2026, 11, 30)),
+        total_cents=12_000, fixed_cents=2_400, total_wh=600_000,
+    )  # fmt: skip
+
+
 def test_contestation_state():
-    base = dict(id=stable_id("c"), allocation_id=stable_id("al"), resident_id=fx.CARLA, reason="x",
-                created_at=T0)  # fmt: skip
+    base = dict(id=stable_id("c"), bill_id=stable_id("b"), allocation_id=stable_id("al"),
+                resident_id=fx.CARLA, reason="x", created_at=T0)  # fmt: skip
     billing.Contestation(**base)
     bad(billing.Contestation, **base, status="accepted")  # sem resolved_at
     bad(billing.Contestation, **base, resolved_at=T0)  # aberta com resolved_at
+    done = dict(resolved_at=T0, resolution="ok")
+    billing.Contestation(**base, status="rejected", **done)
+    bad(billing.Contestation, **base, status="rejected", resolved_at=T0)  # sem justificação
+    bad(billing.Contestation, **base, status="accepted", **done)  # aceite sem revisão
+    billing.Contestation(**base, status="accepted", revision_bill_id=stable_id("b2"), **done)
+    bad(billing.ContestationDecisionIn, status="rejected", resolution="x", bill=fx_bill_in())
 
 
 # --- notificações -------------------------------------------------------------------------------
@@ -702,7 +715,7 @@ def test_automation_rules_and_transitions():
 
 def test_every_event_type_has_a_sample_and_roundtrips_json():
     samples = fx.event_samples()
-    assert {s.type for s in samples} == set(domain_events.EVENT_TYPES) and len(samples) == 24
+    assert {s.type for s in samples} == set(domain_events.EVENT_TYPES) and len(samples) == 25
     for s in samples:
         wire = s.model_dump_json()
         back = domain_events.domain_event_adapter.validate_json(wire)
@@ -717,7 +730,8 @@ def test_event_types_cover_the_documented_list():
         "presence.cue_recorded", "presence.confirmation_needed", "presence.occupancy_changed",
         "sensor.reading_recorded", "safety.alert_raised",
         "billing.confirmation_needed", "billing.attribution_changed", "billing.bill_created",
-        "billing.bill_finalized", "billing.allocation_published", "notification.created",
+        "billing.bill_finalized", "billing.allocation_published", "billing.contestation_changed",
+        "notification.created",
         "notification.responded", "alerts.threshold_crossed", "alerts.alert_raised",
         "alerts.cold_room",
         "agent.action_proposed", "automation.proposed", "automation.executed",

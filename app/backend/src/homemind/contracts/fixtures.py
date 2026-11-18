@@ -647,6 +647,18 @@ def event_samples() -> list[domain_events.EventBase]:
                 bill_id=bill.id, allocation_id=bill_a()[1][0].id, resident_id=ANA
             ),
         ),
+        e.BillingContestationChanged(
+            **d,
+            provenance=SIM_MEASURED,
+            data=billing.Contestation(
+                id=stable_id("contestation", "ana"),
+                bill_id=bill.id,
+                allocation_id=bill_a()[1][0].id,
+                resident_id=ANA,
+                reason="O aquecedor da sala não é meu.",
+                created_at=T0,
+            ),
+        ),
         e.NotificationCreated(
             **d,
             provenance=SIM_MEASURED,

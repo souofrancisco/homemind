@@ -115,6 +115,7 @@ class RefType(StrEnum):
     agent_action = "agent_action"
     presence_check = "presence_check"  # `PresenceConfirmationRequest.id`
     safety_alert = "safety_alert"  # `SafetyAlert.id`
+    contestation = "contestation"  # `Contestation.id` (BILL-06)
 
 
 class NotificationRef(ContractModel):

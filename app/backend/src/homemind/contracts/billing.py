@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -444,19 +444,75 @@ class ContestationStatus(StrEnum):
 
 
 class Contestation(ContractModel):
+    """Contestação do PRÓPRIO recibo (BILL-06). Só o senhorio decide, sempre com justificação.
+    Aceitar reemite a fatura como nova revisão (a anterior fica `superseded`, com as suas
+    parcelas): nunca se altera uma fatura fechada em silêncio. `before/after_cents`: a parcela
+    de quem contestou antes e depois da decisão (iguais se rejeitada)."""
+
     id: UUID
+    bill_id: UUID  # a revisão em vigor (passa para a nova se outra correção a substituir)
     allocation_id: UUID
     resident_id: UUID
+    consumption_event_id: UUID | None = None  # «este consumo não é meu» (um dos meus)
     reason: Annotated[str, Field(min_length=1, max_length=500)]
     status: ContestationStatus = ContestationStatus.open
     created_at: UtcDatetime
     resolved_at: UtcDatetime | None = None
+    resolution: Annotated[str, Field(min_length=1, max_length=500)] | None = None
+    revision_bill_id: UUID | None = None  # a revisão criada ao aceitar
+    before_cents: Cents | None = None
+    after_cents: Cents | None = None
 
     @model_validator(mode="after")
     def _resolved(self) -> Self:
-        if (self.status is ContestationStatus.open) != (self.resolved_at is None):
-            raise ValueError("resolved_at exatamente quando já não está aberta")
+        open_ = self.status is ContestationStatus.open
+        if open_ != (self.resolved_at is None) or open_ != (self.resolution is None):
+            raise ValueError("resolved_at e resolution exatamente quando já não está aberta")
+        if (self.status is ContestationStatus.accepted) != (self.revision_bill_id is not None):
+            raise ValueError("revision_bill_id exatamente nas aceites")
         return self
+
+
+class ContestationIn(ContractModel):
+    """`POST …/bills/{id}/contestations` (inquilino). Sem `consumption_event_id`: contesta o
+    recibo em geral (o senhorio pode corrigir os dados da fatura ao aceitar)."""
+
+    reason: Annotated[str, Field(min_length=1, max_length=500)]
+    consumption_event_id: UUID | None = None
+
+
+class ContestationDecisionIn(ContractModel):
+    """`POST …/contestations/{id}/decision` (senhorio). Aceitar com `consumption_event_id`
+    passa esse consumo para a conta comum (por igual); `bill` corrige os dados da fatura."""
+
+    status: Literal[ContestationStatus.accepted, ContestationStatus.rejected]
+    resolution: Annotated[str, Field(min_length=1, max_length=500)]
+    bill: BillIn | None = None
+
+    @model_validator(mode="after")
+    def _bill_only_when_accepted(self) -> Self:
+        if self.bill is not None and self.status is not ContestationStatus.accepted:
+            raise ValueError("só se corrige a fatura ao aceitar")
+        return self
+
+
+class LandlordContestationView(ContractModel):
+    """O que o senhorio vê: o quarto, o motivo escrito pelo morador e a decisão. Nunca o
+    consumo, o aparelho, horários nem presença; valores por quarto, como no resumo."""
+
+    id: UUID
+    bill_id: UUID
+    room_id: UUID | None
+    room_name: str | None
+    reason: str
+    contests_consumption: bool
+    status: ContestationStatus
+    created_at: UtcDatetime
+    resolved_at: UtcDatetime | None
+    resolution: str | None
+    revision_bill_id: UUID | None
+    before_cents: Cents | None
+    after_cents: Cents | None
 
 
 # --- explicação do recibo (BILL-05) -----------------------------------------------------------
