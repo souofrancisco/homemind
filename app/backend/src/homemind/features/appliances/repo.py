@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from homemind.contracts.appliance_catalog import (
     ApplianceCatalog,
     ApplianceContextSegment,
+    ApplianceSnapshot,
     MeterContextSegment,
 )
 from homemind.contracts.common import new_id
@@ -458,7 +459,9 @@ def save_appliance_signature(
         " duration_typical_s=excluded.duration_typical_s,pattern=excluded.pattern,"
         " typical_hours_json=excluded.typical_hours_json,samples=excluded.samples,"
         " origin=excluded.origin,updated_at=excluded.updated_at"
-        " WHERE excluded.updated_at > appliance_signature.updated_at",
+        " WHERE excluded.updated_at > appliance_signature.updated_at"
+        " OR (excluded.origin = 'learned'"
+        " AND excluded.samples = appliance_signature.samples + 1)",
         (
             str(signature.id),
             str(signature.appliance_id),
@@ -779,6 +782,36 @@ class SqliteApplianceCatalog:
     ``contracts.appliance_catalog.ApplianceCatalog``. Every call uses the caller's
     connection so transaction and event-replay boundaries remain intact.
     """
+
+    def appliances_for_household(
+        self, conn: sqlite3.Connection, household_id: UUID, at: datetime
+    ) -> list[ApplianceSnapshot]:
+        when = timestamp(at)
+        rows = conn.execute(
+            "SELECT a.id,a.typical_watts,s.scope,s.owner_resident_id,s.home_room_id,"
+            " l.device_id FROM appliance a JOIN appliance_state s"
+            " ON s.appliance_id=a.id AND s.household_id=a.household_id"
+            " AND s.valid_from<=? AND (s.valid_to IS NULL OR s.valid_to>?)"
+            " LEFT JOIN appliance_meter_link l ON l.appliance_id=a.id"
+            " AND l.household_id=a.household_id AND l.valid_from<=?"
+            " AND (l.valid_to IS NULL OR l.valid_to>?)"
+            " WHERE a.household_id=? AND a.created_at<=?"
+            " AND (a.retired_at IS NULL OR a.retired_at>?) ORDER BY a.id",
+            (when, when, when, when, str(household_id), when, when),
+        ).fetchall()
+        return [
+            ApplianceSnapshot(
+                appliance_id=UUID(r["id"]),
+                ownership=ApplianceOwnership(
+                    scope=r["scope"],
+                    owner_resident_id=r["owner_resident_id"],
+                    home_room_id=r["home_room_id"],
+                ),
+                typical_watts=r["typical_watts"],
+                meter_device_id=UUID(r["device_id"]) if r["device_id"] else None,
+            )
+            for r in rows
+        ]
 
     def register_device(self, conn: sqlite3.Connection, device: Device) -> DeviceView:
         return register_device(conn, device)

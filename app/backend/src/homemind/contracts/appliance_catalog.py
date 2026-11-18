@@ -23,6 +23,14 @@ from homemind.contracts.energy import ConsumptionEvent
 
 
 @dataclass(frozen=True)
+class ApplianceSnapshot:
+    appliance_id: UUID
+    ownership: ApplianceOwnership
+    typical_watts: float | None
+    meter_device_id: UUID | None
+
+
+@dataclass(frozen=True)
 class MeterContextSegment:
     """Configured meter for one half-open portion of a requested period."""
 
@@ -43,6 +51,10 @@ class ApplianceContextSegment:
 @runtime_checkable
 class ApplianceCatalog(Protocol):
     """Transaction-scoped P1/P4 access to HOUSE-03-owned catalogue data."""
+
+    def appliances_for_household(
+        self, conn: sqlite3.Connection, household_id: UUID, at: datetime
+    ) -> list[ApplianceSnapshot]: ...
 
     def register_device(self, conn: sqlite3.Connection, device: Device) -> DeviceView: ...
 

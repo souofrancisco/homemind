@@ -939,3 +939,65 @@ def test_replayed_old_device_discovery_does_not_revert_current_metadata(client, 
     assert replayed.name == "Medidor atual"
     assert replayed.last_seen_at == current.last_seen_at
     assert replayed.online is True
+
+
+def test_appliances_snapshot_temporal_state_meter_retirement_and_house(tmp_path):
+    db = Database(tmp_path / "snapshot.sqlite3")
+    db.open()
+    try:
+        migrate(db)
+        db.run_sync(seed_two_houses)
+        catalog = repo.appliance_catalog()
+        own = HouseholdAccess(fx.HOUSEHOLD, fx.BRUNO, uuid4(), "tenant", None, Grant.own)
+        operator = HouseholdAccess(
+            fx.HOUSEHOLD, fx.OPERATOR, uuid4(), "operator", None, Grant.diagnostic
+        )
+        start = NOW
+
+        def setup(conn):
+            a = repo.create_appliance(
+                conn,
+                own,
+                ApplianceCreate(
+                    name="Snapshot heater",
+                    category="heating",
+                    scope="personal",
+                    typical_watts=2000,
+                ),
+                start,
+            )
+            repo.register_device(conn, fx.meter())
+            repo.set_meter(conn, operator, a.id, fx.METER, start + timedelta(seconds=10))
+            repo.patch_appliance(
+                conn,
+                own,
+                a.id,
+                AppliancePatch(owner_resident_id=fx.ANA),
+                start + timedelta(seconds=20),
+            )
+            repo.set_meter(conn, operator, a.id, None, start + timedelta(seconds=30))
+            ana = HouseholdAccess(fx.HOUSEHOLD, fx.ANA, uuid4(), "tenant", None, Grant.own)
+            repo.retire_appliance(conn, ana, a.id, start + timedelta(seconds=40))
+            return a.id
+
+        aid = db.run_sync(setup)
+
+        def at(seconds, house=fx.HOUSEHOLD):
+            return db.run_sync(
+                lambda c: catalog.appliances_for_household(
+                    c, house, start + timedelta(seconds=seconds)
+                )
+            )
+
+        assert at(-1) == []
+        assert at(0)[0].meter_device_id is None
+        assert at(10)[0].meter_device_id == fx.METER
+        assert at(19)[0].ownership.owner_resident_id == fx.BRUNO
+        assert at(20)[0].ownership.owner_resident_id == fx.ANA
+        assert at(29)[0].meter_device_id == fx.METER
+        assert at(30)[0].meter_device_id is None
+        assert at(39)[0].appliance_id == aid and at(39)[0].typical_watts == 2000
+        assert at(40) == [] and at(50) == []
+        assert at(15, HOUSE_B) == []
+    finally:
+        db.close()
