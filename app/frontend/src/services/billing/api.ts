@@ -7,6 +7,7 @@ export type BillIn = Schemas["BillIn"];
 export type BillPreview = Schemas["BillPreview"];
 export type BillAllocation = Schemas["BillAllocation"];
 export type LandlordBillView = Schemas["LandlordBillView"];
+export type ReceiptExplanation = Schemas["ReceiptExplanation"];
 
 const base = (householdId: string) => `/api/households/${encodeURIComponent(householdId)}`;
 const post = <T>(path: string, body?: unknown) =>
@@ -18,3 +19,5 @@ export const createBill = (householdId: string, body: BillIn) => post<BillView>(
 export const finalizeBill = (householdId: string, billId: string) => post<BillView>(`${base(householdId)}/bills/${billId}/finalize`);
 export const getMyReceipt = (householdId: string, billId: string) => api<BillAllocation>(`${base(householdId)}/bills/${billId}/receipt`);
 export const getBillSummary = (householdId: string, billId: string) => api<LandlordBillView>(`${base(householdId)}/bills/${billId}/summary`);
+export const getMyReceiptExplanation = (householdId: string, billId: string) =>
+  api<ReceiptExplanation>(`${base(householdId)}/bills/${billId}/receipt/explanation`);
