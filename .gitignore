@@ -45,3 +45,4 @@ app/frontend/android/local.properties
 app/frontend/android/capacitor-cordova-android-plugins/
 app/frontend/android/app/src/main/assets/public/
 app/frontend/android/app/src/main/assets/capacitor.*.json
+app/.run/
