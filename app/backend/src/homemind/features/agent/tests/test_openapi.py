@@ -27,3 +27,12 @@ def test_sem_pares_input_output_e_sem_caminho_antigo(spec):
     assert not [n for n in spec["components"]["schemas"] if re.search(r"-(Input|Output)$", n)]
     assert "/api/agent/messages" not in spec["paths"]
     assert "AgentSettings" not in json.dumps(spec)
+
+
+def test_historico_da_conversa_existe_e_reutiliza_agent_message(spec):
+    op = spec["paths"][PATH]["get"]
+    ok = op["responses"]["200"]["content"]["application/json"]["schema"]
+    assert ok["type"] == "array" and ok["items"] == {"$ref": "#/components/schemas/AgentMessage"}
+    (limit,) = [p for p in op["parameters"] if p["name"] == "limit"]
+    assert limit["schema"]["minimum"] == 1 and limit["schema"]["maximum"] == 100
+    assert limit["schema"]["default"] == 50

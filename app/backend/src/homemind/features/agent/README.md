@@ -7,17 +7,22 @@ Refs #110, #111 e #112. Detalhe e pedidos pendentes em [`docs/modules/agent.md`]
 `POST /api/households/{household_id}/agent/messages` (`AgentMessageIn` → `AgentResponse`). Só
 inquilinos (`require_access(Resource.agent, write)`); senhorio e operador 403, não-membro 404. O
 residente e o papel vêm do token. Ferramentas só de leitura; todos os números vêm delas; sem LLM
-(ou com resposta não fundamentada) há um recurso determinístico. A leitura não tem tabelas nem eventos.
+(ou com resposta não fundamentada) há um recurso determinístico. A leitura não tem eventos.
+
+`GET …/agent/messages?limit=1..100` (#111) devolve o histórico do **próprio** residente (`list[AgentMessage]`,
+cronológico); cada `POST` grava a troca. Dados pessoais, retenção curta (50 mensagens e 30 dias por
+residente, P-25; `history.py`, tabela `agent_message` da `0311`). **Nunca** é enviado ao LLM (P-06).
 
 | Ficheiro | O quê |
 |---|---|
-| `router.py` | O endpoint; `get_complete` (dependência: `None` salvo `AGENT_LLM_ENABLED` e `NVIDIA_API_KEY`) |
+| `router.py` | Os endpoints `POST`/`GET …/messages`; `get_complete` (dependência: `None` salvo `AGENT_LLM_ENABLED` e `NVIDIA_API_KEY`) |
 | `simulated.py` | **SIMULADO**: `SimulatedProviders` (valores de `contracts/fixtures.py`, só casa demo com `source_kind='demo'`) e `EmptyProviders` (sempre sem dados) |
 | `tools.py` | `ToolRegistry`: só leitura; residente do contexto; só moradores; sem dados → `no_data`; erro do fornecedor → `provider_error` (log só com o tipo) |
 | `providers.py` | `Protocol` `ConsumptionProvider`, `BudgetProvider`, `ReceiptProvider` (P4/P1 implementam); `ProviderSet` e `REGISTRY_ATTR` |
 | `sources.py` | Escolha dos providers por ferramenta e casa (ver «Providers»); `get_registered`, `resolve` |
 | `assistant.py` | `Assistant.reply`: ação e senhorio → resposta fixa; ciclo JSON com `max_steps`, timeout, correções e rodapé `Fonte:`; `fallback_reply` |
 | `guardrails.py`, `formatting.py`, `prompt.py` | Números inventados e pedidos de ação; texto PT-PT determinístico; prompt |
+| `history.py` | Histórico por residente: `record_exchange` (grava a troca e corta por número e idade) e `list_messages` |
 | `llm.py`, `config.py` | `nvidia_complete`, `extract_json`; `AgentSettings` (`agent_llm_enabled=False` por omissão: P-06 pendente) |
 
 **Limite dos dados SIMULADOS:** só cobrem o período `2026-11` (fixtures). O período por omissão é o
@@ -62,14 +67,27 @@ se repete e **SIMULADO** vem sempre etiquetado. A casa demo usa só o executor s
 | `execution.py` | Porta `ActionExecutor`, `SimulatedExecutor`, `select_executor`, `run_execution` (prazo, incerteza, nunca repete) |
 | `actions.py` | Serviço SQLite: propor, confirmar (CAS, COMMIT antes de executar), registar o desfecho (`executed_at` = hora do servidor; execução interrompida ou `confirmed` perdida → `uncertain/interrupted`), rejeitar; limites por dispositivo; `AgentActionView` |
 | `actions_router.py` | `GET …/agent/actions[/{id}]`, `POST …/{id}/confirm`, `POST …/{id}/reject` (montado por `router.py`) |
+| `safety_consumer.py` | AGENT-03b: consumidor `agent.safety_suggestion` de `safety.alert_raised` (ver abaixo) |
 
 Tabelas em `core/migrations/0310_agent_actions.sql`. PROPOSTA para a P1: registar
 `app.state.agent_action_executor` e `app.state.agent_device_directory`; sem eles uma casa real não
 executa nada. Limites e detalhe em [`docs/modules/agent.md`](../../../../../../docs/modules/agent.md).
 
+### AGENT-03b — propostas a partir de alertas de janela (IMPLEMENTADO)
+
+`safety_consumer.py`, subscrito no `lifespan` do `router.py`. Um alerta ativo `window_open_heating`
+com `suggested_command` («desligar a tomada») gera **uma proposta por inquilino ativo** (os do
+quarto, ou todos se for zona comum; `source="safety"`) e `agent.action_proposed`. **Só propõe:**
+nunca chama o executor; só `POST …/confirm` executa. Só com a tomada no diretório de dispositivos
+(demo: SIMULADO; casa real: o diretório da P1, senão nada), id da proposta derivado de (alerta,
+residente) (idempotente), alerta além de `AGENT_ACTION_TTL_S` ignorado. Alerta `resolved` → as
+propostas por confirmar passam a `rejected` pelo sistema (`code="alert_resolved"`).
+Ressalva: em runtime real só dispara quando a `safety` tiver o resolvedor de aquecedores
+(ENERGY-03; `features/safety/router.py`). Hoje, só na demo e nos testes.
+
 ## PLANEADO
 
-Providers reais de P4/P1 (ver «Providers»), executor real e diretório de dispositivos da P1, histórico por residente, AGENT-04 (automações), decisão P-06 antes de ligar o LLM, frontend.
+Providers reais de P4/P1 (ver «Providers»), executor real e diretório de dispositivos da P1 (e o resolvedor de aquecedores da `safety` para o AGENT-03b em runtime real), AGENT-04 (automações), decisão P-06 antes de ligar o LLM, frontend.
 
 ## Testes
 
