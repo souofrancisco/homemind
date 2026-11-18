@@ -6,7 +6,7 @@ Fonte de verdade do produto: documento Conta Certa v5.1 ([`docs/references/Conta
 
 ## Estado do repositório (ler primeiro)
 
-- O **código de produto na `main` é ainda o do ObjectOS**; a **fundação F0** (contratos Pydantic, SQLite, barramento de eventos, guardas por papel, OpenAPI) está implementada (ver `docs/architecture/contracts.md`; decisões D-23…D-30 em revisão da equipa). O que está «planeado» nos documentos e não consta lá **não existe**. Ao escrever código, docs, PRs ou respostas, distinguir sempre **IMPLEMENTADO** de **PLANEADO**.
+- A `main` já tem o **vertical Conta Certa ligado ao runtime** (households, appliances, energy, billing, notifications, presence, safety; app React por papel). O **código ObjectOS** (engine, gestos, páginas antigas não roteadas) ainda existe até a BASE-04 (#74). O que está «planeado» nos documentos e não consta no código **não existe**. Ao escrever código, docs, PRs ou respostas, distinguir sempre **IMPLEMENTADO** de **PLANEADO**.
 - Antes de tocar no código antigo, ler [`docs/architecture/migration.md`](docs/architecture/migration.md) (KEEP/ADAPT/REPLACE/REMOVE/DEFER). **Não remover código ObjectOS** fora de um PR da BASE-04 (#74).
 - Índice da documentação: [`docs/README.md`](docs/README.md). Divisão por pessoa e ficheiros preferenciais: [`docs/development/team.md`](docs/development/team.md). GitHub Project «Conta Certa — Desenvolvimento»: **PENDENTE** (ainda não criado; ver `docs/decisions.md` D-22).
 
