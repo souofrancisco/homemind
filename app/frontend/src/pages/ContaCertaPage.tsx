@@ -8,12 +8,12 @@ import { Link } from "react-router-dom";
 import type { AppRole, SectionId } from "../app/routes";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { useAuth } from "../app/providers/AuthProvider";
-import { listBills, type BillView } from "../services/billing/api";
+import BillsContent from "./BillsPage";
 import { getCameraStatus, listMcpTools, type CameraStatus, type McpTool } from "../services/diagnostics/api";
 import { listNotifications, type NotificationView } from "../services/notifications/api";
 
 type Placeholder = { title: string; detail: string; dependency: string; badge?: string };
-const placeholders: Record<"consumption" | "appliances" | "bills" | "notifications" | "assistant" | "diagnostics", Placeholder> = {
+const placeholders: Record<"consumption" | "appliances" | "notifications" | "assistant" | "diagnostics", Placeholder> = {
   consumption: {
     title: "O consumo ainda não está disponível",
     detail: "O collector MCP já produz leituras internamente, mas ainda não existe uma API de produto para consultar medições ou resumos nesta página.",
@@ -23,11 +23,6 @@ const placeholders: Record<"consumption" | "appliances" | "bills" | "notificatio
     title: "O catálogo de aparelhos ainda não está disponível",
     detail: "O contrato distingue aparelhos consumidores de dispositivos físicos e medidores. Não existe ainda uma API de catálogo integrada.",
     dependency: "HOUSE-03 (#86, PR #142) continua aberto. Não inferimos propriedade nem quem paga.",
-  },
-  bills: {
-    title: "Não existem faturas visíveis nesta casa",
-    detail: "A API de faturas está disponível. Moradores recebem apenas faturas finalizadas; rascunhos ficam visíveis apenas ao senhorio.",
-    dependency: "Os recibos detalhados e alocações ainda não têm endpoint de leitura. Nenhum cálculo é feito no frontend.",
   },
   notifications: {
     title: "Não existem notificações visíveis",
@@ -104,64 +99,6 @@ function useHouseholdData<T>(
 }
 
 const dateTimeFormat = new Intl.DateTimeFormat("pt-PT", { dateStyle: "medium", timeStyle: "short" });
-const dateFormat = new Intl.DateTimeFormat("pt-PT", { dateStyle: "medium", timeZone: "UTC" });
-const moneyFormat = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" });
-const provenanceKindLabels: Record<BillView["provenance"]["kind"], string> = {
-  measured: "medida",
-  estimated: "estimada",
-  inferred: "inferida",
-};
-
-const billStatusLabels: Record<BillView["status"], string> = {
-  draft: "Rascunho",
-  finalized: "Finalizada",
-  superseded: "Substituída",
-};
-
-function BillsContent() {
-  const session = useHouseholdSession();
-  const householdId = session.membership?.household_id;
-  const result = useHouseholdData<BillView[]>(householdId, listBills);
-
-  if (result.status === "loading") return <Group role="status"><Loader size="sm" /><Text>A carregar faturas…</Text></Group>;
-  if (result.status === "error") return (
-    <Alert color="red" icon={<IconAlertCircle />} title="Não foi possível consultar as faturas">
-      <Stack gap="sm"><Text size="sm">A API não devolveu dados. Tenta novamente.</Text>
-        <Button w="fit-content" color="red" variant="light" onClick={result.retry}>Tentar novamente</Button>
-      </Stack>
-    </Alert>
-  );
-  if (!result.data?.length) return <NoData value={{
-    title: "Não existem faturas visíveis nesta casa",
-    detail: session.membership?.role === "tenant"
-      ? "Só as faturas finalizadas são devolvidas aos moradores. Não há rascunhos privados nesta lista."
-      : "Ainda não foi registada uma fatura nesta casa.",
-    dependency: "A lista usa o endpoint real BILL-01. Os recibos detalhados ainda não estão disponíveis por API.",
-    badge: "Sem resultados",
-  }} />;
-
-  return <Stack gap="md">
-    {result.data.map((bill) => (
-      <Card key={bill.id} withBorder radius="lg" p="lg">
-        <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
-          <Stack gap="xs">
-            <Title order={3} size="h4">Fatura · {dateFormat.format(new Date(`${bill.period.start}T00:00:00Z`))} – {dateFormat.format(new Date(`${bill.period.end}T00:00:00Z`))}</Title>
-            <Text size="sm" c="dimmed">Registada em {dateTimeFormat.format(new Date(bill.created_at))}</Text>
-          <Text size="sm">Origem {bill.provenance.origin === "simulated" ? "simulada" : "real"}; natureza {provenanceKindLabels[bill.provenance.kind]}.</Text>
-          </Stack>
-          <Stack align="flex-end" gap="xs">
-            <Title order={3} size="h3">{moneyFormat.format(bill.total_cents / 100)}</Title>
-            <Badge color={bill.status === "finalized" ? "green" : "gray"} variant="light">
-              {billStatusLabels[bill.status]}
-            </Badge>
-          </Stack>
-        </Group>
-      </Card>
-    ))}
-    <Text size="sm" c="dimmed">Esta vista mostra apenas o cabeçalho BillView. A API ainda não disponibiliza recibos ou alocações detalhadas.</Text>
-  </Stack>;
-}
-
 const notificationStatusLabels: Record<NotificationView["status"], string> = {
   unread: "Por ler",
   read: "Lida",
@@ -372,7 +309,7 @@ function HomeContent({ role }: { role: AppRole }) {
           <Card withBorder radius="lg" p="lg">
             <ThemeIcon size={40} radius="xl" variant="light"><IconReceipt size={22} aria-hidden="true" /></ThemeIcon>
             <Title order={3} size="h4" mt="md">Contas e recibos</Title>
-            <Text c="dimmed" size="sm" mt="xs">Consulta faturas visíveis nesta casa. Os recibos detalhados ainda não têm endpoint.</Text>
+            <Text c="dimmed" size="sm" mt="xs">Consulta as faturas da casa e o teu recibo explicado, calculado no servidor.</Text>
             <Button component={Link} to="/contas" variant="subtle" mt="md" px={0}>Consultar a secção</Button>
           </Card>
         )}
