@@ -148,6 +148,50 @@ ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` →
 
 **Limites assumidos.** Com vários moradores em casa e sem Wi-Fi uma saída pela porta nunca fica atribuída (pergunta-se). Um telemóvel que fica em casa com o dono «fora» e Wi-Fi ativo mantém a dúvida (volta a perguntar de 30 em 30 min). A fusão lê as pistas das últimas 48 h. Os parâmetros (0,6; 0,5; 120 s; 30 min) **não estão medidos**: valores iniciais.
 
+## Retenção, consentimentos, exportação e eliminação (PRIV-03 #51) — IMPLEMENTADO (mecanismo); prazos PROPOSTA
+
+Código: `features/presence/retention.py` (compactação e eliminação), `export.py` (exportação), migração `0201_presence_retention.sql`; rotina no `lifespan` de `features/presence/router.py` (1.ª execução aos 60 s, depois de 10 em 10 min; uma falha só deixa o tipo no log). **Não é parecer jurídico nem afirma conformidade RGPD**; o gate jurídico (P-24) continua a bloquear o piloto com pessoas ou sensores reais (abaixo).
+
+**Inventário** (o que guarda dados de presença e o que lhes acontece):
+
+| Onde | Conteúdo | Destino |
+|---|---|---|
+| `domain_event` `presence.cue_recorded`, `presence.changed`, `presence.confirmation_needed` | pistas, mudanças de estado, pedidos «estás em casa?» (têm `resident_id`) | brutos até **N dias** (`PRESENCE_RETENTION_DAYS`, omissão **30, PROPOSTA**); depois agregados diários e apagados; apagados já na eliminação do morador |
+| `domain_event` `presence.door_crossed`, `presence.occupancy_changed` | passagens anónimas, ocupação | idem (só o agregado da porta); nunca guardam pessoa |
+| `presence_confirmation` | pedidos (idempotência da resposta) | apagada com os brutos (N dias) e na eliminação |
+| `presence_state`, `presence_device` | estado atual; telemóveis (`match_key` HMAC, nunca MAC) | em vigor; **apagados** ao revogar o opt-in ou sair da casa |
+| `presence_daily` (novo) | por morador e dia local: segundos `in`/`out`/`uncertain`, pistas por fonte, pedidos; `end_state` (continuidade) | sem prazo definido (PROPOSTA a decidir); apagado na eliminação do morador. **Sem horários nem MAC** |
+| `presence_door_daily` (novo) | por casa e dia: entradas e saídas | anónimo; sem prazo definido |
+| `presence_retention_log` (novo) | auditoria: ação, casa, morador, motivo, **contagens** | sem prazo definido; nunca guarda conteúdo |
+| Logs da aplicação | só metadados, nunca pessoas, MAC ou frames | — |
+| Backups da base | **fora do âmbito do código**: um backup anterior à eliminação ainda tem os dados | **PLANEADO**: política de backups com o DPO/P5 antes do piloto |
+| Notificações `presence_check` (`notification`, P3) | texto da pergunta | **não tocadas** (módulo de P3); limitação |
+
+**Compactação.** Só eventos `presence.*` de **dias locais inteiros** (fuso da casa) anteriores a `agora − N`, com **N ≥ 2 dias** (a fusão lê 48 h, `CUE_WINDOW`; a ocupação 24 h; `PRESENCE_RETENTION_DAYS` abaixo de 2 é recusado, 0 desliga). Por isso ficam sempre ≥ N dias e, no máximo, mais o resto do dia local do corte. Cada dia é **uma transação**: grava os agregados, apaga as marcas `processed_event`/`event_failure` desses eventos e os eventos. Uma falha a meio reverte tudo (testado); repetir não muda nada. Um evento com falha de consumidor ainda por esgotar nunca se apaga. As horas em cada estado vêm das mudanças `presence.changed` (o dia começa no estado em que o anterior acabou; sem estado conhecido conta como `uncertain`); os dias sem eventos também contam. Morador sem opt-in em vigor: os eventos apagam-se sem agregar.
+
+**Eventos financeiros nunca se tocam** (consumo, atribuição, faturação, recibos, contestações, notificações de conta). O trigger `domain_event_no_delete` (PRIV-04, migração 0004) é recriado pela 0201 só para acrescentar os cinco tipos `presence.*`; todos os outros continuam imutáveis (nunca UPDATE). Testado com dados mistos: nenhum evento financeiro nem marca de consumidor muda. **Replay e idempotência:** o replay republica o que existe (os ids mantêm-se); consumidores já processados não repetem efeitos; as marcas dos eventos apagados saem com eles (sem órfãos). Limitação: um produtor que *reemita* um evento antigo apagado (mesmo `id`) recriá-lo-ia; hoje ninguém o faz fora de minutos.
+
+**Eliminação.** `erase_unconsented` apaga, numa transação por morador e casa, tudo o que é seu: pistas, mudanças, pedidos (eventos e tabela), `presence_state`, `presence_device` e `presence_daily`; reconfirma o opt-in dentro da transação (uma reativação entretanto não perde dados). Dispara-se quando `has_presence_opt_in` deixa de ser verdade: **revogou** o `presence_opt_in` (`opt_in_revoked`) ou **saiu da casa** (membership terminada ou fora de datas, `left_household`). É uma varredura periódica (≤ ~10 min) e não um gancho em `households` (módulo de P5): a **recolha** continua a parar logo na revogação (gate do PRIV-02); só a eliminação do histórico tem este atraso. Não toca em dados financeiros, de outros moradores nem de outras casas.
+
+**Exportação.** `GET /api/presence/export?household_id=`: só os dados do próprio (consentimento, telemóveis sem hash, estado atual, pistas, mudanças, pedidos, agregados diários e o prazo vigente com `proposal=true`). Fora ficam as passagens anónimas da porta e tudo o que é de colegas ou de outras casas. Senhorio e operador `403`, não-membro `404`; testes papel × rota e cross-account.
+
+**Opt-in/opt-out por fonte (estado real).** Existem dois consentimentos: `Membership.presence_opt_in` (pistas individuais e estado) e `PresenceDevice.wifi_opt_in` (Wi-Fi, por telemóvel; revogar apaga o `match_key`). **Por fonte** ainda não há granularidade para câmara/aparelho/manual separadamente, nem registo juridicamente suficiente do consentimento (P-23); a UI de informação e escolha é **PLANEADA**. A app e o cálculo funcionam sem sensores (divisão por igual ou pergunta).
+
+**Medição (teste `test_priv03_volume.py`, `PRESENCE_VOLUME=1 uv run pytest -q -s -k volume` em `app/backend`; fora do `make test`).** Um ano simulado, casa de 4 moradores, **carga SUPOSTA** (não há dados reais): por morador/dia 14 pistas Wi-Fi, 4 de aparelho, 2 manuais, 6 mudanças e 0,5 pedidos; por casa/dia 24 passagens e 30 mudanças de ocupação; N = 30. Resultado numa máquina de desenvolvimento (macOS, SQLite em ficheiro; números de uma execução, variam):
+
+| | Antes | Depois |
+|---|---|---|
+| Eventos `presence.*` | 58 402 | 4 873 (+ 1 340 linhas de agregados diários) |
+| Tamanho da base | 40,8 MB | 40,8 MB sem `VACUUM` (SQLite reutiliza as páginas); **4,3 MB** com `VACUUM` |
+| Fusão de 1 morador (`compute`, mediana de 30) | ≈ 54 ms | ≈ 5 ms |
+| Varrimento de eliminação | 47 ms | 4 ms |
+
+A compactação inicial de 335 dias demorou ≈ 12 s (um dia por transação); em regime só compacta um dia por execução. A consulta da fusão degrada com o histórico porque `load_cues` não tem índice por `ts`: a compactação limita o histórico, não corrige o índice.
+
+**PLANEADO / não implementado.** (a) Usar os agregados para estatística ou calibração: **finalidade nova (P-23)**, exige decisão e informação aos moradores. (b) Prazo dos agregados, do registo de auditoria e dos backups. (c) Granularidade de consentimento por fonte e registo do consentimento (quem aceitou o quê e quando). (d) Informação a moradores e visitantes, sinalização, responsável pelo tratamento, base legal e AIPD (**P-24**). (e) Eliminação imediata por gancho na revogação (hoje varredura). (f) `VACUUM` periódico (só há ganho de tamanho com ele). (g) Notificações `presence_check` antigas (P3).
+
+**Bloqueio de piloto (P-24).** Nada disto autoriza recolher dados de pessoas ou sensores reais: faltam revisão jurídica/produto, base legal por finalidade, responsável, informação, direitos dos titulares e triagem de AIPD. Em FakeHome/fixtures/demo não bloqueia.
+
 ## Limites reais
 
 - Acesso à imagem da câmara do kit (MEARI) **não está provado** para este caso de uso: só há leitura RTSP de 10 min via relay (medição herdada, ver [altice-mcp.md](../integrations/altice-mcp.md)) e a câmara do kit é fixa. Plano B: telemóvel como câmara IP ou clip gravado — dito sempre como tal.
@@ -242,11 +286,11 @@ Escalas: gravidade (G) e probabilidade (P) são **antes das correções**; resid
 | Reidentificação indireta por contagem, quarto, energia ou rotina | Alta | Média | sem endpoint de ocupação/série temporal; landlord não recebe presença | Médio; minimização e agregação devem ser validadas no desenho PRES-02/05 |
 | Segredo RTSP em exceção ou logs | Alta | Baixa | fonte regista apenas tipo da exceção; endpoint responde mensagem genérica; teste injeta URL falsa com credenciais | Baixo para logs FastAPI revistos; observar logs de OpenCV/FFmpeg no deployment antes de piloto |
 | Presença em REST/WS sem autorização por papel | Alta | Média | booleano legado removido do DTO/WS; evento textual explícito removido de `events.jsonl` | Médio: estados e timestamps do motor legado ainda não são DTOs escopados; não ligá-los a fonte real |
-| Persistência por tempo excessivo | Alta | Alta após futura escrita | eventos F0 append-only; PRIV-02 não apaga nem migra eventos | Alto até P-08/P-20 e política separada, incluindo backups |
+| Persistência por tempo excessivo | Alta | Alta após futura escrita | eventos F0 append-only; PRIV-02 não apaga nem migra eventos. **PRIV-03:** compactação dos brutos em agregados após N dias (30, PROPOSTA) | Médio: prazos por decidir (P-08/P-20); backups sem política |
 | Falha de sensor interpretada como ausência | Alta | Média | função automática devolve `uncertain`; Wi-Fi nunca infere `out` | Baixo no helper; produtor/fusão ainda não implementados |
 | Casa errada ou membership revogada | Alta | Média | query usa `household_id`, papel tenant, status active e datas; validação e escrita transacionais | Baixo no helper; futuras rotas devem reusar `core.access`/OIDC |
 | Configuração de desenvolvimento ativa em produção | Alta | Média | preview MJPEG inexiste; clip exige `PROFILE=demo`, flag, path allowlist e `HOME_BACKEND=fake`; RTSP recusado | Baixo para API; deployment ainda deve validar env e remover credenciais RTSP não usadas |
-| Consentimento revogado, mas histórico continua | Alta | Média | novas gravações consultam opt-in no mesmo commit SQLite | Alto para histórico: sem expurgo implementado; requer política aprovada e issue própria |
+| Consentimento revogado, mas histórico continua | Alta | Média | novas gravações consultam opt-in no mesmo commit SQLite. **PRIV-03:** eliminação do histórico do morador ao revogar ou sair (varredura ≤ ~10 min) | Médio: backups; atraso até à varredura |
 
 ### Modelo de privacidade e acessos
 
@@ -280,7 +324,7 @@ Escalas: gravidade (G) e probabilidade (P) são **antes das correções**; resid
 | Auditoria de opt-in/revogação | 30 dias propostos | Apenas membership, ação booleana, UTC, propósito e ator autenticado, sem IP/MAC/frame |
 | Totais financeiros/decisões | Prazo próprio da faturação sujeito a revisão | Não reter presença crua para explicar dinheiro se bastar registar razão e proveniência |
 
-**Bloqueio real:** `domain_event` é imutável e **não tem expurgo**; a tabela atual não implementa estes prazos. Não apagar eventos financeiros nem alterar triggers/migrações nesta issue. Proposta separada: abrir issue **F0 — retenção por categoria de dados pessoais**, ligada a P-08/P-20, para definir armazenamento segregado/expiração seletiva de dados de presença e respetiva política de backups sem eliminar evidência financeira. Não encontrei issue GitHub existente dedicada; a issue deverá ser criada antes do piloto. Enquanto isso: só fixtures sintéticas. Uma revogação bloqueia novas recolhas, mas não apaga histórico nem dados de correspondência Wi-Fi.
+**Atualização PRIV-03 (#51):** o mecanismo de compactação e eliminação existe (secção própria acima); os prazos desta tabela continuam PROPOSTA e a compactação usa N=30 (decisão do dono) em vez de 24 h/7 dias. **Texto original do bloqueio (PRIV-02):** `domain_event` é imutável e **não tem expurgo**; a tabela atual não implementa estes prazos. Não apagar eventos financeiros nem alterar triggers/migrações nesta issue. Proposta separada: abrir issue **F0 — retenção por categoria de dados pessoais**, ligada a P-08/P-20, para definir armazenamento segregado/expiração seletiva de dados de presença e respetiva política de backups sem eliminar evidência financeira. Não encontrei issue GitHub existente dedicada; a issue deverá ser criada antes do piloto. Enquanto isso: só fixtures sintéticas. Uma revogação bloqueia novas recolhas, mas não apaga histórico nem dados de correspondência Wi-Fi.
 
 **Informação na aplicação:** antes de ativar, explicar por finalidade e por fonte o que é/ não é recolhido, quem vê, se influencia divisão, como optar/revogar, retenção efetiva, contacto do responsável (por confirmar), direitos e política de visitas; consentimento, quando escolhido como fundamento, deve ser granular e livre. Mostrar estado da câmara e opção de desativação; nunca substituir transparência por uma flag técnica.
 

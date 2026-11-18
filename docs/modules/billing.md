@@ -235,12 +235,12 @@ Exemplo do PDF (v5.1 §20, teste `test_exemplo_do_pdf_excesso_de_330_kwh`): fatu
 | Financeira | consumos (`energy.step_detected`, `energy.consumption_*`), perguntas e votos, atribuições, faturas, parcelas, contestações, avisos de orçamento | **nunca apagada automaticamente**; a base de dados recusa DELETE/UPDATE (trigger, migração `0004`). Prazo legal de conservação: por fixar com o DPO (P-08) | IMPLEMENTADO (proteção) / PLANEADO (prazo) |
 | Telemetria em bruto | `energy.reading_recorded`, `sensor.reading_recorded` | `RETENTION_TELEMETRY_DAYS` (omissão **90**, mínimo 62 para o mês corrente e o anterior; `0` desliga). Não se apaga um evento que um consumidor ainda está a tentar processar | IMPLEMENTADO; prazo PROPOSTA |
 | Agregados diários dos alertas | `alerts_device_day`, `alerts_room_night` | o mesmo prazo | IMPLEMENTADO |
-| Presença | `presence.*` | PRIV-03 (#51) | fora desta issue |
+| Presença | `presence.*` | PRESENCE_RETENTION_DAYS (omissão **30**, PROPOSTA): brutos passam a agregados diários sem horários; ver [presence.md](presence.md) | IMPLEMENTADO (PRIV-03 #51); prazo PROPOSTA |
 | Operacional | notificações, alertas, automações, agente | sem expurgo (o histórico do assistente já tem 50 mensagens/30 dias, P-25) | PLANEADO |
 
 O expurgo (`features/retention/purge.py`) corre 1 min após o arranque e de 6 em 6 h, em lotes de 5000 por transação; no log só ficam contagens.
 
-**Anonimização de ex-moradores (IMPLEMENTADO, DESLIGADA por omissão; `features/retention/anonymize.py`, migração `0500`).** Liga-se com `RETENTION_ANONYMIZE_AFTER_DAYS` (0 = desligada; mínimo 30) quando a equipa/DPO fixar o prazo (P-08). Abrange quem não tem nenhum contrato aberto e cujo último contrato acabou há mais desse prazo; quem ainda mora numa casa nunca é tocado. Corre no ciclo da retenção, uma pessoa por transação (reconfirmada dentro da transação). Muda: nome → «Ex-morador XXXX»; `auth_subject` → `NULL` (se voltar, é um residente novo); email dos convites → `anonimizado`; apaga a conversa com o assistente, as notificações pessoais, as leituras e as preferências. **Fica** (evidência financeira): o id em faturas, parcelas, atribuições, votos, contestações (incluindo o motivo escrito) e propostas de regra. **Limitações:** o registo de eventos é imutável, por isso o texto de notificações antigas lá guardado não se reescreve; a presença é da PRIV-03 (#51).
+**Anonimização de ex-moradores (IMPLEMENTADO, DESLIGADA por omissão; `features/retention/anonymize.py`, migração `0500`).** Liga-se com `RETENTION_ANONYMIZE_AFTER_DAYS` (0 = desligada; mínimo 30) quando a equipa/DPO fixar o prazo (P-08). Abrange quem não tem nenhum contrato aberto e cujo último contrato acabou há mais desse prazo; quem ainda mora numa casa nunca é tocado. Corre no ciclo da retenção, uma pessoa por transação (reconfirmada dentro da transação). Muda: nome → «Ex-morador XXXX»; `auth_subject` → `NULL` (se voltar, é um residente novo); email dos convites → `anonimizado`; apaga a conversa com o assistente, as notificações pessoais, as leituras e as preferências. **Fica** (evidência financeira): o id em faturas, parcelas, atribuições, votos, contestações (incluindo o motivo escrito) e propostas de regra. **Limitações:** o registo de eventos é imutável, por isso o texto de notificações antigas lá guardado não se reescreve; a presença é da PRIV-03 (#51): `features/presence/retention.py` elimina os dados de presença de quem revoga ou sai.
 
 **Prazos — PROPOSTA para a equipa/DPO decidir (P-08), nada disto é parecer jurídico:**
 
@@ -250,7 +250,7 @@ O expurgo (`features/retention/purge.py`) corre 1 min após o arranque e de 6 em
 | Leituras em bruto (energia, sensores) | 90 dias (`RETENTION_TELEMETRY_DAYS`, ativo) | o recibo não depende delas |
 | Dados pessoais de ex-moradores | anonimizar 90 dias após o fim do contrato (`RETENTION_ANONYMIZE_AFTER_DAYS=90`, hoje desligado) | tempo para contestar a última fatura |
 | Conversa com o assistente | 30 dias / 50 mensagens (já ativo, P-25) | — |
-| Presença | PRIV-03 (#51) | — |
+| Presença | brutos 30 dias (`PRESENCE_RETENTION_DAYS`, ativo, PROPOSTA); agregados e backups por decidir ([presence.md](presence.md)) | — |
 
 **Logs (IMPLEMENTADO, `core/redact.py`):** todos os registos do processo (app e uvicorn) passam por uma *record factory* que mascara `Bearer`, chaves/tokens/passwords (`chave=valor` e JSON), `?code=`/`&state=` do OAuth, credenciais em URLs, URLs RTSP inteiros, MACs, emails e UUIDs (ficam os primeiros 8 caracteres). Rede de segurança: o código continua a não registar estes dados. Frames de vídeo nunca são gravados (PRIV-02).
 
