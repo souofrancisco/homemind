@@ -153,6 +153,9 @@ class ColdRoomData(ContractModel):
     threshold_c: float
     coldest_night_c: float  # média da noite mais fria da janela
     last_night: date  # data (local) do início da última noite contada
+    # Plafond solidário (BILL-03) que o quarto ainda tem no mês de `last_night`, já descontado o
+    # aquecimento provado coberto até agora. `None`: o quarto não tem plafond.
+    allowance_left_wh: EnergyWh | None = None
 
 
 class AutomationExecutedData(ContractModel):

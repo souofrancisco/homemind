@@ -221,7 +221,9 @@ Exemplo do PDF (v5.1 §20, teste `test_exemplo_do_pdf_excesso_de_330_kwh`): fatu
 - linha `heating_allowance`: 7,5 kWh = 1,20 € para cada morador;
 - total da Ana: 69,60 €; total de cada um dos outros: 16,80 €.
 
-**PLANEADO:** o aviso privado «ainda tens X kWh do plafond» junto do alerta de quarto frio; e quem pode alterar `included_wh` depois de criado o quarto, e com que efeito (só nas faturas seguintes).
+**IMPLEMENTADO (seguimentos):**
+- **Editar o plafond** (migração `0109_billing_room_allowances.sql`, `features/billing/room_allowances.py`): só o senhorio, `PUT /api/households/{id}/room-allowances/{room_id}` `{included_wh}` (0 = sem plafond). Vale a partir do dia 1 do mês seguinte, por isso nunca muda o mês em curso nem faturas fechadas; até lá substitui-se. O limite de cada fatura soma, mês a mês, o plafond desse mês (`closing.monthly_allowance` + `allowance.period_limit`). `GET …/room-allowances` (todos os membros) dá o plafond deste mês e a mudança agendada, e a página da casa mostra-os em cada quarto. `RoomView.included_wh` continua a ser o valor da criação.
+- **«Ainda tens X kWh do plafond»** no aviso privado de quarto frio (ALERT-06): `ColdRoomData.allowance_left_wh` = plafond do mês menos o aquecimento provado já coberto, com a mesma regra do fecho (`budgets.allowance_left`). Sem plafond (`None`) o aviso não promete nada; com o plafond gasto diz que já foi usado. Nunca mostra euros.
 
 
 ## Rastreabilidade financeira e retenção (PRIV-04)

@@ -289,6 +289,7 @@ class NotificationService:
             window_nights=d.window_nights,
             threshold_c=d.threshold_c,
             coldest_night_c=d.coldest_night_c,
+            allowance_left_wh=d.allowance_left_wh,
             origin=provenance.origin,
             correlation_id=correlation_id,
             source_event_id=source_event_id,

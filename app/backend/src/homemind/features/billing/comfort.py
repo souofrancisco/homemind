@@ -5,7 +5,8 @@ Só usa leituras `ok` do sensor de clima com quarto conhecido; sensor ausente, `
 `stale` não gera inferências. Uma noite (22:00–08:00, fuso da casa) é fria se a média das suas
 leituras fica abaixo de `THRESHOLD_C`. Avisa-se quando há `COLD_NIGHTS` noites frias nas últimas
 `WINDOW_NIGHTS` noites completas, e no máximo uma vez por janela e quarto. Zonas comuns ficam
-de fora (não são de ninguém). O senhorio nunca recebe estes avisos.
+de fora (não são de ninguém). O senhorio nunca recebe estes avisos. O aviso leva o plafond
+solidário que o quarto ainda tem nesse mês (`budgets.allowance_left`), se o quarto o tiver.
 """
 
 import sqlite3
@@ -16,6 +17,7 @@ from zoneinfo import ZoneInfo
 from homemind.contracts import domain_events as de
 from homemind.contracts.common import Origin, Provenance, ValueKind, stable_id
 from homemind.contracts.sensors import SensorKind
+from homemind.features.billing import budgets
 
 THRESHOLD_C = 18.0
 COLD_NIGHTS = 3
@@ -115,6 +117,8 @@ def evaluate(
         origin=Origin.simulated if simulated else Origin.real, kind=ValueKind.measured
     )
     coldest = round(min(n["avg_c"] for n in cold), 1)
+    # «Ainda tens X kWh do plafond»: para ninguém passar frio por causa da conta (BILL-03).
+    left = budgets.allowance_left(conn, household_id, room_id, last.strftime("%Y-%m"))
     return [
         de.AlertsColdRoom(
             id=stable_id("alerts.cold_room", str(room_id), str(resident), last.isoformat()),
@@ -130,6 +134,7 @@ def evaluate(
                 threshold_c=THRESHOLD_C,
                 coldest_night_c=coldest,
                 last_night=last,
+                allowance_left_wh=left,
             ),
         )
         for resident in tenants

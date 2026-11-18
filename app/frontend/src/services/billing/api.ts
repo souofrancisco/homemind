@@ -33,3 +33,12 @@ export const listMyContestations = (householdId: string) => api<Contestation[]>(
 export const listContestations = (householdId: string) => api<LandlordContestationView[]>(`${base(householdId)}/contestations`);
 export const decideContestation = (householdId: string, contestationId: string, body: ContestationDecisionIn) =>
   post<LandlordContestationView>(`${base(householdId)}/contestations/${contestationId}/decision`, body);
+
+// Plafond solidário por quarto (BILL-03): editar só vale a partir do mês seguinte.
+export type RoomAllowanceView = Schemas["RoomAllowanceView"];
+export const listRoomAllowances = (householdId: string) =>
+  api<RoomAllowanceView[]>(`${base(householdId)}/room-allowances`);
+export const setRoomAllowance = (householdId: string, roomId: string, includedWh: number) =>
+  request<RoomAllowanceView>(`${base(householdId)}/room-allowances/${encodeURIComponent(roomId)}`, {
+    method: "PUT", body: JSON.stringify({ included_wh: includedWh }),
+  });

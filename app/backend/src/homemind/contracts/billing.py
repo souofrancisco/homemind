@@ -733,3 +733,22 @@ class HouseRulesView(ContractModel):
     upcoming: PolicyVersion | None  # agendada, ainda pode ser substituída ou cancelada
     history: list[PolicyVersion]  # versões que já valeram, mais recente primeiro (inclui current)
     next_change_from: date
+
+
+# --- plafond solidário editado (BILL-03) --------------------------------------------------------
+
+
+class RoomAllowanceIn(ContractModel):
+    """`PUT …/room-allowances/{room_id}`: o novo plafond MENSAL do quarto (0 = sem plafond), a
+    valer a partir do dia 1 do mês seguinte."""
+
+    included_wh: EnergyWh
+
+
+class RoomAllowanceView(ContractModel):
+    """O plafond de um quarto: o que vale este mês e a mudança agendada, se houver."""
+
+    room_id: UUID
+    current_wh: EnergyWh  # 0 = sem plafond
+    upcoming_wh: EnergyWh | None = None
+    upcoming_from: date | None = None

@@ -173,7 +173,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | `GET` · `PUT` `DELETE` | `/api/households/{id}/rules` · `…/rules/next` | L, T (ler) · T (agendar/cancelar) | **IMPLEMENTADO (HOUSE-04):** `HouseRulesView`; `HouseRulesIn` agenda para o dia 1 do mês seguinte |
 | `GET` `PUT` | `/api/households/{id}/budgets/me?period` | T | **IMPLEMENTADO (ALERT-01):** `BudgetIn` → `BudgetStatus` (com `forecast: BudgetForecast \| null`, ALERT-02) |
 | `GET` `PUT` | `/api/households/{id}/tariff` | L (definir), L e T (ver) | **IMPLEMENTADO (ALERT-02):** `TariffIn` → `TariffStatus` (simples ou bi-horário; só estimativas) |
-| `GET` `PUT` | `/api/households/{id}/room-allowances` | L | Plafond por quarto |
+| `GET` · `PUT` | `/api/households/{id}/room-allowances` · `…/{room_id}` | L, T (ler) · L (agendar) | **IMPLEMENTADO (BILL-03):** `RoomAllowanceView`; `RoomAllowanceIn` vale no mês seguinte |
 
 ### Notificações (P3)
 
