@@ -22,6 +22,7 @@ Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home).
 | [vision.md](product/vision.md) | Problema, os três pilares, princípios, o que a Conta Certa não é |
 | [personas.md](product/personas.md) | Senhorio, inquilino, operador: percursos, funcionalidades, limites de acesso |
 | [requirements.md](product/requirements.md) | Requisitos com origem (PDF, DECISÃO, PROPOSTA), prioridade e âmbito do MVP |
+| [app-01-ux.md](product/app-01-ux.md) | Pesquisa UX A/B/C, matriz, decisão, rotas, papéis e checklist de validação da APP-01 |
 
 ### Arquitetura (`architecture/`)
 

@@ -1,6 +1,6 @@
 # Módulo `households` — casas, quartos, moradores e persistência
 
-**Dono: P5 (souofrancisco).** **IMPLEMENTADO (F0 + HOUSE-02 nesta branch): leituras REST, persistência, guardas, criação de quartos, convites tenant e revogação.** Entidades: [data-model.md](../architecture/data-model.md). Contratos: [contracts.md](../architecture/contracts.md).
+**Dono: P5 (souofrancisco).** **IMPLEMENTADO NA MAIN (F0 + HOUSE-02, PR #143): leituras REST, persistência, guardas, criação de quartos, convites tenant e revogação.** Entidades: [data-model.md](../architecture/data-model.md). Contratos: [contracts.md](../architecture/contracts.md).
 
 ## Responsabilidade
 
