@@ -74,7 +74,13 @@ function Card1({ n, householdId, members, onChange }: {
             <Button variant="subtle" onClick={() => setPicking(false)}>Cancelar</Button>
           </Group>
         )}
-        {!canAct && n.status === "expired" && <Text size="sm" c="dimmed">O prazo terminou; sem resposta, a utilização divide-se por todos.</Text>}
+        {!canAct && n.status === "expired" && (
+          <Text size="sm" c="dimmed">
+            {n.kind === "confirmation_request"
+              ? "O prazo terminou; sem resposta, a utilização divide-se por todos."
+              : "O prazo terminou sem resposta; nada foi executado."}
+          </Text>
+        )}
         <Text size="xs" c="dimmed">{n.scope === "personal" ? "Pessoal" : "Da casa"} · {when.format(new Date(n.created_at))}{n.expires_at && n.status !== "expired" ? ` · responder até ${when.format(new Date(n.expires_at))}` : ""}</Text>
       </Stack>
     </Card>
@@ -91,10 +97,17 @@ export default function NotificationsContent() {
     if (!householdId) return;
     let active = true;
     Promise.all([listNotifications(householdId), session.membership?.role === "tenant" ? getMembers(householdId) : Promise.resolve([])])
-      .then(([items, members]) => active && setState({ key: householdId, items, members }))
+      .then(([items, all]) => {
+        // «É de outra pessoa» só pode apontar para os outros inquilinos ativos: nem o senhorio,
+        // nem o operador, nem a própria pessoa (para isso há «É minha»).
+        const members = all.filter(
+          (m) => m.role === "tenant" && m.status === "active" && m.membership_id !== session.membership?.id,
+        );
+        if (active) setState({ key: householdId, items, members });
+      })
       .catch(() => active && setState({ key: householdId, items: null, members: [] }));
     return () => { active = false; };
-  }, [householdId, reload, session.membership?.role]);
+  }, [householdId, reload, session.membership?.role, session.membership?.id]);
 
   if (!householdId) return null;
   const cur = state?.key === householdId ? state : null;
