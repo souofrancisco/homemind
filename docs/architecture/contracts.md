@@ -82,6 +82,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `billing.bill_created` / `bill_finalized` | P4 | `BillRef` | P3, UI | idem |
 | `billing.allocation_published` | P4 | `AllocationPublished` | P3 (`notifications.allocation_published`, **IMPLEMENTADO**) | idem |
 | `billing.contestation_changed` | P4 | `Contestation` (BILL-06: aberta → aviso ao senhorio; decidida → aviso a quem contestou) | P3 (`notifications.contestation`, **IMPLEMENTADO**) | idem |
+| `billing.rules_proposal_changed` | P4 | `RuleProposal` (HOUSE-04: aberta, aprovada pela maioria, rejeitada, retirada, substituída ou caducada; só contagens de votos) | P3 (`notifications.rules_proposal`, **IMPLEMENTADO**) | idem |
 | `notification.created` | P3 | `NotificationCreatedData` | UI (DTO) | idem |
 | `notification.responded` | P3 | `NotificationRespondedData` (resposta + `ref` + `outcome` nas confirmações: um evento por voto; P4 só atribui com `outcome.decided`) | P4 | idem |
 | `alerts.threshold_crossed` | P4 | `BudgetThreshold` | P3 (`notifications.budget_threshold`, **IMPLEMENTADO**); P3 (`agent.budget_light`, ALERT-06: proposta de cor na lâmpada, **IMPLEMENTADO**) | idem |

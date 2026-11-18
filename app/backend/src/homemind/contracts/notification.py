@@ -118,6 +118,7 @@ class RefType(StrEnum):
     presence_check = "presence_check"  # `PresenceConfirmationRequest.id`
     safety_alert = "safety_alert"  # `SafetyAlert.id`
     contestation = "contestation"  # `Contestation.id` (BILL-06)
+    rules_proposal = "rules_proposal"  # `RuleProposal.id` (HOUSE-04)
     appliance_identification = "appliance_identification"  # `ApplianceIdentificationRequest.id`
 
 
