@@ -95,7 +95,7 @@ Os PDFs continuam a mencionar Telegram; essa parte **não faz parte da arquitetu
 | P-14 | Renomear «HomeMind» no Android e no pacote `homemind` (hoje mantido) | Equipa | Depois da demo |
 | P-15 | Validação jurídica (RGPD, câmara, repartição de custos) | Equipa/jurista | Piloto |
 | P-16 | Limiares de `stale` (leitura desatualizada) e de «aparelho identificado» (0,9?) | P1 | Motor de energia |
-| P-17 | HOUSE-02 implementa convite tenant dirigido a email verificado, associado ao `sub` do Authentik numa transação; endpoints e matriz no [ADR](architecture/house-02-memberships.md). **Em review no PR #143; o backend falha fechado. A configuração real Authentik de email verificado ainda é bloqueio de ativação.** | P5 + equipa | Antes de HOUSE-05 |
+| P-17 | HOUSE-02 implementa convite tenant dirigido a email verificado, associado ao `sub` do Authentik numa transação; endpoints e matriz no [ADR](architecture/house-02-memberships.md). **IMPLEMENTADO na main (#143); ativação real BLOQUEADA até o Authentik emitir `email_verified` e haver rate limit. O backend falha fechado. A configuração real Authentik de email verificado ainda é bloqueio de ativação.** | P5 + equipa | Antes de HOUSE-05 |
 | P-18 | O inquilino pode ver aparelhos e donos de terceiros (`Appliance.ownership`)? Hoje `own` na matriz; «o aquecedor do Bruno» exige mostrar o nome | Equipa | APP-03 |
 | P-19 | Um morador «manual» (declarado) é `measured`? Hoje sim (`origin` real, `kind` measured) | P2 | PRES-03 |
 | P-20 | Retenção de `domain_event` e de `payload_json` (dados de presença/consumo); hoje sem expurgo | Equipa | Piloto (P-08) |

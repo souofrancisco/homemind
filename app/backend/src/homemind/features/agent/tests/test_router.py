@@ -114,11 +114,19 @@ def test_excecao_inesperada_do_llm_da_200_com_recurso(client, llm, caplog):
     assert "segredo-xyz" not in caplog.text
 
 
-def test_pedido_de_acao_nao_executa_nada(client, llm):
+def test_pedido_de_acao_so_propoe_e_o_llm_nunca_e_chamado(client, llm):
     llm.complete = FakeLLM([])  # esgotado: se fosse chamado, o teste falhava
     r = ask(client, ANA, "Desliga o aquecedor da sala").json()
-    assert r["text"] == ACTION_TEXT
-    assert r["proposed_actions"] == [] and r["tool_result_ids"] == []
+    assert r["text"] != ACTION_TEXT and "Ainda não foi executado" in r["text"]
+    assert [a["status"] for a in r["proposed_actions"]] == ["proposed"] and r[
+        "tool_result_ids"
+    ] == []
+
+
+def test_pedido_de_acao_sem_dispositivos_e_so_texto(client, llm):
+    llm.complete = FakeLLM([])
+    r = ask(client, "sub-bruno", "Desliga a luz", url=URL_B).json()
+    assert "Não encontro" in r["text"] and r["proposed_actions"] == []
 
 
 # --- papel × rota e isolamento ------------------------------------------------------------------
