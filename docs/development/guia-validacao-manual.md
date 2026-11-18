@@ -50,7 +50,7 @@ auth() { curl -s -H "Authorization: Bearer $TOKEN" "$@"; }
 - **Issue:** #28, #29 · **Tipo:** SIMULADO
 - **Pré-requisitos:** Docker, `make`; `app/.env` copiado do exemplo, sem alterações.
 - **Passos:** `make dev`; esperar os serviços; `curl -s localhost:8000/healthz`.
-- **Esperado:** `{"status":"ok","backend":"fake","physical_writes":false}`; painel abre em <http://localhost:5173>; log do backend com «visão desligada: falta VISAO_DETETOR e/ou VIDEO_SOURCE» e sem erros.
+- **Esperado:** `{"status":"ok","backend":"fake","physical_writes":false}`; painel abre em <http://localhost:5173>; log do backend sem erros.
 - **Evidência:** saída do `curl` e hora.
 - **PASS** se os três pontos se verificarem sem editar nada além do `.env`. **FAIL** caso contrário.
 
@@ -307,27 +307,17 @@ uv run --env-file ../.env python -m homemind.connectors.runbook     # kit REAL, 
 - **Esperado:** abre a fonte, lê frames **só em memória** durante ~5 s e descarta-os logo; mede resolução, FPS, atraso de abertura e do primeiro frame. Nada é gravado nem enviado; o URL nunca aparece na saída. Sem `VIDEO_SOURCE` ou sem `--camera`: BLOQUEADO.
 - **PASS** se chegar pelo menos um frame. Não substitui o VID-01 (10 min sem quedas).
 
-### YOLO-01 — Objetos reconhecidos (BLOQUEADO para captura de pessoas)
-- **Issue:** #4 · **Tipo:** REAL
-- **Pré-requisitos:** `uv sync --extra visao`, pesos descarregados, `VISAO_DETETOR=homemind.features.visao.detetor:DetetorYolo`.
-- **Passos:** mostrar à câmara caneca, livro e comando, um de cada vez, a 2–3 m, 10 s cada; observar as caixas no vídeo do painel.
-- **Esperado:** cada objeto com caixa e nome certo na maior parte do tempo. Se o livro falhar, repetir com `VISAO_LIVRO_COCO=39` (garrafa) ou `67` (telemóvel) e anotar a escolha.
-- **PASS** com os três objetos reconhecidos (indicar o objeto usado em vez do livro, se for o caso).
+### YOLO-01 — Objetos reconhecidos (RETIRADO)
+- **Retirado na BASE-04 (#74):** reconhecia caneca/livro/comando, do detetor de objetos do ObjectOS, já removido. A deteção de **pessoas** na soleira é testada em PRES-01 e PRES-02.
 
 ### YOLO-02 — FPS de inferência (RETIRADO)
 - **Retirado na BASE-04 (#74):** dependia do `afinador` (ObjectOS), já removido. A medição do FPS de inferência de **pessoas** na soleira fica **PLANEADA** na feature de presença (PRES-02); enquanto não existir, este teste não se executa.
 
-### POSE-01 — Esqueleto
-- **Issue:** #4 · **Tipo:** REAL
-- **Passos:** pessoa de frente, de perfil e a 3 m; levantar um braço.
-- **Esperado:** esqueleto desenhado com ombros, cotovelos e pulsos a acompanhar o braço. Anotar a que distância/ângulo os pulsos deixam de aparecer.
-- **PASS** se de frente a 2–3 m os pulsos forem seguidos de forma estável.
+### POSE-01 — Esqueleto (RETIRADO)
+- **Retirado na BASE-04 (#74):** a pose era do detetor antigo; a presença não usa pose nem caras.
 
-### TRK-01 — Tracking
-- **Issue:** #4 · **Tipo:** REAL
-- **Passos:** mover um objeto devagar pela imagem durante 10 s; entrar uma segunda pessoa.
-- **Esperado:** a caixa acompanha o objeto sem piscar; duas pessoas têm caixas distintas. Não aparecem nomes nem identificação de pessoas.
-- **PASS** se o seguimento for contínuo e sem identificação.
+### TRK-01 — Tracking (RETIRADO)
+- **Retirado na BASE-04 (#74):** seguia objetos do ObjectOS. O seguimento de pessoas na soleira (ByteTrack) é exercitado em PRES-02.
 
 ## G. Gestos e presença — RETIRADO (BASE-04)
 
@@ -497,10 +487,10 @@ Data: ________ · Testador(es): ________ · Hardware (GPU/CPU): ________ · Comm
 | VID-02 | Atraso câmara → ecrã | | | 0/5/10 min: ____ / ____ / ____ s | #2 |
 | VID-03 | Reconexão da câmara | | | | #3 |
 | VID-04 | Câmara: abertura e FPS (runbook) | REAL | BLOQUEADO | 2026-11-18 15:11:01 UTC (15:11:01 local) · PRIV-02: câmara só com --camera e autorização | #122 |
-| YOLO-01 | Objetos | | | objeto do «livro»: ____ | #4 |
+| YOLO-01 | Objetos (retirado) | | | objeto do «livro»: ____ | #4 |
 | YOLO-02 | FPS de inferência (retirado) | | | ____ ms/frame · variante ____ | #4 |
-| POSE-01 | Esqueleto | | | | #4 |
-| TRK-01 | Tracking | | | | #4 |
+| POSE-01 | Esqueleto (retirado) | | | | #4 |
+| TRK-01 | Tracking (retirado) | | | | #4 |
 | GES-01 | 10 gestos válidos | | | ____ / 10 | #5 |
 | GES-02 | Sem falsos positivos | | | falsos: ____ | #5, #8 |
 | PRE-01 | Presença | | | | #6 |

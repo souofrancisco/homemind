@@ -30,7 +30,6 @@ services:
       network: host  # DNS do resolver embebido do Docker falha nalgumas máquinas
     environment:
       API_PROXY_TARGET: http://backend:8000
-      VITE_OBJECTOS_SOURCE: api
       VITE_OIDC_AUTHORITY: http://localhost:${AUTHENTIK_PORT:-9000}/application/o/homemind/
     ports: ["${FRONTEND_PORT:-5173}:5173"]
     volumes:
@@ -73,8 +72,8 @@ services:
     volumes:
       - ./infra/authentik:/blueprints/custom:ro
       # Assets do brand (branding_logo/branding_favicon são nomes de ficheiros em /media/public); o favicon reutiliza o ícone da app.
-      - ./infra/authentik/media/objectos-logo.svg:/media/public/objectos-logo.svg:ro
-      - ./frontend/assets/icon.svg:/media/public/objectos-icon.svg:ro
+      - ./infra/authentik/media/conta-certa-logo.svg:/media/public/conta-certa-logo.svg:ro
+      - ./frontend/assets/icon.svg:/media/public/conta-certa-icon.svg:ro
     depends_on:
       authentik-db:
         condition: service_healthy
