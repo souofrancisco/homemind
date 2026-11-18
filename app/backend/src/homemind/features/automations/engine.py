@@ -10,8 +10,8 @@ Gatilhos (os únicos do contrato):
   potência se manteve). Uma leitura sem potência utilizável, um intervalo maior do que
   `MAX_READING_GAP` entre leituras ou uma leitura não acima do limiar quebram a sequência; o fecho
   do consumo (`energy.consumption_closed`) também. Leituras fora de ordem ignoram-se.
-- `presence_changed`: o estado de presença de um morador mudou face ao último conhecido. A
-  primeira observação de um morador só regista o estado (não há «antes»).
+- `presence_changed`: só transições in↔out face ao estado IMEDIATAMENTE anterior do morador. A
+  primeira observação e qualquer transição que envolva `uncertain` só registam o estado.
 
 Invariantes:
 - só regras `active` aprovadas, e só eventos desde a ativação (`active_since`): um evento anterior
@@ -109,6 +109,11 @@ class AutomationEngine:
         if status is ExecutionStatus.uncertain:
             self._locked_at[device_id] = at
 
+    def is_locked(self, device_id: UUID, now: datetime) -> bool:
+        """Dispositivo bloqueado por um resultado `uncertain` ainda dentro do bloqueio."""
+        locked = self._locked_at.get(device_id)
+        return locked is not None and (now - locked).total_seconds() < self.lockout_s
+
     # gatilhos -----------------------------------------------------------------------------
 
     def _prune(self, household_id: UUID, active_ids: set[UUID]) -> None:
@@ -159,7 +164,9 @@ class AutomationEngine:
         key = (event.household_id, event.data.resident_id)
         before = self._presence.get(key)
         self._presence[key] = event.data.state
-        if before is None or before is event.data.state:
+        clear = (PresenceState.home, PresenceState.away)
+        # só in↔out: qualquer transição que envolva `uncertain` regista o estado e não dispara
+        if before not in clear or event.data.state not in clear or before is event.data.state:
             return []
         return [
             (ar.rule, TriggerKind.presence_changed)
@@ -189,9 +196,7 @@ class AutomationEngine:
                     lead.id, lead.household_id, device, event.id, now, cause, covered, code
                 )
 
-            if (locked := self._locked_at.get(device)) is not None and (
-                now - locked
-            ).total_seconds() < self.lockout_s:
+            if self.is_locked(device, now):
                 out.append(firing(UNCERTAIN_LOCKOUT))
                 continue
             if any(

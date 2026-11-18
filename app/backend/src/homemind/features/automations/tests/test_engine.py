@@ -196,3 +196,15 @@ def test_repetir_os_mesmos_eventos_num_motor_novo_da_as_mesmas_decisoes():
     rules = active(sim.power_rule(duration_s=600))
     first = feed(AutomationEngine(), events, rules)
     assert first == feed(AutomationEngine(), events, rules) and len(first) == 1
+
+
+def test_transicoes_com_incerto_nao_disparam_mas_o_estado_fica_registado():
+    eng = AutomationEngine(device_cooldown_s=0, rule_cooldown_s=0)
+    rules = active(sim.presence_rule())
+    eng.on_event(sim.presence(at(0), fx.ANA, P.home), rules)
+    assert eng.on_event(sim.presence(at(1), fx.ANA, P.uncertain), rules) == []  # in -> incerto
+    assert eng.on_event(sim.presence(at(2), fx.ANA, P.away), rules) == []  # incerto -> out
+    assert eng.on_event(sim.presence(at(3), fx.ANA, P.uncertain), rules) == []
+    assert eng.on_event(sim.presence(at(4), fx.ANA, P.uncertain), rules) == []
+    assert eng.on_event(sim.presence(at(5), fx.ANA, P.away), rules) == []  # incerto -> out
+    assert len(eng.on_event(sim.presence(at(6), fx.ANA, P.home), rules)) == 1  # out -> in

@@ -44,11 +44,12 @@ def ramp(start: int, end: int, step: int = 3, w: float = 2000, **kw):
 class FakeExecutor:
     """Executor falso da casa real: regista as chamadas e devolve o desfecho pedido."""
 
-    def __init__(self, mode="confirmed"):
-        self.mode, self.calls = mode, []
+    def __init__(self, mode="confirmed", delay=0.0):
+        self.mode, self.calls, self.delay = mode, [], delay
 
     async def execute(self, action, confirmation):
         self.calls.append((action, confirmation))
+        await asyncio.sleep(self.delay)
         if self.mode == "raise":
             raise RuntimeError("tomada sem resposta")
         return ActionExecutionResult(
@@ -57,22 +58,27 @@ class FakeExecutor:
         )  # fmt: skip
 
 
-def body(kind=TriggerKind.power_above, device=DEMO_PLUG, duration_s=600):
+def body(kind=TriggerKind.power_above, device=DEMO_PLUG, duration_s=600, target=None):
     trig = (
         AutomationTriggerIn(kind=kind, device_id=device, threshold_w=1500, duration_s=duration_s)
         if kind is TriggerKind.power_above
         else AutomationTriggerIn(kind=kind)
     )
-    return AutomationProposeIn(name="Desligar a tomada", trigger=trig, target_device_id=device)
+    return AutomationProposeIn(
+        name="Desligar a tomada", trigger=trig, target_device_id=target or device
+    )
 
 
-def activate(db, *, house=A, people=(fx.ANA, fx.BRUNO, fx.CARLA), origin=Origin.simulated,
-             device=DEMO_PLUG, kind=TriggerKind.power_above, duration_s=600):  # fmt: skip
+def activate(
+    db, *, house=A, people=(fx.ANA, fx.BRUNO, fx.CARLA), origin=Origin.simulated,
+    device=DEMO_PLUG, kind=TriggerKind.power_above, duration_s=600, target=None,
+):  # fmt: skip
     """Propõe e aprova pela votação real (o proponente + os votos necessários)."""
+    plugs = {device: "Tomada", **({target: "Alvo"} if target else {})}
     r = db.run_sync(
         lambda c: service.propose(
-            c, household_id=house, resident_id=people[0], body=body(kind, device, duration_s),
-            plugs={device: "Tomada"}, origin=origin, now=NOW,
+            c, household_id=house, resident_id=people[0],
+            body=body(kind, device, duration_s, target), plugs=plugs, origin=origin, now=NOW,
         )
     )  # fmt: skip
     rule = r.view.id
@@ -418,3 +424,62 @@ def test_eventos_de_outra_casa_nao_disparam_regras_desta(db):
 def test_a_app_liga_o_motor_ao_barramento_no_arranque(app):
     assert isinstance(app.state.automations_runner, AutomationRunner)
     assert get_settings().enable_physical_writes is False
+
+
+def test_o_bloqueio_volta_a_consultar_se_na_execucao_e_trava_um_disparo_ja_decidido(db):
+    house, tenants = real_house(db)
+    dev_a, dev_b = stable_id("device", "gatilho-a"), stable_id("device", "gatilho-b")
+    plug, fake = stable_id("device", "tomada-real"), FakeExecutor("raise", delay=0.3)
+    for trigger in (dev_a, dev_b):  # duas regras, gatilhos distintos, a mesma tomada
+        activate(db, house=house, people=tuple(tenants[:2]), origin=Origin.real, device=trigger,
+                 target=plug, duration_s=0)  # fmt: skip
+
+    async def go():
+        engine = AutomationEngine(device_cooldown_s=60, rule_cooldown_s=0, lockout_s=300)
+        async with Harness(db, executor=fake, engine=engine) as h:
+            a = sim.reading(at(0), 2000, device=dev_a, house=house, prov=REAL)
+            b = sim.reading(at(2), 2000, device=dev_b, house=house, prov=REAL)
+            # A e B ficam decididas antes de A terminar (incerta): B já não pode executar
+            await h.bus.publish(a)
+            await h.bus.publish(b)
+            await h.settle()
+
+    run(go())
+    results = [(e.data.result.status, e.data.result.code) for e in executed(db)]
+    assert sorted(results, key=str) == sorted(
+        [
+            (ExecutionStatus.uncertain, "executor_error"),
+            (ExecutionStatus.blocked, "uncertain_lockout"),
+        ],
+        key=str,
+    )
+    assert len(fake.calls) == 1
+
+
+def test_a_fila_de_deduplicacao_nao_cresce(db):
+    activate(db)
+
+    async def go():
+        async with Harness(db) as h:
+            await h.publish(*ramp(0, 12))
+            assert len(executed(db)) == 1
+            return h.runner._queued
+
+    assert run(go()) == set()
+
+
+def test_restore_so_le_a_janela_recente_e_mantem_o_estado(db):
+    activate(db)
+
+    async def life(events):
+        async with Harness(db) as h:
+            await h.publish(*events)
+
+    old = [sim.reading(at(-4320), 100), sim.reading(at(-4317), 100)]  # há 3 dias
+    run(life([sim.presence(at(-4320), fx.ANA, P.home), *old, *ramp(0, 12)]))
+    assert len(executed(db)) == 1
+    fresh = AutomationRunner(SimpleNamespace(), clock=lambda: NOW)
+    n = db.run_sync(fresh.restore)
+    assert n == 1 + 5  # a presença (toda) e as leituras recentes; as de há 3 dias ficam de fora
+    run(life(ramp(15, 45)))  # o mesmo episódio depois de reiniciar: sem duplicar
+    assert len(executed(db)) == 1

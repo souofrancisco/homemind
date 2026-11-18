@@ -26,6 +26,17 @@ a este consumidor, e aplica os `automation.executed` (bloqueios por incerteza). 
 decidido mas ainda não executado quando o processo morreu perde-se (o episódio fica marcado como
 disparado): preferimos não executar a repetir.
 
+Limitações conhecidas (preferimos sempre NÃO executar a repetir):
+- janela mínima entre `_load` (a regra ainda está ativa) e a chamada ao executor: uma suspensão
+  nesse intervalo não a pára. Só importa se um executor FÍSICO vier a ser ligado (P1/MCP-04); o
+  simulado não tem efeito real. O bloqueio por incerteza, esse, volta a consultar-se mesmo antes
+  de executar;
+- se `bus.publish` falhar depois de executar, perde-se o registo `automation.executed` (o efeito
+  já aconteceu; o episódio fica marcado como disparado e não repete);
+- se `handle` levantar depois de mutar o motor, a reentrega devolve a decisão em cache só se o
+  processo vive; num reinício o episódio fica marcado e o disparo perde-se;
+- o `restore` só relê a janela recente de leituras (ver `_history`).
+
 Limitação: o alvo físico real só existe com o executor da P1 (MCP-04, flag + grant); sem ele a
 regra fica `blocked`.
 """
@@ -59,7 +70,13 @@ from homemind.core.db import Database
 from homemind.core.events import EventBus, load_events
 from homemind.features.agent.execution import run_execution, select_executor
 from homemind.features.automations import repo
-from homemind.features.automations.engine import ActiveRule, AutomationEngine, Firing
+from homemind.features.automations.engine import (
+    MAX_READING_GAP,
+    UNCERTAIN_LOCKOUT,
+    ActiveRule,
+    AutomationEngine,
+    Firing,
+)
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +87,8 @@ INPUT_TYPES = (
     "presence.changed",
 )
 EXECUTED = "automation.executed"
+PRESENCE = "presence.changed"
+MAX_DURATION_S = 86_400  # `AutomationTrigger.duration_s` ≤ 24 h
 _SEEN_MAX = 256
 
 
@@ -156,7 +175,7 @@ class AutomationRunner:
         rules: dict[UUID, list[ActiveRule]] = {}
         devices: dict[UUID, list[UUID]] = {}
         n = 0
-        for s in load_events(conn, types=(*INPUT_TYPES, EXECUTED)):
+        for s in self._history(conn):
             ev = s.event
             if isinstance(ev, de.AutomationExecuted):
                 if ev.data.result.status is ExecutionStatus.uncertain:
@@ -173,6 +192,34 @@ class AutomationRunner:
                 self.engine.on_event(ev, rules[ev.household_id])
                 n += 1
         return n
+
+    def _history(self, conn: sqlite3.Connection) -> list[StoredEvent]:
+        """Só o necessário para refazer o estado, pela ordem do registo: a presença toda (uma
+        linha por mudança) e leituras, fechos e resultados da janela recente. A janela cobre a
+        duração máxima de um gatilho (24 h), o intervalo máximo entre leituras, o bloqueio e o
+        cooldown da regra, com margem; um episódio mais antigo já não pode voltar a disparar."""
+        recent = (*(t for t in INPUT_TYPES if t != PRESENCE), EXECUTED)
+        marks = ",".join("?" * len(recent))
+        top = conn.execute(
+            f"SELECT max(ts) FROM domain_event WHERE type IN ({marks})", recent
+        ).fetchone()[0]
+        if top is None:
+            return load_events(conn, types=(PRESENCE,))
+        window = (
+            timedelta(seconds=MAX_DURATION_S)
+            + MAX_READING_GAP
+            + timedelta(seconds=self.engine.lockout_s + self.engine.rule_cooldown_s)
+            + timedelta(minutes=10)
+        )
+        cutoff = (datetime.fromisoformat(top) - window).isoformat()
+        first = conn.execute(
+            f"SELECT min(seq) FROM domain_event WHERE type IN ({marks}) AND ts >= ?",
+            (*recent, cutoff),
+        ).fetchone()[0]
+        found = load_events(conn, types=(PRESENCE,))
+        if first is not None:
+            found += load_events(conn, since_seq=first - 1, types=recent)
+        return sorted(found, key=lambda s: s.seq)
 
     @staticmethod
     def _devices_of(conn: sqlite3.Connection, rule_id: UUID) -> list[UUID]:
@@ -195,6 +242,9 @@ class AutomationRunner:
             except Exception as e:  # noqa: BLE001 - o worker não pode morrer; só o tipo vai ao log
                 log.warning("automations: falha a executar (%s)", type(e).__name__)
             finally:
+                # a deduplicação durável é o `automation.executed` (`_load`); isto só evita
+                # que o conjunto cresça para sempre
+                self._queued.discard((f.rule_id, f.trigger_event_id, f.device_id))
                 self._queue.task_done()
 
     def _load(self, conn: sqlite3.Connection, f: Firing):
@@ -247,10 +297,14 @@ class AutomationRunner:
             proposed_at=now,
             expires_at=now + timedelta(seconds=self.action_ttl_s),
         )
-        if f.blocked_code is not None:  # nada é tentado
+        blocked_code = f.blocked_code
+        with self._lock:  # o bloqueio pode ter nascido depois de este disparo ser decidido
+            if blocked_code is None and self.engine.is_locked(f.device_id, f.at):
+                blocked_code = UNCERTAIN_LOCKOUT
+        if blocked_code is not None:  # nada é tentado
             result = ActionExecutionResult(
                 action_id=action.id, status=ExecutionStatus.blocked, executed_at=now,
-                code=f.blocked_code,
+                code=blocked_code,
             )  # fmt: skip
         else:
             confirmation = ActionConfirmation(
