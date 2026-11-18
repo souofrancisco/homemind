@@ -1,10 +1,12 @@
-import { Alert, Badge, Button, Card, Group, Loader, NumberInput, Progress, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { Alert, Badge, Button, Card, ColorSwatch, Group, Loader, NumberInput, Progress, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 import { IconAlertCircle } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { getMyBudget, setMyBudget, type BudgetStatus } from "../services/billing/budget";
 
 const money = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" });
+// ALERT-06: a cor vem do servidor (`BudgetStatus.light`); a app só a mostra.
+const LIGHT_COLOR = { green: "green", amber: "yellow", red: "red" } as const;
 const eur = (c: number | null) => (c == null ? "Desconhecido" : money.format(c / 100));
 
 function Figure({ label, cents, hint }: { label: string; cents: number | null; hint?: string }) {
@@ -51,8 +53,14 @@ export default function BudgetContent() {
             <Badge variant="light" color={s.final ? "green" : "gray"}>{s.final ? "Valores da fatura fechada" : "Estimativa — ainda não é definitivo"}</Badge></Group>
           {s.budget?.limit_cents != null ? (
             <>
-              <Progress value={Math.min(pct ?? 0, 100)} color={(pct ?? 0) >= 100 ? "red" : (pct ?? 0) >= 80 ? "orange" : "indigo"} aria-label="Percentagem do orçamento utilizada" />
+              <Progress value={Math.min(pct ?? 0, 100)} color={s.light ? LIGHT_COLOR[s.light.light] : "gray"} aria-label="Percentagem do orçamento utilizada" />
               <Text size="sm">{pct == null ? "Sem dados de custo: a percentagem é desconhecida." : `${pct} % do orçamento de ${eur(s.budget.limit_cents)} utilizado.`}</Text>
+              {s.light && (
+                <Group gap="xs" wrap="nowrap">
+                  <ColorSwatch color={`rgb(${s.light.rgb.join(",")})`} size={18} aria-hidden />
+                  <Text size="sm" fw={600}>{s.light.label}</Text>
+                </Group>
+              )}
             </>
           ) : <Text c="dimmed">Ainda não definiste um orçamento para este mês.</Text>}
           <SimpleGrid cols={{ base: 2, sm: 4 }}>
