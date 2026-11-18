@@ -52,7 +52,7 @@ Registo das decisões da reorganização (17/11/2026), reconciliadas com o docum
 | «Desligo?» [Desliga] [Deixa estar] | Notificação com ação; só executa depois de confirmada (flag + grant) | [agent.md](modules/agent.md) |
 | QR na porta para entrar no grupo | Convite à casa por ligação, com aceitação (membership `invited`) | [households.md](modules/households.md) |
 | Registar aparelhos e telemóvel pelo bot | Formulários na aplicação | [energy.md](modules/energy.md), [presence.md](modules/presence.md) |
-| Botão «cheguei / saí» (também plano B da hora zero) | `PUT /api/presence/me` | [presence.md](modules/presence.md) |
+| Botão «cheguei / saí» (também plano B da hora zero) | **Removido** (decisão do dono P2, commit 518f5c8): `PUT /api/presence/me` não existe. Sem câmara, a presença manual é só a resposta a «estás em casa?» (`presence_check`, ações `in`/`out`) | [presence.md](modules/presence.md) |
 | Votação 👍/👎 de regras e da câmara | Aprovação na aplicação (**PROPOSTA**, P2) | [agent.md](modules/agent.md) |
 | Resumo semanal no grupo | Notificação `info` e página de resumo (**PROPOSTA**, P2) | [notifications.md](modules/notifications.md) |
 | Botão «contestar» do recibo | Contestação na aplicação | [billing.md](modules/billing.md) |
