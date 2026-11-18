@@ -64,6 +64,18 @@ def test_zona_comum_acima_do_limiar_pergunta():
     assert c.expires_at == NOW + timedelta(hours=24)
 
 
+def test_pedido_de_confirmacao_inclui_nome_do_aparelho():
+    event = _custo(fx.consumption(closed=True), 50)
+    d = decide(event, POLICY, ROOM_RESIDENT, fx.TENANTS, NOW, appliance_name="Aquecedor")
+    assert d.confirmation.appliance_name == "Aquecedor"
+
+
+def test_pedido_de_confirmacao_sem_nome_deixa_nome_vazio():
+    event = _custo(fx.consumption(closed=True), 50)
+    d = decide(event, POLICY, ROOM_RESIDENT, fx.TENANTS, NOW)
+    assert d.confirmation.appliance_name is None
+
+
 def test_pergunta_mesmo_a_decorrer_quando_ja_passou_o_limiar():
     d = decide(_custo(fx.consumption(), 80), POLICY, ROOM_RESIDENT, fx.TENANTS, NOW)
     assert d.confirmation is not None
