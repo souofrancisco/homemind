@@ -172,3 +172,27 @@ presença anónima, falha de leitura, reinício e faturas A/B.
 - Recriar: `make demo-web-reset` (nova cópia, mantém contas) · `make demo-web-clean` (apaga
   containers, volumes do Authentik e a cópia) e depois `make demo-web-up`.
 - Os dados continuam **SIMULADOS**; as contas Authentik são só de desenvolvimento.
+
+## Demo web viva — IMPLEMENTADO
+
+`make demo-up`, `make demo-web-up` e `make demo-web-reset` usam uma cópia própria
+ancorada no relógio atual; o cenário oficial offline mantém o relógio fixo e o replay
+determinístico. `make demo-web-reset` volta a gerar a cópia com o início do cenário
+recente, pelo que é o comando recomendado antes de uma apresentação.
+
+A cópia web inclui a tomada da extensão da sala como medidor `room_meter`, os aparelhos
+«Aquecedor do Bruno» e «Chaleira comum», e assinaturas **SIMULADAS**. O classificador,
+localizador, billing e restantes consumidores são os serviços reais da aplicação.
+O cartão «Simulador da demo» em Diagnóstico pode iniciar as duas sessões. Sem clique,
+o aquecedor começa automaticamente cerca de 60 segundos depois do arranque e permanece
+ligado cerca de 180 segundos (a chaleira, 155 segundos). As leituras da tomada são SIMULADAS,
+com base de 40 W e publicação a cada 5 segundos. No fim de cada sessão a tomada emite uma
+leitura em falta e volta à base: o motor fecha então o consumo de imediato (recuperação
+definitiva) em vez de esperar os 10 minutos da pausa de termóstato, e o pedido «De quem é
+esta conta?» aparece cerca de 4 minutos depois do arranque. O limiar da pergunta da casa demo é
+2 cêntimos: a sessão do aquecedor atinge-o e a chaleira curta fica abaixo. O cálculo de
+custos existente não é alterado.
+
+`DEMO_LIVE` é ativada por omissão em `PROFILE=demo`; definir `DEMO_LIVE=false` desliga-a.
+O emissor exige também `HOME_BACKEND=fake` e uma casa `source_kind=demo`. Nunca é iniciado
+com MCP nem executa operações físicas. A origem simulada não representa medições reais.

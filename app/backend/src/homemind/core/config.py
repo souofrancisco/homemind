@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     profile: Literal["normal", "demo"] = "normal"
     home_backend: Literal["fake", "mcp"] = "fake"
+    demo_live: bool = True
     mcp_endpoint: str = ""
     # Nunca logar nem devolver este valor (header X-API-Key do MCP Altice).
     mcp_api_key: str = ""
