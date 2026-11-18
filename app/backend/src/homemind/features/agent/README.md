@@ -67,14 +67,27 @@ se repete e **SIMULADO** vem sempre etiquetado. A casa demo usa só o executor s
 | `execution.py` | Porta `ActionExecutor`, `SimulatedExecutor`, `select_executor`, `run_execution` (prazo, incerteza, nunca repete) |
 | `actions.py` | Serviço SQLite: propor, confirmar (CAS, COMMIT antes de executar), registar o desfecho (`executed_at` = hora do servidor; execução interrompida ou `confirmed` perdida → `uncertain/interrupted`), rejeitar; limites por dispositivo; `AgentActionView` |
 | `actions_router.py` | `GET …/agent/actions[/{id}]`, `POST …/{id}/confirm`, `POST …/{id}/reject` (montado por `router.py`) |
+| `safety_consumer.py` | AGENT-03b: consumidor `agent.safety_suggestion` de `safety.alert_raised` (ver abaixo) |
 
 Tabelas em `core/migrations/0310_agent_actions.sql`. PROPOSTA para a P1: registar
 `app.state.agent_action_executor` e `app.state.agent_device_directory`; sem eles uma casa real não
 executa nada. Limites e detalhe em [`docs/modules/agent.md`](../../../../../../docs/modules/agent.md).
 
+### AGENT-03b — propostas a partir de alertas de janela (IMPLEMENTADO)
+
+`safety_consumer.py`, subscrito no `lifespan` do `router.py`. Um alerta ativo `window_open_heating`
+com `suggested_command` («desligar a tomada») gera **uma proposta por inquilino ativo** (os do
+quarto, ou todos se for zona comum; `source="safety"`) e `agent.action_proposed`. **Só propõe:**
+nunca chama o executor; só `POST …/confirm` executa. Só com a tomada no diretório de dispositivos
+(demo: SIMULADO; casa real: o diretório da P1, senão nada), id da proposta derivado de (alerta,
+residente) (idempotente), alerta além de `AGENT_ACTION_TTL_S` ignorado. Alerta `resolved` → as
+propostas por confirmar passam a `rejected` pelo sistema (`code="alert_resolved"`).
+Ressalva: em runtime real só dispara quando a `safety` tiver o resolvedor de aquecedores
+(ENERGY-03; `features/safety/router.py`). Hoje, só na demo e nos testes.
+
 ## PLANEADO
 
-Providers reais de P4/P1 (ver «Providers»), executor real e diretório de dispositivos da P1, AGENT-04 (automações), decisão P-06 antes de ligar o LLM, frontend.
+Providers reais de P4/P1 (ver «Providers»), executor real e diretório de dispositivos da P1 (e o resolvedor de aquecedores da `safety` para o AGENT-03b em runtime real), AGENT-04 (automações), decisão P-06 antes de ligar o LLM, frontend.
 
 ## Testes
 

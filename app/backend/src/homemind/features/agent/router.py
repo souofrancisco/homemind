@@ -2,16 +2,20 @@
 
 IMPLEMENTADO: ferramentas de leitura, resposta validada, recurso determinístico sem LLM; histórico
 da conversa por residente (`GET`, #111; cada troca é gravada pelo `POST`, retenção curta, P-25).
-PLANEADO: providers reais (P4/P1), automações (AGENT-04). Ações propostas: `actions_router.py`.
+AGENT-03b: um alerta de janela aberta com aquecimento gera propostas a confirmar
+(`safety_consumer.py`, subscrito no `lifespan`). PLANEADO: providers reais (P4/P1), automações
+(AGENT-04). Ações propostas: `actions_router.py`.
 Os dados de hoje são SIMULADOS (`simulated.py`) e só existem na casa de demonstração.
 """
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, FastAPI, Query
 
 from homemind.contracts.agent import AgentMessage, AgentMessageIn, AgentResponse
 from homemind.core.access import (
@@ -20,6 +24,7 @@ from homemind.core.access import (
     HouseholdAccess,
     Operation,
     Resource,
+    get_clock,
     require_access,
 )
 from homemind.features.agent import history
@@ -35,12 +40,27 @@ from homemind.features.agent.providers import (
     ProviderSet,
     ReceiptProvider,
 )
+from homemind.features.agent.safety_consumer import (
+    SAFETY_CONSUMER,
+    SAFETY_EVENT_TYPES,
+)
+from homemind.features.agent.safety_consumer import make_handler as make_safety_handler
 from homemind.features.agent.sources import RegisteredDep, resolve
 from homemind.features.agent.tools import ToolContext, ToolRegistry
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api", tags=["agent"])
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # AGENT-03b: alertas de janela aberta -> propostas a confirmar. O relógio é o das rotas (o
+    # override de `get_clock` nos testes também vale aqui). O consumidor só propõe; nunca executa.
+    clock = app.dependency_overrides.get(get_clock, get_clock)()
+    app.state.bus.subscribe(SAFETY_CONSUMER, make_safety_handler(app, clock), SAFETY_EVENT_TYPES)
+    yield
+
+
+router = APIRouter(prefix="/api", tags=["agent"], lifespan=lifespan)
 
 # Senhorio e operador: 403 (matriz `PERMISSIONS[agent]`, só inquilinos).
 AgentAccess = Annotated[HouseholdAccess, Depends(require_access(Resource.agent, Operation.write))]

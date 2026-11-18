@@ -274,10 +274,13 @@ def propose(
     now: datetime,
     limits: ActionLimits,
     source: str = "chat",
+    action_id: UUID | None = None,
 ) -> tuple[AgentActionView, AgentActionProposed] | None:
     """Grava a proposta, o log e `agent.action_proposed` numa transação; devolve a vista e o
     evento (para acordar o barramento depois do COMMIT). `None` se o residente já tem propostas
-    abertas a mais. O agente nunca propõe ligar uma tomada."""
+    abertas a mais. O agente nunca propõe ligar uma tomada. `action_id` (omissão: novo) deixa um
+    produtor automático usar um id derivado, para que reprocessar o mesmo evento não duplique;
+    quem o passa verifica antes se a ação já existe (`exists`)."""
     if device.kind is DeviceKind.plug and (
         command.capability is not DeviceCapability.power or command.power is not False
     ):
@@ -295,7 +298,7 @@ def propose(
     if len(open_now) >= limits.max_open:
         return None
     action = ProposedAction(
-        id=new_id(),
+        id=action_id or new_id(),
         household_id=household_id,
         proposed_for_resident_id=resident_id,
         command=command,
@@ -327,6 +330,32 @@ def propose(
     view = get_view(conn, household_id, resident_id, action.id, now)
     assert view is not None
     return view, event
+
+
+def exists(conn: sqlite3.Connection, action_id: UUID) -> bool:
+    return (
+        conn.execute("SELECT 1 FROM agent_action WHERE id = ?", (str(action_id),)).fetchone()
+        is not None
+    )
+
+
+def system_reject(
+    conn: sqlite3.Connection, household_id: UUID, action_id: UUID, now: datetime, code: str
+) -> bool:
+    """O sistema retira uma proposta que perdeu o sentido (ex.: o alerta que a originou foi
+    resolvido): `proposed → rejected` (CAS), com linha em `agent_action_log` sem residente e o
+    `code`. Só uma proposta ainda por confirmar e dentro do prazo; uma já confirmada, decidida ou
+    expirada fica como está. `False` se nada mudou. Nunca executa nada."""
+    now = _utc(now)
+    cur = conn.execute(
+        "UPDATE agent_action SET status = 'rejected', updated_at = ?"
+        " WHERE id = ? AND household_id = ? AND status = 'proposed' AND expires_at > ?",
+        (now.isoformat(), str(action_id), str(household_id), now.isoformat()),
+    )
+    if cur.rowcount != 1:
+        return False
+    _log(conn, action_id, now, ActionStatus.proposed, ActionStatus.rejected, None, code)
+    return True
 
 
 def _limit_code(
