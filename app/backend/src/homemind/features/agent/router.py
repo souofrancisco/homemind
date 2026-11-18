@@ -1,9 +1,9 @@
-"""Assistente na app: `POST /api/households/{household_id}/agent/messages` (AGENT-01/02, parcial).
+"""Assistente na app: `POST` e `GET /api/households/{household_id}/agent/messages` (AGENT-01/02).
 
-IMPLEMENTADO: ferramentas de leitura, resposta validada, recurso determinístico sem LLM.
-PLANEADO: providers reais (P4/P1), histórico, ações propostas (AGENT-03), automações (AGENT-04).
+IMPLEMENTADO: ferramentas de leitura, resposta validada, recurso determinístico sem LLM; histórico
+da conversa por residente (`GET`, #111; cada troca é gravada pelo `POST`, retenção curta, P-25).
+PLANEADO: providers reais (P4/P1), automações (AGENT-04). Ações propostas: `actions_router.py`.
 Os dados de hoje são SIMULADOS (`simulated.py`) e só existem na casa de demonstração.
-Sem lifespan, sem tabelas, sem eventos.
 """
 
 import logging
@@ -11,9 +11,9 @@ from typing import Annotated
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
-from homemind.contracts.agent import AgentMessageIn, AgentResponse
+from homemind.contracts.agent import AgentMessage, AgentMessageIn, AgentResponse
 from homemind.core.access import (
     ClockDep,
     DbDep,
@@ -22,6 +22,7 @@ from homemind.core.access import (
     Resource,
     require_access,
 )
+from homemind.features.agent import history
 from homemind.features.agent.actions_router import StateDep, reply_to_action_request
 from homemind.features.agent.actions_router import router as actions_router
 from homemind.features.agent.assistant import Assistant
@@ -43,6 +44,7 @@ router = APIRouter(prefix="/api", tags=["agent"])
 
 # Senhorio e operador: 403 (matriz `PERMISSIONS[agent]`, só inquilinos).
 AgentAccess = Annotated[HouseholdAccess, Depends(require_access(Resource.agent, Operation.write))]
+ReadAccess = Annotated[HouseholdAccess, Depends(require_access(Resource.agent, Operation.read))]
 
 
 def get_complete() -> Complete | None:
@@ -67,6 +69,22 @@ def _providers(
     return resolve(registered, household_id, source_kind)
 
 
+async def _remember(db, access: HouseholdAccess, user_text: str, reply_text: str, now) -> None:
+    settings = get_agent_settings()
+    await db.run(
+        lambda c: history.record_exchange(
+            c,
+            access.household_id,
+            access.resident_id,
+            user_text,
+            reply_text,
+            now,
+            settings.agent_history_keep,
+            settings.agent_history_days,
+        )
+    )
+
+
 @router.post("/households/{household_id}/agent/messages")
 async def send_message(
     body: AgentMessageIn,
@@ -77,12 +95,15 @@ async def send_message(
     complete: CompleteDep,
     registered: RegisteredDep,
 ) -> AgentResponse:
-    """Pergunta do morador ao assistente. O residente e o papel vêm do token, nunca do corpo."""
+    """Pergunta do morador ao assistente. O residente e o papel vêm do token, nunca do corpo.
+    A troca (pergunta e resposta) fica gravada no histórico do próprio, com retenção curta."""
     now = clock()
     if is_action_request(body.text):
         # AGENT-03: um pedido de ação nunca chega ao LLM nem executa nada; só gera uma proposta
         # a confirmar (ou uma recusa). Ver `actions_router.py`.
-        return await reply_to_action_request(state, db, access, body.text, now)
+        response = await reply_to_action_request(state, db, access, body.text, now)
+        await _remember(db, access, body.text, response.text, now)
+        return response
     row = await db.run(
         lambda c: c.execute(
             "SELECT source_kind, timezone FROM household WHERE id = ?", (str(access.household_id),)
@@ -104,7 +125,9 @@ async def send_message(
         timeout_s=settings.agent_llm_timeout_s,
         total_timeout_s=settings.agent_total_timeout_s,
     )
+    # O histórico NUNCA é passado ao assistente nem ao LLM (P-06): cada pergunta é independente.
     reply = await assistant.reply(body.text, ctx)
+    await _remember(db, access, body.text, reply.text, now)
     return AgentResponse(
         id=uuid4(),
         household_id=access.household_id,
@@ -112,6 +135,17 @@ async def send_message(
         tool_result_ids=list(reply.tool_result_ids),
         proposed_actions=[],
         created_at=now,
+    )
+
+
+@router.get("/households/{household_id}/agent/messages")
+async def list_messages(
+    access: ReadAccess, db: DbDep, limit: Annotated[int, Query(ge=1, le=100)] = 50
+) -> list[AgentMessage]:
+    """Histórico do PRÓPRIO residente (nunca o de outro), do mais antigo para o mais recente.
+    Só para a app o mostrar: não volta a entrar no assistente."""
+    return await db.run(
+        lambda c: history.list_messages(c, access.household_id, access.resident_id, limit)
     )
 
 

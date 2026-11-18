@@ -29,6 +29,9 @@ class AgentSettings(BaseSettings):
     agent_action_max_per_hour: int = 6
     agent_action_lockout_s: float = 300.0  # bloqueio após um resultado incerto
     agent_action_timeout_s: float = 15.0  # prazo do executor; ao esgotar, resultado incerto
+    # Histórico da conversa (#111): dados pessoais; retenção curta (P-25). Só para a app.
+    agent_history_keep: int = 50  # mensagens guardadas por residente
+    agent_history_days: int = 30  # idade máxima das mensagens
 
 
 @lru_cache
