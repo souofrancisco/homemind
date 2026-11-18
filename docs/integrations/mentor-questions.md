@@ -1,16 +1,16 @@
 # Perguntas aos mentores (Altice)
 
-> Perguntas ainda abertas aos mentores Altice. A pergunta 6 (unidade de `instantPower`) e as 1–2 e 7 (escritas) são **bloqueios da Conta Certa**. Ponto de entrada: [altice-mcp.md](altice-mcp.md).
+> Perguntas ainda abertas aos mentores Altice. A pergunta 6 (unidade de `instantPower`) era um **bloqueio da Conta Certa**; as 1–2 e 7 (escritas) deixaram de o ser porque a lâmpada e a tomada responderam aos comandos a 2026-11-18, mas continuam por confirmar com os mentores (as linhas «Observado» são nossas, não deles). Ponto de entrada: [altice-mcp.md](altice-mcp.md).
 
 Registar a resposta e a data por baixo de cada pergunta. Contexto técnico em [mcp-capabilities.md](mcp-capabilities.md).
 
-1. **Lâmpada não reage.** `update_device_capabilities` devolve «device updated» mas a lâmpada não muda e a releitura volta ao estado inicial. O `lastCommunicationTime` da lâmpada tinha 3 a 14 min. A lâmpada está online na cloud? É preciso re-emparelhar ou outra rede Wi-Fi? —
-2. **A escrita é assíncrona?** Quanto tempo pode passar entre o «device updated» e o efeito físico? Há forma de saber que o comando chegou ao dispositivo? —
-3. **`lastCommunicationTime`** representa o último contacto do dispositivo com a cloud? Com que frequência é atualizado num dispositivo saudável? —
-4. **`workMode`**: `color_rgb` e `brightness` só têm efeito em `colour`? Como se muda o modo pelo MCP (não está no schema de escrita)? —
-5. **`vendor` / `deviceName`**: é preciso enviar `vendor` além do `deviceId` para o comando ser encaminhado? —
+1. **Lâmpada não reage.** `update_device_capabilities` devolve «device updated» mas a lâmpada não muda e a releitura volta ao estado inicial. O `lastCommunicationTime` da lâmpada tinha 3 a 14 min. A lâmpada está online na cloud? É preciso re-emparelhar ou outra rede Wi-Fi? **Observado (2026-11-18, por nós; não é resposta dos mentores):** a lâmpada **reage** aos comandos. O que falhava era a ordem: escrever `brightness` **depois** de `color_rgb` repõe a cor anterior (ver [mcp-capabilities.md](mcp-capabilities.md), «a ordem dos comandos importa»). Em 17/11 não houve efeito físico e a causa não foi apurada. **Continua em aberto:** repor a cor anterior ao escrever o brilho é o comportamento esperado, ou há forma de enviar cor e brilho de uma só vez? —
+2. **A escrita é assíncrona?** Quanto tempo pode passar entre o «device updated» e o efeito físico? Há forma de saber que o comando chegou ao dispositivo? **Observado (2026-11-18, por nós; não é resposta dos mentores):** a escrita demorou 2–6 s (1890 a 6109 ms medidos) e a releitura na mesma sessão confirmou o estado; o operador viu o efeito físico (lâmpada e tomada) na hora. O atraso não foi medido com precisão. —
+3. **`lastCommunicationTime`** representa o último contacto do dispositivo com a cloud? Com que frequência é atualizado num dispositivo saudável? **Observado (2026-11-18, por nós; não é resposta dos mentores):** a tomada atualiza a cada ~30–45 s; a lâmpada tinha o último contacto com 25 min (lido às 15:31 UTC) e reagiu a comandos pouco depois, por isso para a lâmpada o valor **não parece indicar ligação perdida**. —
+4. **`workMode`**: `color_rgb` e `brightness` só têm efeito em `colour`? Como se muda o modo pelo MCP (não está no schema de escrita)? **Observado (2026-11-18, por nós; não é resposta dos mentores):** com `workMode: colour`, `color_rgb` e `brightness` tiveram efeito. Outros modos não foram testados; mudar o modo continua sem caminho no schema. —
+5. **`vendor` / `deviceName`**: é preciso enviar `vendor` além do `deviceId` para o comando ser encaminhado? **Observado (2026-11-18, por nós; não é resposta dos mentores):** as escritas na lâmpada e na tomada funcionaram só com `deviceId`, sem `vendor` nem `deviceName`. —
 6. **Unidades**: `instantPower`, `instantVoltage`, `instantCurrent` (máximos 50000 / 50000 / 30000) estão em W, 0,1 W ou mW? `todayConsumption` é kWh? —
-7. **Tomada**: tem `multiPower` com `switch_1`. O `power` de topo controla esse interruptor? —
+7. **Tomada**: tem `multiPower` com `switch_1`. O `power` de topo controla esse interruptor? **Observado (2026-11-18, por nós; não é resposta dos mentores):** o `power` de topo cortou e religou a carga da extensão (MCP-05, 2026-11-18). O `switch_1` não foi testado em separado. —
 8. **Brilho**: o schema diz 0–100 e o dispositivo `min: 1`. O valor 0 desliga? —
 9. **Limites**: há rate limit ou número máximo de sessões OAuth por equipa? O refresh token roda a cada renovação? —
 10. **Avaliação**: o que valorizam mais — controlo físico ao vivo, robustez, privacidade, replicabilidade? Um plano B simulado, claramente identificado, é aceitável na demo? —
