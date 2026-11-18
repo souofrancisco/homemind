@@ -5,7 +5,9 @@ Regras (CLAUDE.md, «Regras de domínio»):
 - Zonas comuns e localização desconhecida: conta o sítio do aparelho, não o dono. Com a regra
   `ask` e custo estimado ≥ `ask_threshold_cents`, pergunta-se na app; abaixo do limiar, sem
   custo estimável ou com a regra `equal`, vai para a conta comum (dividida por igual).
-- A regra C (`presence`) ainda não existe (BILL-07): comporta-se como `equal`.
+- Regra C (`presence`, BILL-07): só se a presença provar UM morador em casa durante todo o
+  consumo (`presence_rule.sole_occupant`) é dele, como inferência com confiança; com qualquer
+  dúvida, divide-se por todos. Nunca pergunta.
 
 Funções puras: sem base de dados nem barramento. Quem consome os eventos garante que cada
 consumo é decidido uma só vez (idempotência do barramento, D-19).
@@ -17,7 +19,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from homemind.contracts.billing import Attribution, AttributionMethod, AttributionTarget
-from homemind.contracts.common import Audit, Provenance, ValueKind, stable_id
+from homemind.contracts.common import Audit, Origin, Provenance, ValueKind, stable_id
 from homemind.contracts.energy import ConsumptionEvent, ConsumptionStatus, LocationKind
 from homemind.contracts.household import CommonAreaRule, HouseholdPolicy
 from homemind.contracts.notification import ConfirmationRequest
@@ -49,13 +51,28 @@ def decide(
     room_resident: Mapping[UUID, UUID],
     tenants: Sequence[UUID],
     now: datetime,
+    sole_occupant: tuple[UUID, float, bool] | None = None,
 ) -> Decision:
-    """`room_resident`: quarto → morador ativo; `tenants`: inquilinos ativos (quem responde)."""
+    """`room_resident`: quarto → morador ativo; `tenants`: inquilinos ativos (quem responde).
+    `sole_occupant` (regra C): (morador, confiança, prova simulada) se só ele estava em casa."""
     if event.status is ConsumptionStatus.discarded:
         return Decision()
     resident = room_resident.get(event.room_id) if event.location is LocationKind.room else None
     if resident is not None:
         return Decision(_attribution(event, now, AttributionMethod.room_rule, resident))
+    if policy.common_area_rule is CommonAreaRule.presence:
+        if event.status is ConsumptionStatus.ongoing:
+            return Decision()  # a presença decide-se sobre o consumo inteiro
+        if sole_occupant is not None and sole_occupant[0] in tenants:
+            resident, confidence, simulated = sole_occupant
+            origin = Origin.simulated if simulated else event.provenance.origin
+            inferred = Provenance(origin=origin, kind=ValueKind.inferred)
+            return Decision(
+                _attribution(
+                    event, now, AttributionMethod.presence_rule, resident, inferred, confidence
+                )
+            )
+        return Decision(_attribution(event, now, AttributionMethod.equal_fallback, None))
     if worth_asking(event, policy) and tenants:
         return Decision(
             confirmation=ConfirmationRequest(
@@ -71,10 +88,15 @@ def decide(
 
 
 def _attribution(
-    event: ConsumptionEvent, now: datetime, method: AttributionMethod, resident: UUID | None
+    event: ConsumptionEvent,
+    now: datetime,
+    method: AttributionMethod,
+    resident: UUID | None,
+    provenance: Provenance | None = None,
+    confidence: float | None = None,
 ) -> Attribution:
-    # Regra determinística (contrato ou divisão por igual): não é uma inferência.
-    provenance = Provenance(origin=event.provenance.origin, kind=ValueKind.measured)
+    # Por omissão, regra determinística (contrato ou divisão por igual): não é uma inferência.
+    provenance = provenance or Provenance(origin=event.provenance.origin, kind=ValueKind.measured)
     return Attribution(
         id=stable_id("attribution", str(event.id), "initial"),
         household_id=event.household_id,
@@ -83,5 +105,6 @@ def _attribution(
         target_resident_id=resident,
         method=method,
         provenance=provenance,
+        confidence=confidence,
         decided_by=Audit(at=now, by_system=SYSTEM),
     )

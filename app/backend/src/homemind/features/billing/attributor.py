@@ -4,6 +4,7 @@
   houver decisão, aplica `attribution.decide` com a regra da casa em vigor no dia em que o
   consumo começou (`rules.policy_on`, HOUSE-04): atribuição direta (quarto, conta comum) ou
   pedido «De quem é esta conta?» (`billing.confirmation_needed`).
+- Regra C (BILL-07): `presence_rule.sole_occupant` com a cópia billing dos eventos de presença.
 - `notification.responded` com a votação decidida (D-32) → atribuição por confirmação.
 - `expire_pending` (chamado periodicamente e no fecho da fatura): pedidos sem decisão no
   prazo → conta comum, por todos.
@@ -48,8 +49,9 @@ from homemind.contracts.energy import (
     CostEstimate,
     LocationKind,
 )
+from homemind.contracts.household import CommonAreaRule
 from homemind.contracts.notification import ConfirmationVerdict, RefType
-from homemind.features.billing import rules, tariff
+from homemind.features.billing import presence_rule, rules, tariff
 from homemind.features.billing.attribution import SYSTEM, decide
 
 # Nome PERMANENTE (chave de idempotência em `processed_event`): renomear reprocessa tudo.
@@ -85,16 +87,28 @@ def _on_consumption(
     ).fetchone():
         return []  # já se perguntou: decide a votação (ou o prazo)
     tenants = active_tenants(conn, consumption.household_id, consumption.started_at)
-    decision = decide(
-        with_cost_estimate(conn, consumption),
-        rules.policy_on(
+    policy = rules.policy_on(
+        conn,
+        consumption.household_id,
+        rules.local_day(conn, consumption.household_id, consumption.started_at),
+    )
+    sole = None
+    if policy.common_area_rule is CommonAreaRule.presence:
+        found = presence_rule.sole_occupant(
             conn,
             consumption.household_id,
-            rules.local_day(conn, consumption.household_id, consumption.started_at),
-        ),
+            [r for r, _ in tenants],
+            consumption.started_at,
+            consumption.ended_at,
+        )
+        sole = (found.resident_id, found.confidence, found.simulated) if found else None
+    decision = decide(
+        with_cost_estimate(conn, consumption),
+        policy,
         {room: r for r, room in tenants if room is not None},
         [r for r, _ in tenants],
         ev.ts,
+        sole,
     )
     if decision.attribution is not None:
         return [_record(conn, decision.attribution, ev.correlation_id)]

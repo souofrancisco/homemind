@@ -277,7 +277,8 @@ def _actor(a: Attribution, me: UUID) -> DecisionActor:
 _DECISION = {
     AttributionMethod.room_rule: "Regra 1, «o teu quarto é teu»: o que passa pelas tomadas do "
     "quarto é de quem lá mora (do contrato).",
-    AttributionMethod.presence_rule: "Dividido por quem estava em casa.",
+    AttributionMethod.presence_rule: "Regra C da sala, «por quem estava em casa»: eras a única "
+    "pessoa em casa, sem visitas, durante todo o consumo. Se não foste tu, contesta.",
     AttributionMethod.equal_fallback: "Sem resposta no prazo à pergunta «De quem é esta conta?»: "
     "dividido por todos.",
     AttributionMethod.manual: "Decisão corrigida à mão.",

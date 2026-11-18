@@ -61,6 +61,7 @@ from homemind.features.billing import (
     contestations,
     explanation,
     peaks,
+    presence_rule,
     rules,
     tariff,
 )
@@ -95,6 +96,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.bus.subscribe(peaks.CONSUMER, peaks.handle, peaks.EVENT_TYPES)
     app.state.bus.subscribe(anomalies.CONSUMER, anomalies.handle, anomalies.EVENT_TYPES)
     app.state.bus.subscribe(comfort.CONSUMER, comfort.handle, comfort.EVENT_TYPES)
+    app.state.bus.subscribe(presence_rule.CONSUMER, presence_rule.handle, presence_rule.EVENT_TYPES)
 
     async def expiry_loop() -> None:
         while True:
