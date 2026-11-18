@@ -9,7 +9,8 @@ Premissas (explícitas, documentadas em `docs/modules/billing.md`):
   ela começar. Quem muda: a casa (v5.1 §6.2), por MAIORIA: um morador propõe (conta como «sim»)
   e a mudança só fica agendada quando pelo menos metade dos moradores com contrato ativo a
   aprova (como a D-32). Sem maioria até o mês começar, caduca. O senhorio só lê.
-- A regra C (`presence`) ainda não existe (BILL-07): não se agenda.
+- A regra C (`presence`, BILL-07) propõe-se e vota-se como as outras; decide
+  `presence_rule.sole_occupant` (na dúvida, por todos).
 - Sem resposta à pergunta nunca há cobrança individual: o prazo (`ask_timeout_hours`, da
   versão do dia do consumo) termina na divisão por igual (D-32).
 """
@@ -28,7 +29,7 @@ from homemind.contracts.billing import (
     RuleProposalView,
 )
 from homemind.contracts.common import Origin, Provenance, ValueKind, new_id, stable_id
-from homemind.contracts.household import CommonAreaRule, HouseholdPolicy
+from homemind.contracts.household import HouseholdPolicy
 
 _COLS = "common_area_rule, ask_threshold_cents, ask_timeout_hours"
 
@@ -275,8 +276,6 @@ def propose(
 ) -> tuple[list[de.DomainEvent], HouseRulesView]:
     """Propõe a regra para o dia 1 do mês seguinte; quem propõe vota «sim». Substitui a proposta
     aberta (os votos dela não passam para a nova). Só fica agendada com a maioria."""
-    if policy.common_area_rule is CommonAreaRule.presence:
-        raise RuleChangeError("a regra «por presença» (C) ainda não existe")
     _require_tenant(conn, household_id, resident_id, now)
     events = expire(conn, household_id, now)
     start = first_of_next_month(local_day(conn, household_id, now))

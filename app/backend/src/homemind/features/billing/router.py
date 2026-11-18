@@ -63,6 +63,7 @@ from homemind.features.billing import (
     contestations,
     explanation,
     peaks,
+    presence_rule,
     room_allowances,
     rules,
     tariff,
@@ -98,6 +99,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.bus.subscribe(peaks.CONSUMER, peaks.handle, peaks.EVENT_TYPES)
     app.state.bus.subscribe(anomalies.CONSUMER, anomalies.handle, anomalies.EVENT_TYPES)
     app.state.bus.subscribe(comfort.CONSUMER, comfort.handle, comfort.EVENT_TYPES)
+    app.state.bus.subscribe(presence_rule.CONSUMER, presence_rule.handle, presence_rule.EVENT_TYPES)
 
     async def expiry_loop() -> None:
         while True:
@@ -530,7 +532,7 @@ async def propose_house_rules(
 ) -> HouseRulesView:
     """Propõe a regra para o dia 1 do mês seguinte (substitui a proposta aberta). Só fica
     agendada (`upcoming`) quando pelo menos metade dos moradores aprova; quem propõe conta como
-    «sim». `presence` (C) ainda não existe e a regra que já vai valer não se propõe: `400`."""
+    «sim». A regra que já vai valer não se propõe: `400`."""
     now, policy = clock(), body.policy()
     return await _rules_change(
         request,

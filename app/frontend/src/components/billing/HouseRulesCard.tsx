@@ -21,6 +21,7 @@ function PolicyText({ p }: { p: Policy }) {
     <Text size="sm">
       {ruleLabel[p.common_area_rule]}
       {p.common_area_rule === "ask" && ` · só acima de ${eur(p.ask_threshold_cents)} · sem resposta em ${p.ask_timeout_hours} h → por igual`}
+      {p.common_area_rule === "presence" && " · só de quem estava sozinho em casa, sem visitas; na dúvida, por igual"}
     </Text>
   );
 }
@@ -49,7 +50,7 @@ export default function HouseRulesCard({ householdId, canEdit }: { householdId: 
   const proposal = data.proposal;
   const start = () => {
     const p = (proposal ?? data.upcoming ?? data.current).policy;
-    setDraft({ ...p, common_area_rule: p.common_area_rule === "presence" ? "ask" : p.common_area_rule });
+    setDraft({ ...p });
   };
 
   return (
@@ -96,7 +97,11 @@ export default function HouseRulesCard({ householdId, canEdit }: { householdId: 
               fullWidth
               value={draft.common_area_rule}
               onChange={(v) => setDraft({ ...draft, common_area_rule: v as HouseRulesIn["common_area_rule"] })}
-              data={[{ value: "ask", label: "Perguntar" }, { value: "equal", label: "Por igual" }]}
+              data={[
+                { value: "ask", label: "Perguntar" },
+                { value: "equal", label: "Por igual" },
+                { value: "presence", label: "Por presença" },
+              ]}
             />
             {draft.common_area_rule === "ask" && (
               <Group grow align="flex-start">

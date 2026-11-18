@@ -18,7 +18,7 @@ ainda não integrada na `main`. P4 continua responsável por escolher e justific
 |---|---|
 | `energy.consumption_detected` / `consumption_closed` (P1) | `Attribution`; `billing.confirmation_needed` quando é preciso perguntar |
 | `notification.responded` (P3) | `billing.attribution_changed` |
-| `presence.changed` (P2) | Entrada para a regra C e para aparelhos esquecidos |
+| `presence.changed`, `presence.occupancy_changed` (P2) | Regra C (BILL-07, consumidor `billing.presence`); aparelhos esquecidos (PLANEADO) |
 | Fatura (entrada manual no MVP) | `ElectricityBill`, `BillAllocation`, recibos, `billing.bill_finalized` |
 | Orçamentos definidos pelo morador/senhorio | `alerts.threshold_crossed`, `alerts.alert_raised` |
 
@@ -239,6 +239,7 @@ Exemplo do PDF (v5.1 §20, teste `test_exemplo_do_pdf_excesso_de_330_kwh`): fatu
 | Telemetria em bruto | `energy.reading_recorded`, `sensor.reading_recorded` | `RETENTION_TELEMETRY_DAYS` (omissão **90**, mínimo 62 para o mês corrente e o anterior; `0` desliga). Não se apaga um evento que um consumidor ainda está a tentar processar | IMPLEMENTADO; prazo PROPOSTA |
 | Agregados diários dos alertas | `alerts_device_day`, `alerts_room_night` | o mesmo prazo | IMPLEMENTADO |
 | Presença | `presence.*` | PRESENCE_RETENTION_DAYS (omissão **30**, PROPOSTA): brutos passam a agregados diários sem horários; ver [presence.md](presence.md) | IMPLEMENTADO (PRIV-03 #51); prazo PROPOSTA |
+| Cópia da presença na faturação (regra C) | `billing_presence_state`, `billing_occupancy` (migração `0111`) | apagada pelo próprio consumidor `billing.presence` ao fim de **40 dias** (fica só o último estado ainda em vigor) | IMPLEMENTADO (BILL-07) |
 | Operacional | notificações, alertas, automações, agente | sem expurgo (o histórico do assistente já tem 50 mensagens/30 dias, P-25) | PLANEADO |
 
 O expurgo (`features/retention/purge.py`) corre 1 min após o arranque e de 6 em 6 h, em lotes de 5000 por transação; no log só ficam contagens.
@@ -257,6 +258,22 @@ O expurgo (`features/retention/purge.py`) corre 1 min após o arranque e de 6 em
 
 **Logs (IMPLEMENTADO, `core/redact.py`):** todos os registos do processo (app e uvicorn) passam por uma *record factory* que mascara `Bearer`, chaves/tokens/passwords (`chave=valor` e JSON), `?code=`/`&state=` do OAuth, credenciais em URLs, URLs RTSP inteiros, MACs, emails e UUIDs (ficam os primeiros 8 caracteres). Rede de segurança: o código continua a não registar estes dados. Frames de vídeo nunca são gravados (PRIV-02).
 
+## Regra C da sala, «por quem estava em casa» (BILL-07)
+
+**IMPLEMENTADO, versão mínima e segura** (`features/billing/presence_rule.py`, `attribution.decide`, migração `0111`). «Quem estava em casa» não é «quem usou» (v5.1 §20.4), por isso a C só atribui quando não há margem para dúvida:
+
+| Condição (durante TODO o consumo) | Se falhar |
+|---|---|
+| Consumo fechado (`ended_at`); a decorrer espera pelo fecho | espera |
+| Todos os inquilinos ativos com `presence_opt_in` em vigor (sem consentimento não há dados; quem revogou não fica com um «fora» antigo) | por todos |
+| Exatamente um inquilino `em casa` e todos os outros `fora`, cada estado com confiança ≥ **0,9** e sem mudanças a meio | por todos |
+| A porta contou **1 pessoa dentro e 0 visitas** (contagem perdida = dúvida) | por todos |
+
+- Cumpre-se tudo → atribuição a esse morador, `method=presence_rule`, natureza `inferred` com a confiança mais fraca das provas usadas. O morador recebe o aviso de atribuição, vê no recibo «eras a única pessoa em casa, sem visitas» e pode contestar esse consumo (BILL-06).
+- Qualquer dúvida → conta comum por igual (`equal_fallback`). A regra C nunca pergunta «de quem é esta conta?». Os quartos continuam com a regra 1.
+- **Privacidade:** billing guarda só estado, confiança e o número de pessoas/visitas da porta (nunca imagem nem pistas Wi-Fi), apaga-o ao fim de 40 dias e nada disto sai na API. O senhorio só vê totais por quarto.
+- **PLANEADO:** dividir só pelo subconjunto em casa (2 de 4) exige um alvo novo no contrato `Attribution` (fecho, recibo, explicação, contestação, orçamento e frontend), com o OK da equipa.
+
 ## Regras da casa versionadas (HOUSE-04)
 
 **IMPLEMENTADO** (`features/billing/rules.py`, migração `0108_billing_policy_versions.sql`, cartão «Regras da casa» na página da casa). Estende o atribuidor (BILL-02); não há um segundo motor de decisão. Premissas:
@@ -269,7 +286,7 @@ O expurgo (`features/retention/purge.py`) corre 1 min após o arranque e de 6 em
 | Quem muda | **A casa, por maioria** (v5.1 §6.2, como a D-32): um morador com contrato ativo propõe (conta como «sim») e a mudança só fica agendada quando **pelo menos metade** dos moradores com contrato ativo aprova (4 → 2, 3 → 2, 1 → 1). O voto pode mudar até à decisão; só contam os votos de quem ainda é morador. Maioria impossível → rejeitada; o mês começa sem maioria → caduca (nada muda). Uma nova proposta substitui a aberta, sem herdar votos. Só quem propôs a retira; uma mudança aprovada só se desfaz com outra proposta aprovada. O senhorio lê e é avisado da mudança aprovada; o operador não vê. A API mostra só contagens, nunca quem votou o quê (`billing_rule_proposal`/`billing_rule_vote`, migração `0110`). |
 | Regra de cada consumo | A versão do **dia em que o consumo começou**, como o contrato de quarto. Um consumo às 23:59 de 30/11 segue a regra de novembro. O prazo da pergunta (`expires_at`) fica fixado no momento em que se pergunta. |
 | Sem resposta | Nunca há cobrança individual incerta: o prazo termina na conta comum por igual (D-32). O v5.1 diz «sem resposta em 24 h → opção A ou C»; como C não existe, é sempre A. |
-| Regra C (presença) | Ainda não existe (BILL-07): agendá-la dá `400`. Uma casa que já a tenha na política inicial comporta-se como A. |
+| Regra C (presença) | IMPLEMENTADA (BILL-07, «Regra C» acima): propõe-se e vota-se como A e B (opção «Por presença» no cartão «Regras da casa»). |
 | Simulável | `rules.version_on` e `attribution.decide` são puros: dada uma lista de versões e um dia, decidem sem base de dados (testes com relógio fixo em `test_rules.py`). |
 
 **IMPLEMENTADO:** aprovação por maioria e notificações (pedido de voto, mudança aprovada, proposta não aprovada; consumidor P3 `notifications.rules_proposal`). **PLANEADO:** simular «quanto pagaria com a outra regra» sobre uma fatura fechada.

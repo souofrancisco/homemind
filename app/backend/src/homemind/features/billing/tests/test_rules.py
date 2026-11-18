@@ -162,11 +162,13 @@ def test_versao_que_ja_comecou_nao_se_apaga(client, now):
     assert r["upcoming"]["effective_from"] == "2027-01-01"
 
 
-def test_regra_c_ainda_nao_existe(client):
+def test_regra_c_propoe_se_como_as_outras(client):
     r = client.put(
         f"{RULES}/next", json={**EQUAL, "common_area_rule": "presence"}, headers=H["ana"]
     )
-    assert r.status_code == 400 and client.get(RULES, headers=H["ana"]).json()["proposal"] is None
+    assert r.status_code == 200
+    proposta = client.get(RULES, headers=H["ana"]).json()["proposal"]
+    assert proposta["policy"]["common_area_rule"] == "presence"
 
 
 def test_permissoes(client):
