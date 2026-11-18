@@ -3,7 +3,7 @@ SHELL := bash
 BACKEND  := app/backend
 FRONTEND := app/frontend
 
-.PHONY: dev auth down test lint contracts build android smoke check worktree mcp-login mcp-doctor mcp-up mcp-down mcp-demo mcp-demo-reload mcp-demo-build mcp-demo-logs mcp-demo-check mcp-demo-down mcp-writes-on mcp-writes-off mcp-writes-status mcp-verify presence-wifi-scan
+.PHONY: demo-prepare demo-reset demo-replay demo-verify dev auth down test lint contracts build android smoke check worktree mcp-login mcp-doctor mcp-up mcp-down mcp-demo mcp-demo-reload mcp-demo-build mcp-demo-logs mcp-demo-check mcp-demo-down mcp-writes-on mcp-writes-off mcp-writes-status mcp-verify presence-wifi-scan
 
 dev:  ## ambiente completo com hot reload (Docker)
 	docker compose -f app/compose.yaml up --build
@@ -107,3 +107,17 @@ worktree:  ## make worktree b=feat/US-12-nome -> ../homemind-US-12-nome (a parti
 	@test -n "$(b)" || { echo "uso: make worktree b=feat/US-xx-nome"; exit 1; }
 	git fetch -q origin main
 	git worktree add ../homemind-$(notdir $(b)) -b $(b) origin/main
+
+# DEMO-01: apenas a DB app/.demo-data/ (com marcador de segurança).
+# --offline: nenhuma tentativa de baixar dependências durante a apresentação.
+demo-prepare:
+	uv run --offline --project $(BACKEND) python -m homemind.demo.cli prepare
+
+demo-reset:
+	uv run --offline --project $(BACKEND) python -m homemind.demo.cli reset
+
+demo-replay:
+	uv run --offline --project $(BACKEND) python -m homemind.demo.cli replay
+
+demo-verify:
+	uv run --offline --project $(BACKEND) python -m homemind.demo.cli verify
