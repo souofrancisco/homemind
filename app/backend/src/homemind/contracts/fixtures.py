@@ -358,6 +358,17 @@ def window_alert() -> safety.SafetyAlert:
     )
 
 
+def away_state() -> safety.AwayState:
+    return safety.AwayState(
+        id=stable_id("safety", "away-demo"),
+        household_id=HOUSEHOLD,
+        status=safety.AwayStatus.away,
+        since=T0,
+        arm_proposed=True,
+        provenance=SIM_INFERRED,
+    )
+
+
 def smoke_alert() -> safety.SafetyAlert:
     return safety.SafetyAlert(
         id=stable_id("safety", "fumo-cozinha"),
@@ -650,6 +661,7 @@ def event_samples() -> list[domain_events.EventBase]:
         e.PresenceOccupancyChanged(**d, provenance=SIM_INFERRED, data=occupancy()),
         e.SensorReadingRecorded(**d, provenance=SIM_MEASURED, data=window_open()),
         e.SafetyAlertRaised(**d, provenance=SIM_INFERRED, data=window_alert()),
+        e.SafetyAwayChanged(**d, provenance=SIM_INFERRED, data=away_state()),
         e.BillingConfirmationNeeded(**d, provenance=SIM_INFERRED, data=confirmation_request()),
         e.BillingAttributionChanged(**d, provenance=attrib.provenance, data=attrib),
         e.BillingBillCreated(**d, provenance=SIM_MEASURED, data=e.BillRef(bill_id=bill.id)),

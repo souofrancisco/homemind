@@ -16,6 +16,7 @@ INPUT_TYPES = (
     "sensor.reading_recorded",
     "energy.consumption_detected",
     "energy.consumption_closed",
+    "presence.occupancy_changed",
 )
 
 

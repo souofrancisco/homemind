@@ -1,4 +1,4 @@
-"""Regras de conforto e segurança (SAFE-01 janela+aquecedor, SAFE-03 fumo). Lógica pura.
+"""Regras de conforto e segurança (SAFE-01 janela, SAFE-03 fumo, SAFE-02 AWAY simulado). Pura.
 
 Dobra eventos de domínio e devolve `safety.alert_raised`. Não escreve no MCP, não executa nada
 e não lê o relógio: o «agora» é o `ts` do evento que está a ser processado (determinístico e
@@ -10,6 +10,10 @@ Princípios:
 - Um alerta por episódio (`id` estável); a resolução reutiliza o `id` com `status=resolved`.
 - A sugestão (`power=false`) é só proposta; a confirmação humana e a execução são de P3/P1.
 - Fumo é sempre crítico e nunca sugere cortes.
+- AWAY (SAFE-02): só `likely_empty` leva a AWAY; `occupied` sai; `uncertain` ou ausência de
+  sinais é `unknown`, nunca AWAY. «Armar» é só o registo SIMULADO de uma proposta
+  (`arm_proposed`, `executed=False`): nada é armado, executado nem enviado a conectores.
+  Só emite `safety.away_changed` quando o estado muda.
 """
 
 from __future__ import annotations
@@ -21,10 +25,17 @@ from uuid import UUID
 
 from homemind.contracts import domain_events as de
 from homemind.contracts.agent import DeviceCapability, DeviceCommand
-from homemind.contracts.common import Provenance, stable_id
+from homemind.contracts.common import Origin, Provenance, ValueKind, stable_id
 from homemind.contracts.energy import ConsumptionEvent, ConsumptionStatus
 from homemind.contracts.notification import NotificationSeverity
-from homemind.contracts.safety import SafetyAlert, SafetyAlertKind, SafetyAlertStatus
+from homemind.contracts.presence import OccupancyState
+from homemind.contracts.safety import (
+    AwayState,
+    AwayStatus,
+    SafetyAlert,
+    SafetyAlertKind,
+    SafetyAlertStatus,
+)
 from homemind.contracts.sensors import ContactState, SensorKind, SensorReading, SensorStatus
 
 WINDOW_OPEN_MIN = timedelta(minutes=5)
@@ -58,6 +69,7 @@ class _House:
     smoke: dict[UUID, _Smoke] = field(default_factory=dict)
     heaters: dict[UUID, ConsumptionEvent] = field(default_factory=dict)  # consumos a decorrer
     sensors: dict[tuple[SensorKind, UUID], SensorStatus] = field(default_factory=dict)
+    away: AwayState | None = None  # None: sem sinais (equivale a `unknown`)
 
 
 class SafetyEngine:
@@ -74,7 +86,9 @@ class SafetyEngine:
 
     # entrada ------------------------------------------------------------------------------
 
-    def on_event(self, event: de.EventBase) -> list[de.SafetyAlertRaised]:
+    def on_event(self, event: de.EventBase) -> list[de.SafetyAlertRaised | de.SafetyAwayChanged]:
+        if isinstance(event, de.PresenceOccupancyChanged):
+            return self._on_occupancy(event)
         if isinstance(event, de.SensorReadingRecorded):
             return self._on_reading(event)
         if isinstance(event, de.EnergyConsumptionDetected):
@@ -82,6 +96,10 @@ class SafetyEngine:
         if isinstance(event, de.EnergyConsumptionClosed):
             return self._on_consumption(event, on=False)
         return []
+
+    def away_status(self, household_id: UUID) -> AwayStatus:
+        house = self._houses.get(household_id)
+        return house.away.status if house and house.away else AwayStatus.unknown
 
     def coverage(self, household_id: UUID) -> dict[SensorKind, str]:
         """Estado dos sensores de segurança para a UI: `ok`, `unknown`, `stale` ou `absent`
@@ -97,6 +115,45 @@ class SafetyEngine:
             else:
                 out[kind] = states[-1].value
         return out
+
+    # casa vazia (SAFE-02, SIMULADO) --------------------------------------------------------
+
+    _AWAY_OF = {
+        OccupancyState.likely_empty: AwayStatus.away,
+        OccupancyState.occupied: AwayStatus.home,
+        OccupancyState.uncertain: AwayStatus.unknown,
+    }
+
+    def _on_occupancy(self, ev: de.PresenceOccupancyChanged) -> list[de.SafetyAwayChanged]:
+        house = self._house(ev.household_id)
+        status = self._AWAY_OF[ev.data.state]
+        current = house.away
+        if current is None and status is AwayStatus.unknown:
+            return []  # sem sinais é já `unknown`: nada a registar
+        if current is not None and (status is current.status or ev.ts < current.since):
+            return []  # sem mudança (idempotente) ou evento atrasado
+        away = status is AwayStatus.away
+        # Armar é sempre uma proposta SIMULADA, mesmo que a ocupação venha de dados reais.
+        sim = Provenance(origin=Origin.simulated, kind=ValueKind.inferred)
+        prov = Provenance.combine(ev.data.provenance, sim)
+        house.away = AwayState(
+            id=stable_id("safety", "away", str(ev.household_id), ev.ts.isoformat(), status.value),
+            household_id=ev.household_id,
+            status=status,
+            since=ev.ts,
+            arm_proposed=away,
+            provenance=prov if away else ev.data.provenance,
+        )
+        return [
+            de.SafetyAwayChanged(
+                id=stable_id("safety-event", str(house.away.id)),
+                ts=ev.ts,
+                household_id=ev.household_id,
+                correlation_id=ev.correlation_id,
+                provenance=house.away.provenance,
+                data=house.away,
+            )
+        ]
 
     # sensores -----------------------------------------------------------------------------
 
