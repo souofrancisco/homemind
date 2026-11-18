@@ -49,7 +49,6 @@ export default function AutomationsPage() {
           <Text fw={600}>{suggestion.title}</Text>
           <Text size="sm" c="dimmed" mt={4}>{suggestion.statement}</Text>
           <Group mt="md" justify="space-between">
-            <Button variant="subtle" px={0} onClick={() => navigate(`/automations/suggestions/${encodeURIComponent(suggestion.id)}`)}>Ver sugestão</Button>
             <Button variant="subtle" color="gray" onClick={() => ignore(suggestion.id)}>Ignorar</Button>
           </Group>
         </Card>)}
