@@ -64,6 +64,45 @@ def appliance_url(id):
     return f"/api/households/{A}/appliances/{id}"
 
 
+@pytest.mark.parametrize(
+    "role,room,kind",
+    [
+        (DeviceRole.room_meter, fx.ROOM_BRUNO, "bedroom"),
+        (DeviceRole.none, fx.ROOM_SALA, "common"),
+        (DeviceRole.main_meter, None, None),
+    ],
+)
+def test_device_location_is_scoped_to_device_and_household(app, role, room, kind):
+    from homemind.contracts.common import replace
+
+    catalog = repo.appliance_catalog()
+
+    def check(conn):
+        device = replace(fx.meter(), role=role, room_id=room)
+        catalog.register_device(conn, device)
+        location = catalog.device_location(conn, fx.HOUSEHOLD, device.id)
+        assert location.role is role
+        assert location.room_id == room
+        assert (location.room_kind.value if location.room_kind else None) == kind
+        assert catalog.device_location(conn, HOUSE_B, device.id) is None
+        assert catalog.device_location(conn, fx.HOUSEHOLD, uuid4()) is None
+
+    app.state.db.run_sync(check)
+
+
+def test_device_cannot_point_to_a_room_from_another_household(app):
+    """A chave estrangeira composta (household_id, room_id) torna impossível uma tomada numa
+    divisão de outra casa: a localização nunca pode vir de uma divisão alheia."""
+
+    def check(conn):
+        catalog = repo.appliance_catalog()
+        catalog.register_device(conn, fx.meter())
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("UPDATE device SET room_id=? WHERE id=?", (str(ROOM_B1), str(fx.METER)))
+
+    app.state.db.run_sync(check)
+
+
 def test_personal_common_isolation_and_operator_redaction(client):
     heater = make_appliance(client)
     assert heater.status_code == 201, heater.text

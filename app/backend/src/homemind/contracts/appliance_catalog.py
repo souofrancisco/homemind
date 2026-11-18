@@ -17,9 +17,18 @@ from homemind.contracts.devices import (
     ApplianceOwnership,
     ApplianceSignature,
     Device,
+    DeviceRole,
     DeviceView,
 )
 from homemind.contracts.energy import ConsumptionEvent
+from homemind.contracts.household import RoomKind
+
+
+@dataclass(frozen=True)
+class DeviceLocation:
+    role: DeviceRole
+    room_id: UUID | None
+    room_kind: RoomKind | None
 
 
 @dataclass(frozen=True)
@@ -51,6 +60,10 @@ class ApplianceContextSegment:
 @runtime_checkable
 class ApplianceCatalog(Protocol):
     """Transaction-scoped P1/P4 access to HOUSE-03-owned catalogue data."""
+
+    def device_location(
+        self, conn: sqlite3.Connection, household_id: UUID, device_id: UUID
+    ) -> DeviceLocation | None: ...
 
     def appliances_for_household(
         self, conn: sqlite3.Connection, household_id: UUID, at: datetime

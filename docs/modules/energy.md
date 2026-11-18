@@ -1,5 +1,70 @@
 # Módulo `devices` + `energy` — dispositivos, leituras e assinaturas
 
+## Localização e cobertura (ENERGY-05)
+
+**IMPLEMENTADO nesta tarefa**, sem hardware nem rede. `locate.py` é puro e usa apenas
+`DeviceLocation(role, room_id, room_kind)`, obtido pelo novo método de leitura
+`ApplianceCatalog.device_location(conn, household_id, device_id)`. O adapter SQLite
+isola dispositivo e divisão pela casa; uma divisão ausente/desconhecida não é prova.
+
+- `room` exige tomada `room_meter`, `room_id` e divisão `bedroom`.
+- `common` exige `device.room_id` de uma divisão `common`, exceto `main_meter`.
+- `main_meter` é sempre agregado e fica `unknown`, mesmo configurado numa divisão
+  ou com aparelho identificado. Sem divisão, tipo de divisão conhecido ou dispositivo,
+  fica igualmente `unknown`, com `room_id=None`. Nunca se assume um quarto por omissão.
+- O tracker fixa a localização da **tomada** na abertura da sessão e conserva-a no
+  fecho e nos ciclos de termóstato. Mudanças posteriores de configuração não movem
+  retroativamente o consumo. Sem callback/catálogo conserva o comportamento `unknown`.
+- O consumidor consulta o catálogo na conexão/transação do handler e restaura os
+  callbacks no `finally`; não guarda conexão nem cache de configuração entre handlers.
+  A cache já existente de eventos por entrega continua a garantir o replay de resultados.
+- `ConsumptionSessionView.declared_room_id` é apenas a pista declarada do aparelho
+  identificado, obtida com `ownership_at` no instante de início. Sem identificação,
+  catálogo ou ownership válido é `None`. Nunca preenche `ConsumptionEvent.location`.
+
+`GET /api/households/{household_id}/energy/overview` acrescenta `coverage`:
+
+| Campo | Significado |
+|---|---|
+| `period_start`, `period_end` | Início do mês no fuso da casa (expresso em UTC), até `now` |
+| `total_wh` | Soma sample-and-hold por tomada, sobre leituras utilizáveis consecutivas |
+| `measured_wh` | Wh das sessões `room` ou `common` |
+| `inferred_wh` | Wh das sessões `unknown` com `match.appliance_id` |
+| `unattributed_wh` | Diferença para o total: base, desconhecidos e resíduo |
+| `measured_percent`, `inferred_percent`, `unattributed_percent` | Percentagens inteiras reconciliadas |
+| `status` | `no_data` se o total arredondado for zero; nesse caso todos os valores são zero |
+| `adjusted` | Sessões excederam o total integrado e foi necessário reconciliar |
+| `provenance` | Proveniências das leituras que suportam o total, incluindo `simulated` |
+
+Decisões explícitas de cálculo:
+
+- A cobertura consulta todo o histórico; os limites existentes de 500 eventos/20
+  sessões continuam apenas nas listas recentes. Considera a última versão de cada
+  sessão até `now`, excluindo descartadas e energia ausente; não duplica abertura/fecho.
+- Usa `observed_at` (senão `ts`), rejeita polls/observações repetidos ou atrasados como
+  ENERGY-02. `missing`, `stale` e `unit_unknown` interrompem a integração: não conta nem
+  o intervalo até à lacuna nem até à recuperação. Não prolonga a última leitura até
+  `now`; só intervalos delimitados por duas leituras boas suportam energia.
+- Recorta intervalos no início do mês; inclui a leitura anterior para delimitar a
+  meia-noite. Não usa leituras nem versões de sessões posteriores a `now`.
+- As sessões só persistem Wh acumulados. Quando atravessam o mês, os Wh são rateados
+  pela duração sobreposta (aproximação temporal explícita, não uma medição horária).
+  Sessões em curso só contam o snapshot publicado, sem extrapolação até `now`.
+- Acumula em `Decimal`; o total é arredondado uma vez a Wh, com empate para o par,
+  como ENERGY-02. Distribui Wh inteiros pelo método dos maiores restos. Se as sessões
+  excederem o total (arredondamento ou sobreposição), reduz medido/inferido na mesma
+  proporção, deixa resíduo zero e assinala `adjusted=true`. Nunca há resíduo negativo.
+- As percentagens usam os Wh finais e maiores restos para fechar exatamente em 100 %;
+  empates seguem medido, inferido, não atribuído. Total zero dá 0 % em todas as parcelas.
+- O total soma as tomadas observadas, como pedido; não é o contador da fatura nem
+  elimina possível sobreposição física entre contadores agregados e subordinados.
+
+O RBAC existente mantém-se: apenas moradores com âmbito `household`; senhorio e
+operador não recebem curvas, horários, leituras, sessões nem a nova cobertura.
+Billing e os contratos dos eventos de consumo mantêm-se inalterados. Os testes novos
+usam dados **SIMULADOS** e ficam para execução pelo utilizador; nesta tarefa só se
+executam `uv run ruff check .` e `uv run ruff format --check .`.
+
 **Dono: P1 (brunovieira88).** **PLANEADO**, sobre código existente em `connectors/`. Integração MCP: [integrations/altice-mcp.md](../integrations/altice-mcp.md).
 
 **HOUSE-03:** o catálogo e as suas interfaces SQLite estão implementados na branch do PR #142;

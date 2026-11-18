@@ -152,6 +152,10 @@ class MemoryCatalog:
         self.reads.append((conn, household_id))
         return self.signatures
 
+    def device_location(self, conn, household_id, device_id):
+        assert conn.in_transaction
+        return getattr(self, "locations", {}).get(device_id)
+
     def ownership_at(self, conn, household_id, appliance_id, at):
         assert conn.in_transaction
         self.owner_reads.append((conn, household_id, appliance_id, at))
@@ -177,6 +181,50 @@ class MemoryCatalog:
 
     def appliances_for_household(self, conn, household_id, at):  # ENERGY-01 (contrato)
         raise AssertionError("unexpected appliance listing")
+
+
+@pytest.mark.parametrize("aggregated", [False, True])
+def test_catalog_socket_location_in_detected_and_closed(aggregated):
+    from homemind.contracts.appliance_catalog import DeviceLocation
+    from homemind.contracts.devices import DeviceRole
+    from homemind.contracts.household import RoomKind
+    from homemind.core.events import append_event
+
+    catalog = MemoryCatalog({}, {})
+    catalog.locations = {
+        fx.METER: DeviceLocation(
+            DeviceRole.main_meter if aggregated else DeviceRole.room_meter,
+            fx.ROOM_BRUNO,
+            RoomKind.bedroom,
+        )
+    }
+    tracker = StepTracker(household_id=fx.HOUSEHOLD)
+    handler = make_step_consumer(tracker, catalog=catalog)
+    db = Database(":memory:")
+    db.open()
+    try:
+        migrate(db)
+        db.run_sync(seed_demo)
+        generated = []
+        for seconds, watts in [(0, 0), (30, 2000), (210, 0), (811, 0)]:
+            generated.extend(
+                db.run_sync(
+                    lambda c, s=seconds, w=watts: handler(c, append_event(c, recorded(s, w)))
+                )
+            )
+        sessions = [
+            e.data
+            for e in generated
+            if e.type in ("energy.consumption_detected", "energy.consumption_closed")
+        ]
+        assert len(sessions) == 2
+        for session in sessions:
+            assert session.location is (LocationKind.unknown if aggregated else LocationKind.room)
+            assert session.room_id == (None if aggregated else fx.ROOM_BRUNO)
+            assert ConsumptionEvent.model_validate_json(session.model_dump_json()) == session
+        assert tracker.locate is None
+    finally:
+        db.close()
 
 
 @pytest.mark.parametrize(

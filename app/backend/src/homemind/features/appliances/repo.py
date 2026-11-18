@@ -12,6 +12,7 @@ from homemind.contracts.appliance_catalog import (
     ApplianceCatalog,
     ApplianceContextSegment,
     ApplianceSnapshot,
+    DeviceLocation,
     MeterContextSegment,
 )
 from homemind.contracts.common import new_id
@@ -20,9 +21,11 @@ from homemind.contracts.devices import (
     ApplianceScope,
     ApplianceSignature,
     Device,
+    DeviceRole,
     DeviceView,
 )
 from homemind.contracts.energy import ConsumptionEvent
+from homemind.contracts.household import RoomKind
 from homemind.core.access import Grant, HouseholdAccess
 from homemind.features.appliances.schemas import (
     ApplianceCreate,
@@ -782,6 +785,23 @@ class SqliteApplianceCatalog:
     ``contracts.appliance_catalog.ApplianceCatalog``. Every call uses the caller's
     connection so transaction and event-replay boundaries remain intact.
     """
+
+    def device_location(
+        self, conn: sqlite3.Connection, household_id: UUID, device_id: UUID
+    ) -> DeviceLocation | None:
+        row = conn.execute(
+            "SELECT d.role,d.room_id,r.kind FROM device d LEFT JOIN room r"
+            " ON r.id=d.room_id AND r.household_id=d.household_id"
+            " WHERE d.household_id=? AND d.id=?",
+            (str(household_id), str(device_id)),
+        ).fetchone()
+        if row is None:
+            return None
+        return DeviceLocation(
+            role=DeviceRole(row["role"]),
+            room_id=UUID(row["room_id"]) if row["room_id"] else None,
+            room_kind=RoomKind(row["kind"]) if row["kind"] else None,
+        )
 
     def appliances_for_household(
         self, conn: sqlite3.Connection, household_id: UUID, at: datetime

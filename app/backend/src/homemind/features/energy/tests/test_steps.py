@@ -34,6 +34,46 @@ SOCKET = stable_id("energy-tests", "socket")
 OTHER_SOCKET = stable_id("energy-tests", "other-socket")
 
 
+@pytest.mark.parametrize("aggregated", [False, True])
+def test_identified_appliance_does_not_supply_socket_location(aggregated):
+    from homemind.contracts.appliance_catalog import DeviceLocation
+    from homemind.contracts.devices import DeviceRole
+    from homemind.contracts.household import RoomKind
+    from homemind.features.energy.locate import locate
+
+    device = DeviceLocation(
+        DeviceRole.main_meter if aggregated else DeviceRole.room_meter,
+        fx.ROOM_BRUNO,
+        RoomKind.bedroom,
+    )
+    tracker = StepTracker(
+        household_id=fx.HOUSEHOLD,
+        classify=lambda _: ApplianceMatch(appliance_id=fx.HEATER, confidence=1),
+        locate=lambda device_id: locate(device),
+    )
+    events = feed(tracker, [(0, 0), (30, 2000), (210, 0), (811, 0)])
+    sessions = [
+        e.data for e in events if isinstance(e, EnergyConsumptionDetected | EnergyConsumptionClosed)
+    ]
+    assert len(sessions) == 2
+    for session in sessions:
+        assert session.match.appliance_id == fx.HEATER
+        assert session.location is (LocationKind.unknown if aggregated else LocationKind.room)
+        assert session.room_id == (None if aggregated else fx.ROOM_BRUNO)
+        assert ConsumptionEvent.model_validate_json(session.model_dump_json()) == session
+
+
+def test_socket_location_is_kept_when_configuration_changes():
+    tracker = StepTracker(
+        household_id=fx.HOUSEHOLD, locate=lambda _: (LocationKind.room, fx.ROOM_BRUNO)
+    )
+    feed(tracker, [(0, 0), (30, 2000)])
+    tracker.locate = lambda _: (LocationKind.common, fx.ROOM_SALA)
+    events = feed(tracker, [(210, 0), (811, 0)])
+    closed = of_type(events, EnergyConsumptionClosed)[0].data
+    assert (closed.location, closed.room_id) == (LocationKind.room, fx.ROOM_BRUNO)
+
+
 def reading(seconds, watts, *, status=ReadingStatus.ok, device_id=SOCKET):
     return EnergyReading(
         id=stable_id("energy-tests", str(device_id), str(seconds), status.value),
