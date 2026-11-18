@@ -3,6 +3,7 @@ import { IconAlertCircle } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { getMyBudget, setMyBudget, type BudgetStatus } from "../services/billing/budget";
+import BudgetLampProposal from "../components/billing/BudgetLampProposal";
 
 const money = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" });
 // ALERT-06: a cor vem do servidor (`BudgetStatus.light`); a app só a mostra.
@@ -47,6 +48,7 @@ export default function BudgetContent() {
   const pct = s.pct;
   return (
     <Stack gap="md">
+      <BudgetLampProposal householdId={householdId} refreshKey={reload + (s.pct ?? 0)} />
       <Card withBorder radius="lg" p="lg">
         <Stack gap="md">
           <Group justify="space-between"><Title order={3} size="h4">Mês {s.period}</Title>

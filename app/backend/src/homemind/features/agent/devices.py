@@ -33,6 +33,9 @@ class ActuatorDevice:
     simulated: bool
     # Tomada que alimenta vários aparelhos (a extensão): desligá-la corta tudo o que lá está.
     aggregate: bool = False
+    # Divisão onde está (`room.id`); `None` = desconhecida. A cor do orçamento (ALERT-06) só vai
+    # para uma lâmpada com divisão conhecida: o quarto do próprio ou uma zona comum.
+    room_id: UUID | None = None
 
 
 class DeviceDirectory(Protocol):
@@ -54,7 +57,9 @@ class DemoDevices:
         return [
             ActuatorDevice(meter.id, meter.name, DeviceKind.plug, simulated=True, aggregate=True),
             # As fixtures só têm o id da lâmpada (`fx.LAMP`), não um `Device`.
-            ActuatorDevice(fx.LAMP, "Lâmpada da sala", DeviceKind.bulb, simulated=True),
+            ActuatorDevice(
+                fx.LAMP, "Lâmpada da sala", DeviceKind.bulb, simulated=True, room_id=fx.ROOM_SALA
+            ),
         ]
 
 
