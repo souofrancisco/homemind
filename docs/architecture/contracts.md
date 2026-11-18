@@ -112,6 +112,7 @@ Garantias e limites: [event-flow.md](event-flow.md) §4. Eventos **não** se exp
 | `attribution` | — | own | — |
 | `bill` | aggregate (r), household (w) | own (r) | — |
 | `receipt` (alocações) | aggregate | own (r, contestar) | — |
+| `house_rules` (regra da sala versionada) | household (r) | household (r/w) | — |
 | `budget`, `agent` | — | own | — |
 | `notification` | own | own | — |
 | `automation` | — | household | diagnostic |
@@ -169,6 +170,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | `GET` | `/api/households/{id}/bills/{bill_id}/receipt` | T | **IMPLEMENTADO**: `BillAllocation` própria (recibo por linhas) |
 | `GET` | `/api/households/{id}/bills/{bill_id}/receipt/explanation` | T | **IMPLEMENTADO (BILL-05):** `ReceiptExplanation` (evidência guardada no fecho, `billing_allocation_item`) |
 | `POST` | `/api/allocations/{id}/contest` | T | |
+| `GET` · `PUT` `DELETE` | `/api/households/{id}/rules` · `…/rules/next` | L, T (ler) · T (agendar/cancelar) | **IMPLEMENTADO (HOUSE-04):** `HouseRulesView`; `HouseRulesIn` agenda para o dia 1 do mês seguinte |
 | `GET` `PUT` | `/api/households/{id}/budgets/me?period` | T | **IMPLEMENTADO (ALERT-01):** `BudgetIn` → `BudgetStatus` (com `forecast: BudgetForecast \| null`, ALERT-02) |
 | `GET` `PUT` | `/api/households/{id}/tariff` | L (definir), L e T (ver) | **IMPLEMENTADO (ALERT-02):** `TariffIn` → `TariffStatus` (simples ou bi-horário; só estimativas) |
 | `GET` `PUT` | `/api/households/{id}/room-allowances` | L | Plafond por quarto |

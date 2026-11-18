@@ -32,7 +32,7 @@ from homemind.contracts.common import (
     replace,
 )
 from homemind.contracts.energy import EnergyTotal, LocationKind, MatchOutcome
-from homemind.contracts.household import CommonAreaRule
+from homemind.contracts.household import CommonAreaRule, HouseholdPolicy
 
 # --- atribuição -------------------------------------------------------------------------------
 
@@ -690,9 +690,46 @@ class ReceiptExplanation(ContractModel):
     equal_split_cents: Cents  # o que pagaria com a divisão igual de hoje
     fixed_cents: Cents
     price_millicents_per_kwh: int  # preço médio da fatura (sem termo fixo)
-    common_area_rule: CommonAreaRule  # regra em vigor HOJE (a versão por data é HOUSE-04)
+    common_area_rule: CommonAreaRule  # regra em vigor no 1.º dia do período (HOUSE-04)
     evidence_available: bool
     own: list[ExplainedConsumption]
     common: list[ExplainedCommonGroup]
     residual: ResidualExplanation
     allowance: AllowanceExplanation | None = None  # None: o meu quarto não tem plafond
+
+
+# --- regras da casa versionadas (HOUSE-04) ------------------------------------------------------
+
+
+class PolicyVersion(ContractModel):
+    """Uma versão das regras da casa. `effective_from=None`: a política inicial (desde a criação
+    da casa, sem autor). As outras começam sempre num dia 1 (fuso da casa)."""
+
+    effective_from: date | None
+    policy: HouseholdPolicy
+    created_by_resident_id: UUID | None = None
+    created_at: UtcDatetime | None = None
+
+
+class HouseRulesIn(ContractModel):
+    """A regra a agendar para o dia 1 do mês seguinte (todos os campos explícitos)."""
+
+    common_area_rule: CommonAreaRule
+    ask_threshold_cents: Cents  # só se pergunta acima deste custo estimado
+    ask_timeout_hours: Annotated[int, Field(strict=True, ge=1, le=168)]
+
+    def policy(self) -> HouseholdPolicy:
+        return HouseholdPolicy(**self.model_dump())
+
+
+class HouseRulesView(ContractModel):
+    """Que regra vale hoje, que mudança está agendada e o que valeu antes.
+
+    Uma mudança só vale a partir de `next_change_from` (o dia 1 do mês seguinte): nunca muda um
+    mês que já começou, portanto nunca muda consumos já decididos nem faturas fechadas.
+    """
+
+    current: PolicyVersion
+    upcoming: PolicyVersion | None  # agendada, ainda pode ser substituída ou cancelada
+    history: list[PolicyVersion]  # versões que já valeram, mais recente primeiro (inclui current)
+    next_change_from: date

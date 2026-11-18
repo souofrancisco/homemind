@@ -1,7 +1,8 @@
 """Consumidor do barramento que decide e grava a quem pertence cada consumo (BILL-02).
 
 - `energy.consumption_detected/closed` → guarda a última versão do consumo e, se ainda não
-  houver decisão, aplica `attribution.decide`: atribuição direta (quarto, conta comum) ou
+  houver decisão, aplica `attribution.decide` com a regra da casa em vigor no dia em que o
+  consumo começou (`rules.policy_on`, HOUSE-04): atribuição direta (quarto, conta comum) ou
   pedido «De quem é esta conta?» (`billing.confirmation_needed`).
 - `notification.responded` com a votação decidida (D-32) → atribuição por confirmação.
 - `expire_pending` (chamado periodicamente e no fecho da fatura): pedidos sem decisão no
@@ -47,9 +48,8 @@ from homemind.contracts.energy import (
     CostEstimate,
     LocationKind,
 )
-from homemind.contracts.household import HouseholdPolicy
 from homemind.contracts.notification import ConfirmationVerdict, RefType
-from homemind.features.billing import tariff
+from homemind.features.billing import rules, tariff
 from homemind.features.billing.attribution import SYSTEM, decide
 
 # Nome PERMANENTE (chave de idempotência em `processed_event`): renomear reprocessa tudo.
@@ -87,7 +87,11 @@ def _on_consumption(
     tenants = active_tenants(conn, consumption.household_id, consumption.started_at)
     decision = decide(
         with_cost_estimate(conn, consumption),
-        household_policy(conn, consumption.household_id),
+        rules.policy_on(
+            conn,
+            consumption.household_id,
+            rules.local_day(conn, consumption.household_id, consumption.started_at),
+        ),
         {room: r for r, room in tenants if room is not None},
         [r for r, _ in tenants],
         ev.ts,
@@ -297,15 +301,6 @@ def active_attribution(conn: sqlite3.Connection, cid: UUID) -> Attribution | Non
 def load_consumption(conn: sqlite3.Connection, cid: UUID) -> ConsumptionEvent:
     row = conn.execute("SELECT json FROM billing_consumption WHERE id = ?", (str(cid),)).fetchone()
     return ConsumptionEvent.model_validate_json(row["json"])
-
-
-def household_policy(conn: sqlite3.Connection, household_id: UUID) -> HouseholdPolicy:
-    row = conn.execute(
-        "SELECT common_area_rule, ask_threshold_cents, ask_timeout_hours FROM household"
-        " WHERE id = ?",
-        (str(household_id),),
-    ).fetchone()
-    return HouseholdPolicy(**dict(row))
 
 
 def active_tenants(

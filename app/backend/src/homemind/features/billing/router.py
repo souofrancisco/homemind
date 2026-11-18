@@ -28,6 +28,8 @@ from homemind.contracts.billing import (
     Contestation,
     ContestationDecisionIn,
     ContestationIn,
+    HouseRulesIn,
+    HouseRulesView,
     LandlordBillView,
     LandlordContestationView,
     ReceiptExplanation,
@@ -58,6 +60,7 @@ from homemind.features.billing import (
     contestations,
     explanation,
     peaks,
+    rules,
     tariff,
 )
 
@@ -480,3 +483,44 @@ async def set_my_budget(
         return await _commit(request, db, work)
     except ValueError as e:
         raise HTTPException(400, {"code": "invalid_request", "message": str(e)}) from None
+
+
+# --- regras da casa versionadas (HOUSE-04) -------------------------------------------------------
+
+RulesRead = Annotated[HouseholdAccess, Depends(require_access(Resource.house_rules))]
+RulesWrite = Annotated[
+    HouseholdAccess, Depends(require_access(Resource.house_rules, Operation.write))
+]
+
+
+async def _rules_change(db: Database, work) -> HouseRulesView:
+    try:
+        return await db.run(work)
+    except rules.RuleChangeError as e:
+        raise HTTPException(400, {"code": "invalid_request", "message": str(e)}) from None
+
+
+@router.get("/households/{household_id}/rules")
+async def house_rules(access: RulesRead, db: DbDep, clock: ClockDep) -> HouseRulesView:
+    """A regra da sala em vigor, a mudança agendada e as versões que já valeram."""
+    now = clock()
+    return await db.run(lambda conn: rules.view(conn, access.household_id, now))
+
+
+@router.put("/households/{household_id}/rules/next")
+async def schedule_house_rules(
+    body: HouseRulesIn, access: RulesWrite, db: DbDep, clock: ClockDep
+) -> HouseRulesView:
+    """Agenda a regra para o dia 1 do mês seguinte (substitui a agendada). Nunca muda o mês em
+    curso. `presence` (C) ainda não existe: `400`."""
+    now, policy = clock(), body.policy()
+    return await _rules_change(
+        db, lambda conn: rules.schedule(conn, access.household_id, access.resident_id, policy, now)
+    )
+
+
+@router.delete("/households/{household_id}/rules/next")
+async def cancel_house_rules(access: RulesWrite, db: DbDep, clock: ClockDep) -> HouseRulesView:
+    """Cancela a mudança agendada (`400` se não houver). As que já valeram nunca se apagam."""
+    now = clock()
+    return await _rules_change(db, lambda conn: rules.cancel(conn, access.household_id, now))
