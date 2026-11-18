@@ -30,7 +30,7 @@ from homemind.contracts.billing import (
 )
 from homemind.contracts.common import Audit, Provenance, replace, stable_id
 from homemind.contracts.energy import ConsumptionEvent
-from homemind.features.billing import attributor, bills
+from homemind.features.billing import allowance, attributor, bills
 from homemind.features.billing.allocation import (
     EnergyShare,
     allocate,
@@ -112,8 +112,12 @@ def _save_evidence(
     attributions: list[Attribution],
     consumptions: dict[UUID, ConsumptionEvent],
     shares: list[EnergyShare],
+    residents: dict[UUID, UUID | None],
+    heating: frozenset[UUID],
+    covered: dict[UUID, int],
 ) -> None:
-    """Fotografia do que entrou na fatura (e do que ficou no resíduo), para a explicar depois."""
+    """Fotografia do que entrou na fatura (e do que ficou no resíduo), para a explicar depois.
+    `shares` são as partes ANTES do plafond (uma por consumo); `covered` diz quanto ele cobriu."""
     by_consumption = {a.consumption_event_id: a for a in attributions}
     rows = []
     for s in shares:
@@ -123,13 +127,18 @@ def _save_evidence(
             " AND status = 'superseded'",
             (str(c.id),),
         ).fetchone()[0]
-        rows.append((c, 1, s.resident_id, superseded, a.model_dump_json()))
+        proven = s.resident_id is not None and allowance.is_proven_heating(
+            c, residents.get(s.resident_id), heating
+        )
+        rows.append(
+            (c, 1, s.resident_id, superseded, a.model_dump_json(), proven, covered.get(c.id, 0))
+        )
     for c in undecided_in_period(conn, bill.household_id, bill.period):
-        rows.append((c, 0, None, 0, None))
+        rows.append((c, 0, None, 0, None, False, 0))
     conn.executemany(
         "INSERT INTO billing_allocation_item (bill_id, consumption_event_id, household_id,"
         " attributed, target_resident_id, energy_wh, superseded_count, consumption_json,"
-        " attribution_json) VALUES (?,?,?,?,?,?,?,?,?)",
+        " attribution_json, heating, covered_wh) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         [
             (
                 str(bill.id),
@@ -141,10 +150,34 @@ def _save_evidence(
                 superseded,
                 c.model_dump_json(),
                 a_json,
+                int(proven),
+                cov,
             )
-            for c, attributed, resident, superseded, a_json in rows
+            for c, attributed, resident, superseded, a_json, proven, cov in rows
         ],
     )
+
+
+def heating_appliances(conn: sqlite3.Connection, household_id: UUID) -> frozenset[UUID]:
+    """Aparelhos do catálogo da casa na categoria `heating` (inclui os já retirados: um consumo
+    antigo continua a ser de um aquecedor)."""
+    rows = conn.execute(
+        "SELECT id FROM appliance WHERE household_id = ? AND category = 'heating'",
+        (str(household_id),),
+    ).fetchall()
+    return frozenset(UUID(r["id"]) for r in rows)
+
+
+def room_limits(
+    conn: sqlite3.Connection, household_id: UUID, period: BillPeriod
+) -> dict[UUID, int]:
+    """Plafond solidário de cada quarto para o período (`room.included_wh` é mensal)."""
+    rows = conn.execute(
+        "SELECT id, included_wh FROM room WHERE household_id = ? AND kind = 'bedroom'"
+        " AND included_wh > 0",
+        (str(household_id),),
+    ).fetchall()
+    return {UUID(r["id"]): allowance.period_limit(r["included_wh"], period) for r in rows}
 
 
 def _bill(conn: sqlite3.Connection, household_id: UUID, bill_id: UUID) -> sqlite3.Row:
@@ -183,10 +216,17 @@ def finalize(
     attributions, consumptions = period_inputs(conn, household_id, bill.period)
     residents = tenants_in_period(conn, household_id, bill.period)
     shares = shares_from_attributions(attributions, consumptions)
+    heating = heating_appliances(conn, household_id)
+    limits = room_limits(conn, household_id, bill.period)
+    split, covered = allowance.apply(shares, consumptions, residents, limits, heating)
+    conn.executemany(
+        "INSERT INTO billing_allowance (bill_id, room_id, limit_wh) VALUES (?,?,?)",
+        [(str(bill.id), str(room), wh) for room, wh in limits.items()],
+    )
     allocations = [
-        replace(a, status=AllocationStatus.published) for a in allocate(bill, residents, shares)
+        replace(a, status=AllocationStatus.published) for a in allocate(bill, residents, split)
     ]
-    _save_evidence(conn, bill, attributions, consumptions, shares)
+    _save_evidence(conn, bill, attributions, consumptions, shares, residents, heating, covered)
     for a in allocations:
         conn.execute(
             "INSERT INTO billing_allocation (id, bill_id, household_id, resident_id, room_id,"

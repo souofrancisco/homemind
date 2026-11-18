@@ -222,6 +222,7 @@ class BreakdownKind(StrEnum):
     residual_share = "residual_share"
     room = "room"
     common = "common"
+    heating_allowance = "heating_allowance"  # parte igual do plafond solidário (BILL-03)
     appliance = "appliance"
     adjustment = "adjustment"  # único que pode ser negativo (ex.: plafond solidário)
 
@@ -475,6 +476,7 @@ class ExplanationStage(StrEnum):
     location = "location"  # quarto, zona comum ou desconhecida
     decision = "decision"  # regra/confirmação/votação/prazo
     correction = "correction"  # decisões anteriores substituídas
+    allowance = "allowance"  # plafond solidário de aquecimento (BILL-03)
     share = "share"  # parcela no recibo
 
 
@@ -501,7 +503,9 @@ class ExplainedConsumption(ContractModel):
     decided_by: DecisionActor
     decided_at: UtcDatetime
     corrections: Annotated[int, Field(strict=True, ge=0)] = 0
-    amount_cents: Cents
+    heating: bool = False  # aquecimento provado (BILL-03): aparelho `heating` no meu quarto
+    covered_wh: EnergyWh = 0  # parte paga por todos pelo plafond solidário
+    amount_cents: Cents  # só a parte que é minha (energy_wh − covered_wh)
     steps: list[ExplanationStep]
 
 
@@ -531,12 +535,26 @@ class ResidualExplanation(ContractModel):
     provenance: Provenance
 
 
+class AllowanceExplanation(ContractModel):
+    """Plafond solidário (BILL-03) no meu quarto e a minha parte do da casa."""
+
+    limit_wh: EnergyWh  # do meu quarto, neste período (proporcional aos meses)
+    heating_wh: EnergyWh  # aquecimento provado no meu quarto
+    covered_wh: EnergyWh  # dele, pago por todos (≤ limit_wh)
+    unproven_consumptions: Annotated[int, Field(strict=True, ge=0)]  # sem aparelho identificado
+    unproven_wh: EnergyWh
+    house_covered_wh: EnergyWh  # Σ coberto na casa (agregado, sem quartos)
+    my_share_wh: EnergyWh  # a minha parte igual de `house_covered_wh`
+    amount_cents: Cents  # linha `heating_allowance` do meu recibo
+
+
 class ReceiptExplanation(ContractModel):
     """«Porque pago isto?»: o recibo do morador explicado linha a linha.
 
     Reconcilia ao cêntimo com `BillAllocation`: Σ `own` = linhas `room`, Σ `common` = linhas
-    `common`, `residual` = `residual_share_cents`. `evidence_available=False` quando a fatura foi
-    fechada antes de haver evidência guardada (as listas vêm vazias; o recibo continua válido).
+    `common`, `allowance` = linhas `heating_allowance`, `residual` = `residual_share_cents`.
+    `evidence_available=False` quando a fatura foi fechada antes de haver evidência guardada
+    (as listas vêm vazias; o recibo continua válido).
     """
 
     bill_id: UUID
@@ -553,3 +571,4 @@ class ReceiptExplanation(ContractModel):
     own: list[ExplainedConsumption]
     common: list[ExplainedCommonGroup]
     residual: ResidualExplanation
+    allowance: AllowanceExplanation | None = None  # None: o meu quarto não tem plafond

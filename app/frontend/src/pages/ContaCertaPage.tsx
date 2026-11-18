@@ -199,6 +199,9 @@ function HouseContent() {
                   <Stack gap={3}>
                     <Text fw={600}>{room.name}</Text>
                     <Text size="xs" c="dimmed">{room.kind === "common" ? "Zona comum" : "Quarto"}</Text>
+                    {room.included_wh ? (
+                      <Text size="xs" c="teal">Plafond solidário: {(room.included_wh / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 1 })} kWh/mês de aquecimento pagos por todos</Text>
+                    ) : null}
                   </Stack>
                 </Group>
               </Card>
