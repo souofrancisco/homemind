@@ -65,6 +65,12 @@ export default function BudgetContent() {
               )}
             </>
           ) : <Text c="dimmed">Ainda não definiste um orçamento para este mês.</Text>}
+          {!s.final && (s.forecast ? (
+            <Text size="sm">
+              Previsão para o fim do mês: <b>{eur(s.forecast.cents)}</b> (entre {eur(s.forecast.low_cents)} e {eur(s.forecast.high_cents)}), com base em {s.forecast.observed_days} dias de consumo deste mês.
+              {s.budget?.limit_cents != null && s.forecast.cents > s.budget.limit_cents && ` Acima do orçamento em ${eur(s.forecast.cents - s.budget.limit_cents)}.`}
+            </Text>
+          ) : <Text size="sm" c="dimmed">Ainda não há dados suficientes para prever o fim do mês (são precisos pelo menos 3 dias).</Text>)}
           <SimpleGrid cols={{ base: 2, sm: 4 }}>
             <Figure label="Gasto" cents={s.spent_cents} />
             <Figure label="Confirmado (meu)" cents={s.confirmed_cents} />
