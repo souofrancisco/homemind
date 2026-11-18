@@ -55,13 +55,13 @@ Rotas por casa (o papel e o `resident_id` vêm de `core/access`): `GET …/notif
 | Canal | Estado |
 |---|---|
 | Centro de notificações na aplicação (lista + contador) | P0; API **IMPLEMENTADA**, UI PLANEADA |
-| Tempo real por WebSocket (`/api/ws`: mensagens `notification`, `notification_update`) | P0, **PLANEADO** (o único `/api/ws` é o do ObjectOS, sem hook; a reconexão recupera por `GET`) |
+| Tempo real por WebSocket (caminho ainda por acordar) | P0, **PLANEADO**; `/api/ws` do ObjectOS foi removido em BASE-04 |
 | Histórico com filtros | P1 |
 | Push em Android/iOS via Capacitor | P2 (**PROPOSTA**; exige serviço de push; sem acesso a dados pessoais no texto) |
 
 ## Ficheiros existentes reutilizáveis
 
-`features/engine/router.py` (gestor de ligações WS, fila de 200 mensagens por cliente, auth na 1.ª mensagem), `frontend/src/app/providers/HomeProvider.tsx`, `components/events/*`, `services/api/client.ts`, `core/errors.py`.
+O protocolo e o transporte WebSocket ainda não estão implementados. O backend atual mantém REST, autenticação das rotas, `core/errors.py` e entrega persistente das notificações.
 
 ## Ficheiros (backend IMPLEMENTADO; frontend PLANEADO)
 
@@ -117,7 +117,7 @@ Todos: membership terminada ou papel que não seja inquilino -> nada; origem sim
 
 | Adiado (**PLANEADO**) | Porquê |
 |---|---|
-| WebSocket | só existe o `/api/ws` do ObjectOS, sem hook para notificações |
+| WebSocket | não existe rota WebSocket ativa; o `/api/ws` antigo saiu na BASE-04 |
 | Aparelho esquecido e «não bate certo» (`alerts.alert_raised`) | sem produtor (ALERT-04, fase 2); o consumidor `notifications.peak_alert` já subscreve o tipo e ignora estes `kind`, por isso um produtor novo precisa de outro consumidor (nome novo) |
 | Botões nos alertas de conforto | **Mudou:** a proposta de desligar a tomada chega como notificação `agent_action` (sem botões) e confirma-se na rota do agente; a execução real depende do executor da P1 (hoje só SIMULADO na casa demo) |
 | `notify_landlord` do fumo | sem decisão de audiência; o senhorio continua sem ver `security_alert` |

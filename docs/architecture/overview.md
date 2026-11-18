@@ -2,32 +2,32 @@
 
 Dois estados, sempre separados:
 
-- **IMPLEMENTADO** — o que está hoje na `main` (herança do ObjectOS).
+- **IMPLEMENTADO** — o que existe hoje no backend da Conta Certa.
 - **PLANEADO** — a arquitetura alvo da Conta Certa.
-- **IMPLEMENTADO (fundação F0)** — `core/db.py`, `core/events.py`, `core/access.py`, `core/lifespan.py`, os contratos e a matriz de permissões; ver §2 e [contracts.md](contracts.md). Os módulos de produto (P1–P4) **não** existem.
+- A fundação e vários módulos de produto P1–P4 estão implementados; cada documento de módulo distingue o que está **IMPLEMENTADO** do que está **PLANEADO**.
 
 Detalhes: entidades em [data-model.md](data-model.md), contratos em [contracts.md](contracts.md), eventos em [event-flow.md](event-flow.md), caminho do atual ao alvo em [migration.md](migration.md).
 
-## 1. Implementado hoje (ObjectOS)
+## 1. Implementado hoje (Conta Certa)
 
-Um processo FastAPI (monólito modular por features), painel React e MCP Altice opcional. Sem base de dados: `rules.json` e `events.jsonl`.
+Um processo FastAPI com SQLite, barramento de eventos em processo e routers descobertos por feature.
+O motor ObjectOS, a cadeia de gestos/visão para regras e o respetivo WebSocket foram removidos em
+BASE-04 (#74). A visão que permanece serve a presença na soleira; não deteta objetos nem pose.
 
 ```mermaid
 flowchart LR
-  CAM["Câmara RTSP ou clip"] --> VID["features/video<br/>thread: último frame"]
-  VID --> VIS["features/visao<br/>YOLO objetos + pose"]
-  VIS --> GES["features/gestos<br/>gesto + presença"]
-  GES --> Q[("asyncio.Queue")]
-  Q --> ENG["features/engine<br/>regras + estados"]
-  ENG --> HOME{{"contrato Home"}}
-  HOME --> FAKE["FakeHome (SIMULADO)"]
-  HOME --> MCP["McpHome → MCP Altice"]
-  ENG --> API["REST /api + WS /api/ws"]
-  API --> UI["Painel React / Mantine"]
+  CAM["Câmara local: presença na soleira"] --> PRE["features/presence"]
+  PRE --> BUS[("Barramento de eventos")]
+  MCP["MCP Altice / FakeHome"] --> ENE["features/energy"]
+  ENE --> BUS
+  BUS --> HH["features/households, billing, notifications"]
+  BUS --- DB[("SQLite")]
+  HH --> API["REST /api"]
+  API --> UI["Aplicação React / Mantine"]
   UI --> AK["Authentik (OIDC)"]
 ```
 
-Referência histórica: [archive/objectos/architecture.md](../archive/objectos/architecture.md). API real: [api-implementada.md](api-implementada.md).
+Referência histórica do ObjectOS: [archive/objectos/architecture.md](../archive/objectos/architecture.md). API ativa: [api-implementada.md](api-implementada.md).
 
 ## 2. Planeada (Conta Certa)
 
@@ -100,7 +100,7 @@ Os nomes de módulos novos são em inglês (como as entidades do pedido); as pas
 
 1. **Contratos partilhados** em `contracts/` (Pydantic) são a única dependência entre features. Uma feature **não importa** outra feature.
 2. **Barramento de eventos** persistente em processo (`core/events.py`, dono P5, **IMPLEMENTADO**): `await bus.publish(evento)` e `bus.subscribe(consumidor, handler, tipos)`. O evento é gravado em `domain_event` e só depois entregue (pelo menos uma vez; efeitos idempotentes por `processed_event`); dá histórico, replay numa base isolada e testes por módulo com eventos falsos. Semântica completa: [event-flow.md](event-flow.md) §4.
-3. **Leituras por REST**: a aplicação nunca fala com o MCP nem com o barramento; só com `/api/*` e `WS /api/ws`.
+3. **Leituras por REST**: a aplicação nunca fala com o MCP nem com o barramento; só com as rotas `/api/*`. Não há WebSocket ativo após BASE-04.
 4. **Escritas físicas** passam sempre pelo contrato `Home` (`FakeHome` | `McpHome`) com a whitelist e o grant já implementados ([integrations/altice-mcp.md](../integrations/altice-mcp.md)).
 
 ### Arranque e dependências entre features — IMPLEMENTADO (D-06)
@@ -109,7 +109,7 @@ Os nomes de módulos novos são em inglês (como as entidades do pedido); as pas
 
 ### Persistência — IMPLEMENTADA
 
-SQLite da biblioteca standard (sem SQLAlchemy/aiosqlite/Alembic, **sem dependências novas**): uma ligação, lock, transações explícitas, WAL, `foreign_keys`. Migrações SQL por nome. Pormenores e limitações em [data-model.md](data-model.md#persistência). `rules.json` e `events.jsonl` do ObjectOS continuam até a BASE-04 remover o motor antigo.
+SQLite da biblioteca standard (sem SQLAlchemy/aiosqlite/Alembic, **sem dependências novas**): uma ligação, lock, transações explícitas, WAL, `foreign_keys`. Migrações SQL por nome. Pormenores e limitações em [data-model.md](data-model.md#persistência). O armazenamento `rules.json` e `events.jsonl` do ObjectOS foi removido com o motor na BASE-04.
 
 ### MVP com uma única tomada, expansível
 

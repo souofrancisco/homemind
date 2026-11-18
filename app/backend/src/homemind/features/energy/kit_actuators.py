@@ -1,7 +1,8 @@
 """Lâmpada REAL do kit para as ações confirmadas do assistente (ALERT-06, AGENT-03b).
 
 Implementa as duas portas que o `agent` deixou para a P1 (ver `features/agent/execution.py` e
-`devices.py`), registadas em `app.state` pelo arranque do engine, onde vive o `McpHome`:
+`devices.py`), registadas em `app.state` pelo lifespan de `features/energy/home_runtime.py`, onde
+vive o `McpHome`:
 
 - `KitLampDirectory`: a lâmpada do kit como atuador, só na casa `ENERGY_HOUSEHOLD_ID` e só depois
   de o MCP a ter descoberto. O id interno é derivado do id MCP (`stable_id`), que nunca sai daqui.

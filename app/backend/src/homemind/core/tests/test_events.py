@@ -381,6 +381,26 @@ def test_concurrent_producers_get_unique_ordered_seq_and_exactly_one_effect_each
     asyncio.run(main())
 
 
+def test_async_publish_from_another_loop_wakes_consumer_thread_safely():
+    async def main():
+        db = make_db()
+        bus = EventBus(db)
+        eff = Effects(db)
+        bus.subscribe("c", eff.handler)
+        await bus.start()
+
+        def publish_from_other_loop():
+            asyncio.run(bus.publish(ev(1)))
+
+        await asyncio.to_thread(publish_from_other_loop)
+        await until(lambda: len(eff.rows) == 1)
+        await bus.stop()
+        assert len(eff.rows) == 1
+        db.close()
+
+    asyncio.run(main())
+
+
 def test_type_filter_since_seq_and_subscription_validation():
     async def main():
         db = make_db()

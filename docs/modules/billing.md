@@ -136,7 +136,7 @@ Todos produzem `alerts.alert_raised`; o módulo `notifications` decide destinat�
 
 ## Ficheiros existentes reutilizáveis
 
-Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `core/errors.py`, o relógio injetado dos testes do motor antigo (`features/engine/tests/`) e `TARIFA_EUR_KWH` de `core/config.py`.
+Nenhum de domínio. O módulo usa o padrão de feature (`router.py`, `tests/`), `core/errors.py` e relógio injetado nos testes; tarifas vêm do contrato e configuração da casa. Os testes do motor e `TARIFA_EUR_KWH` eram ObjectOS e foram removidos na BASE-04.
 
 ## Estado
 

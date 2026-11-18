@@ -34,13 +34,5 @@ body=$(curl -fsS -m5 localhost:$FP/healthz 2>/dev/null)
 echo "$body" | grep -q '"status":"ok"' && ok "proxy :$FP/healthz" || bad "proxy :$FP/healthz"
 echo "$body" | grep -q '"backend":"mcp"' && ok "HOME_BACKEND=mcp" || bad "HOME_BACKEND não é mcp"
 echo "$body" | grep -q '"physical_writes":false' && ok "escritas físicas desligadas" || bad "physical_writes não é false"
-for r in /api/state "/api/events?limit=1"; do
-  c=$(curl -s -m5 -o /dev/null -w '%{http_code}' "localhost:$FP$r")
-  case $c in 200|401) ok "REST $r -> $c (chegou à API)";; *) bad "REST $r -> $c";; esac
-done
-c=$(curl -s -m5 -o /dev/null -w '%{http_code}' -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
-  -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "localhost:$FP/api/ws" --max-time 2)
-# 101 = upgrade; curl pode abortar por timeout (28) com o código 101 já recebido.
-[ "$c" = 101 ] && ok "WS /api/ws -> 101" || bad "WS /api/ws -> $c"
 [ "$fail" = 0 ] && echo "demo OK" || echo "demo COM FALHAS"
 exit $fail

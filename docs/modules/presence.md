@@ -291,7 +291,7 @@ flowchart LR
 
 **A fronteira das pistas pessoais hoje:** `individual_cue_allowed` verifica casa, membership de tenant ativa, datas no fuso da casa, opt-in atual e identidade autenticada para origem manual; recusa proveniência simulada numa casa real. `record_individual_cue` exige transação SQLite ativa, repete a validação e grava o evento na mesma transação. `BEGIN IMMEDIATE` ordena essa escrita com a revogação concorrente: se a revogação confirmar primeiro, a pista é recusada. Wi-Fi é recusado mesmo que a flag global esteja ativa: `PresenceDevice.wifi_opt_in` não tem ainda persistência consultável, e `membership.presence_opt_in` não o substitui. Não existe produtor ou recolha real. Esta interface é **IMPLEMENTADA**, mas não prova legitimidade de base legal nem constitui uma integração de produto.
 
-**Exposição ObjectOS legada:** `/api/state` e mensagens `home_state` em `/api/ws` já não publicam o booleano de presença (`null` até substituição por DTO com escopo de casa e papel); as transições explícitas “Entrou alguém/Divisão vazia” deixaram de ser escritas no `events.jsonl`. A API antiga não conhece uma casa nem papel do utilizador, portanto não pode servir presença individual. Os outros campos do motor continuam sendo legado autenticado e não são uma API Conta Certa; um futuro endpoint deve usar `require_access(Resource.presence, read)` e devolver apenas o estado do próprio morador. A UI ObjectOS deixa de tentar obter MJPEG e mostra que a captura está desativada.
+**API ObjectOS removida (BASE-04):** `/api/state`, `/api/ws` e `events.jsonl` já não existem no backend. A presença ativa usa as rotas próprias de `features/presence`, com guardas `require_access(Resource.presence, read)` e respostas filtradas por papel; não há presença em estado global nem em WebSocket.
 
 ### Modelo de ameaças — estado após hardening PRIV-02
 
@@ -299,13 +299,13 @@ Escalas: gravidade (G) e probabilidade (P) são **antes das correções**; resid
 
 | Ameaça | G | P | Evidência / controlo técnico | Risco residual |
 |---|---|---|---|---|
-| Senhorio ou funcionário curioso consulta estado de morador | Alta | Média | `Resource.presence.read=own`; senhorio/operador sem grant; nenhum endpoint novo de presença | Médio: API legada não é escopada por casa/papel; não usar para presença individual |
+| Senhorio ou funcionário curioso consulta estado de morador | Alta | Média | `Resource.presence.read=own`; senhorio/operador sem grant; rotas antigas removidas | Baixo no gate atual; validar novamente ao introduzir novos endpoints |
 | Morador consulta presença de terceiro | Alta | Média | grant `own`; membership e `resident_id` vinculados à casa; evento manual compara actor | Baixo no gate; endpoint de leitura continua planeado |
 | Captura/extração de frames por MJPEG | Crítica | Média | `/api/video` sempre 404; nenhuma dependência `Fonte`; factory RTSP rejeitada; ferramentas de medição exigem clip sintético allowlisted | Baixo no serviço; classe RTSP permanece no módulo para testes unitários com capturas falsas |
 | Correlacionar timestamp de passagem com identidade | Alta | Média | nenhum evento de câmara por pessoa; `DoorCrossed` anónimo; sem feed público | Médio se B for criado: timestamps continuam potencialmente pessoais |
 | Reidentificação indireta por contagem, quarto, energia ou rotina | Alta | Média | `GET /api/presence/occupancy` devolve só o instantâneo agregado (sem série temporal, sem horários); só o morador o lê, o senhorio e o operador recebem 403 | Médio; minimização e agregação devem ser validadas no desenho PRES-02/05 |
 | Segredo RTSP em exceção ou logs | Alta | Baixa | fonte regista apenas tipo da exceção; endpoint responde mensagem genérica; teste injeta URL falsa com credenciais | Baixo para logs FastAPI revistos; observar logs de OpenCV/FFmpeg no deployment antes de piloto |
-| Presença em REST/WS sem autorização por papel | Alta | Média | booleano legado removido do DTO/WS; evento textual explícito removido de `events.jsonl` | Médio: estados e timestamps do motor legado ainda não são DTOs escopados; não ligá-los a fonte real |
+| Presença em REST/WS sem autorização por papel | Alta | Média | rotas antigas e WebSocket ObjectOS removidos; endpoints atuais usam guardas por papel | Baixo no gate atual; não criar endpoints globais |
 | Persistência por tempo excessivo | Alta | Alta após futura escrita | eventos F0 append-only; PRIV-02 não apaga nem migra eventos. **PRIV-03:** compactação dos brutos em agregados após N dias (30, PROPOSTA) | Médio: prazos por decidir (P-08/P-20); backups sem política |
 | Falha de sensor interpretada como ausência | Alta | Média | função automática devolve `uncertain`; Wi-Fi nunca infere `out` | Baixo no helper; produtor/fusão ainda não implementados |
 | Casa errada ou membership revogada | Alta | Média | query usa `household_id`, papel tenant, status active e datas; validação e escrita transacionais | Baixo no helper; futuras rotas devem reusar `core.access`/OIDC |

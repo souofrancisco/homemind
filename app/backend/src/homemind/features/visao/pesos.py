@@ -1,4 +1,4 @@
-"""Descarrega os pesos YOLO11 para `VISAO_PASTA_MODELOS` (único sítio com download).
+"""Descarrega o peso YOLO11 de pessoas para `VISAO_PASTA_MODELOS` (único sítio com download).
 
     python -m homemind.features.visao.pesos [--variante s|n]
 
@@ -12,8 +12,8 @@ from pathlib import Path
 from homemind.core.config import get_settings
 
 
-def nomes_pesos(variante: str) -> tuple[str, str]:
-    return f"yolo11{variante}.pt", f"yolo11{variante}-pose.pt"
+def nomes_pesos(variante: str) -> tuple[str, ...]:
+    return (f"yolo11{variante}.pt",)
 
 
 def main(argv: list[str] | None = None) -> int:

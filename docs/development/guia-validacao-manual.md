@@ -1,6 +1,6 @@
 # Guia de validação manual — roteiro oficial
 
-> **Nota (Conta Certa):** guia herdado do ObjectOS. **Continuam válidos:** blocos A (arranque, login), B (API, WebSocket), E (MCP), F (vídeo e RTSP, YOLO de pessoas), PRIV-01 e as regras de evidência. **Só do ObjectOS (não aplicáveis ao produto novo):** bloco D (motor, regras, NVIDIA, «Desligar tudo»), bloco G (gestos), POSE-01, LAT-01/02 e DEMO-01/PB-01 na forma atual. Os testes manuais da Conta Certa (leituras, confirmações, recibos) serão acrescentados quando existirem ([mvp.md](mvp.md)). Só se marca PASS o que foi executado.
+> **Nota (Conta Certa):** guia herdado do ObjectOS. **Continuam válidos:** blocos A (arranque, login), B (API REST), E (MCP), F (vídeo e presença), PRIV-01 e as regras de evidência. **Só do ObjectOS (não aplicáveis ao produto novo):** bloco D (motor, regras, NVIDIA, «Desligar tudo»), bloco G (gestos), LAT-01/02 e DEMO-01/PB-01 na forma atual. Os testes manuais da Conta Certa (leituras, confirmações, recibos) serão acrescentados quando existirem ([mvp.md](mvp.md)). Só se marca PASS o que foi executado.
 
 Roteiro dos testes a executar à mão. Os testes automáticos (`make check`, `make smoke`) não o substituem: validam a lógica com simulações, não o hardware.
 
@@ -17,7 +17,7 @@ Roteiro dos testes a executar à mão. Os testes automáticos (`make check`, `ma
 | Bloco | Testes |
 |---|---|
 | [A. Arranque e login](#a-arranque-e-login) | INS-01, AUTH-01, AUTH-02 |
-| [B. API e tempo real](#b-api-e-tempo-real) | API-01, API-02, WS-01, WS-02 |
+| [B. API e tempo real](#b-api-e-tempo-real) | API-01, API-02, WS-01, WS-02 (retirados) |
 | [C. Painel](#c-painel) | UI-01, UI-02 |
 | [D. Motor, regras e NVIDIA](#d-motor-regras-e-nvidia) | MOT-01, MOT-02, REG-01, NV-01, OFF-01 |
 | [E. MCP Altice](#e-mcp-altice) | MCP-01 … MCP-09 |
@@ -78,11 +78,13 @@ auth() { curl -s -H "Authorization: Bearer $TOKEN" "$@"; }
 
 ### API-01 — Leituras REST
 - **Issue:** #25 · **Tipo:** SIMULADO ou REAL (indicar `backend`)
-- **Passos:** `auth $API/api/status`; `auth $API/api/state`; `auth "$API/api/events?limit=5"`; `auth $API/api/rules`.
-- **Esperado:** `status` e `state` com o mesmo `backend`; `state.state` é `inativo` após arranque; `rules` contém `pausa`, `leitura`, `cinema`; eventos só com `id, timestamp, level, message, source`.
-- **PASS** se tudo coincidir. **FAIL** se faltar um campo ou vier um campo com imagem/dados pessoais.
+- **Passos:** `auth $API/api/me`; abrir `$API/openapi.json` e procurar os caminhos ativos.
+- **Esperado:** `/api/me` devolve a identidade autenticada; o OpenAPI lista a API Conta Certa e não lista as rotas antigas do motor (ver API-02).
+- **PASS** se os resultados corresponderem ao contrato atual.
 
-### API-02 — Erros no formato único
+### API-02 — Erros no formato único — RETIRADO (BASE-04)
+
+- **Estado:** RETIRADO (BASE-04): os exemplos deste teste usam `/api/rules*`, removido com o motor. API-01 cobre a presença da API ativa.
 - **Issue:** #23 · **Tipo:** SIMULADO
 - **Passos:**
   ```bash
@@ -93,14 +95,18 @@ auth() { curl -s -H "Authorization: Bearer $TOKEN" "$@"; }
 - **Esperado:** `{"error":{"code":"rule_not_found",…}}` (404) e `{"error":{"code":"invalid_request","message":"Pedido inválido (…brilho)"}}` (400). A regra `x` não aparece em `GET /api/rules`.
 - **PASS** se ambos vierem no envelope `error` e nada for gravado.
 
-### WS-01 — Estado em tempo real
+### WS-01 — Estado em tempo real — RETIRADO (BASE-04)
+
+- **Estado:** RETIRADO (BASE-04): `WS /api/ws` e as mensagens de estado do motor foram removidos.
 - **Issue:** #24 · **Tipo:** SIMULADO
 - **Pré-requisitos:** `HOME_BACKEND=fake`, sessão iniciada.
 - **Passos:** abrir o painel com DevTools → Network → WS → `ws`; na página **Câmara**, executar o cenário do livro.
 - **Esperado:** 1.ª mensagem enviada `{"type":"auth",…}`; recebe `home_state`; depois do cenário chegam `event` e um `home_state` com `state:"ativo"`, `mode:"leitura"`. O URL do WebSocket **não** contém o token.
 - **PASS** se a sequência e a ausência de token no URL se verificarem.
 
-### WS-02 — Reconexão
+### WS-02 — Reconexão — RETIRADO (BASE-04)
+
+- **Estado:** RETIRADO (BASE-04): o backend já não mantém a ligação WebSocket ObjectOS.
 - **Issue:** #24 · **Tipo:** SIMULADO
 - **Passos:** com o painel aberto, `docker compose -f app/compose.yaml restart backend`; observar; esperar o backend voltar.
 - **Esperado:** indicador offline em poucos segundos; religa sozinho (até ~15 s depois de o backend estar pronto) e mostra o estado atual, sem recarregar a página.
@@ -120,16 +126,22 @@ auth() { curl -s -H "Authorization: Bearer $TOKEN" "$@"; }
 - **Esperado:** modo e estado legíveis à distância; sem scroll horizontal; foco visível; o botão pede confirmação.
 - **PASS** se os três pontos se verificarem.
 
-## D. Motor, regras e NVIDIA
+## D. Motor, regras e NVIDIA — RETIRADO (BASE-04)
 
-### MOT-01 — Modos por objeto
+Bloco retirado: o motor, as suas rotas, regras NVIDIA e ação «Desligar tudo» foram removidos do backend.
+
+### MOT-01 — Modos por objeto — RETIRADO (BASE-04)
+
+- **Estado:** RETIRADO (BASE-04): o backend já não reconhece gestos de objetos nem mantém modos ObjectOS.
 - **Issue:** #13 · **Tipo:** SIMULADO
 - **Pré-requisitos:** `HOME_BACKEND=fake`, `PROFILE=demo`.
 - **Passos:** cenários (ou `POST /api/simulate`): livro → livro outra vez → comando.
 - **Esperado:** 1) `ativo`, modo leitura, luz branco quente 40 %, tomada ligada; 2) evento «já está ativo; nada a fazer», sem novas ações; 3) modo cinema, luz azul 10 %.
 - **PASS** se os três passos coincidirem com o registo.
 
-### MOT-02 — Espera, aviso, suspensão e regresso
+### MOT-02 — Espera, aviso, suspensão e regresso — RETIRADO (BASE-04)
+
+- **Estado:** RETIRADO (BASE-04): os estados temporizados pertenciam ao motor removido.
 - **Issue:** #13, #22 · **Tipo:** SIMULADO
 - **Pré-requisitos:** MOT-01 feito (modo ativo), `PROFILE=demo`.
 - **Passos:** cenário «sair»; cronometrar; depois de suspender esperar 30 s; cenário «regressar».
@@ -137,20 +149,26 @@ auth() { curl -s -H "Authorization: Bearer $TOKEN" "$@"; }
 - **Evidência:** tempos cronometrados.
 - **PASS** se a ordem e os tempos (± 2 s) coincidirem.
 
-### REG-01 — Gerir regras
+### REG-01 — Gerir regras — RETIRADO (BASE-04)
+
+- **Estado:** RETIRADO (BASE-04): `/api/rules*` e `rules.json` foram removidos.
 - **Issue:** #26 · **Tipo:** SIMULADO
 - **Passos:** em **Automações**: desativar «Modo leitura»; executar o cenário do livro; reativar; apagar uma regra criada para teste.
 - **Esperado:** com a regra desativada o livro gera «Sem regra ativa para livro; ignorado»; reativada volta a funcionar; nunca há duas regras ativas para o mesmo objeto; as alterações sobrevivem a `restart backend`.
 - **PASS** se os quatro pontos se verificarem.
 
-### NV-01 — Regra por linguagem natural
+### NV-01 — Regra por linguagem natural — RETIRADO (BASE-04)
+
+- **Estado:** RETIRADO (BASE-04): a proposta NVIDIA de regras do ObjectOS foi removida; o assistente Conta Certa é outro fluxo.
 - **Issue:** #14 · **Tipo:** REAL (NVIDIA) — sem chave, marcar «não executado»
 - **Pré-requisitos:** `NVIDIA_API_KEY` em `app/.env`, backend reiniciado.
 - **Passos:** **Automações → nova**; escrever «Quando pego no comando, luz roxa a 50 %»; ver a proposta; confirmar; depois pedir «desliga o alarme quando pego no livro».
 - **Esperado:** proposta com resumo em português e sem ser gravada antes da confirmação; depois de confirmar aparece na lista **desativada**; o pedido do alarme é recusado com explicação. Sem chave: erro `nvidia_unavailable` legível e o resto do painel continua a funcionar.
 - **PASS** se nada for gravado nem executado sem confirmação e o pedido de alarme for recusado.
 
-### OFF-01 — Desligar tudo
+### OFF-01 — Desligar tudo — RETIRADO (BASE-04)
+
+- **Estado:** RETIRADO (BASE-04): a rota `/api/off` e esta ação da interface antiga deixaram de existir.
 - **Issue:** #27 · **Tipo:** SIMULADO (em MCP ver MCP-07)
 - **Passos:** com um modo ativo ou em espera, carregar em **Desligar tudo** e confirmar.
 - **Esperado:** `success:true`, estado `inativo`, luz e tomada desligadas, contagem cancelada (não suspende mais tarde).
@@ -311,22 +329,30 @@ uv run --env-file ../.env python -m homemind.connectors.runbook     # kit REAL, 
 - **Esperado:** a caixa acompanha o objeto sem piscar; duas pessoas têm caixas distintas. Não aparecem nomes nem identificação de pessoas.
 - **PASS** se o seguimento for contínuo e sem identificação.
 
-## G. Gestos e presença
+## G. Gestos e presença — RETIRADO (BASE-04)
 
-### GES-01 — Dez gestos válidos
+Bloco retirado: os gestos e a presença binária por frames do ObjectOS foram removidos; os testes atuais de presença estão nos blocos F e I.
+
+### GES-01 — Dez gestos válidos — RETIRADO (BASE-04)
+
+- **Estado:** RETIRADO (BASE-04): não existe processamento de gestos no backend.
 - **Issue:** #5 · **Tipo:** REAL
 - **Passos:** levantar caneca ×4, livro ×3, comando ×3 (objeto junto ao pulso, mão acima do cotovelo, ~1,5 s), baixando entre cada um e esperando 4 s.
 - **Esperado:** 10 eventos «… levantado(a)» no registo, com a classe certa.
 - **Evidência:** contagem por classe.
 - **PASS** com 10/10. Com menos, afinar com o afinador (`features/gestos/README.md`) e repetir.
 
-### GES-02 — Sem falsos positivos
+### GES-02 — Sem falsos positivos — RETIRADO (BASE-04)
+
+- **Estado:** RETIRADO (BASE-04): o detetor ObjectOS e os seus falsos positivos já não se aplicam.
 - **Issue:** #5, #8 · **Tipo:** REAL
 - **Passos:** beber da caneca ×3 sem levantar ao nível do gesto; pousar e pegar em objetos na mesa; segurar um objeto levantado 10 s.
 - **Esperado:** 0 eventos ao beber e ao mexer na mesa; **1** só evento ao segurar levantado.
 - **PASS** com 0 falsos positivos.
 
-### PRE-01 — Presença
+### PRE-01 — Presença — RETIRADO (BASE-04)
+
+- **Estado:** RETIRADO (BASE-04): este teste era da presença binária do ObjectOS; usar PRES-02 e PRW/PRF.
 - **Issue:** #6 · **Tipo:** REAL
 - **Passos:** entrar; sair do enquadramento 10 s; regressar; tapar a pessoa 1 s (passar atrás de algo).
 - **Esperado:** «Entrou alguém na divisão» ao entrar; «Divisão vazia» ~3 s depois de sair; de novo «Entrou» ao regressar; a oclusão de 1 s **não** gera «Divisão vazia».
@@ -337,7 +363,9 @@ uv run --env-file ../.env python -m homemind.connectors.runbook     # kit REAL, 
 ### LAT-01 — Latência do software (RETIRADO)
 - **Retirado na BASE-04 (#74):** dependia do `medir_latencia` («gesto → luz»), métrica do produto antigo, já removido. Não se executa.
 
-### LAT-02 — ⚠️ Latência gesto → lâmpada real
+### LAT-02 — ⚠️ Latência gesto → lâmpada real — RETIRADO (BASE-04)
+
+- **Estado:** RETIRADO (BASE-04): já não existe cadeia gesto → luz.
 - **Issue:** #28 · **Tipo:** REAL — só depois de MCP-04 com PASS
 - **Passos:** filmar com o telemóvel o gesto e a lâmpada no mesmo plano, 10 vezes; contar no vídeo do início do gesto até a lâmpada mudar.
 - **Esperado:** < 4 s nas 10.
@@ -350,14 +378,18 @@ uv run --env-file ../.env python -m homemind.connectors.runbook     # kit REAL, 
 - **Esperado:** com grant: lâmpada amarela e mensagem de sucesso só depois da releitura (`confirmed`); sem grant: `blocked`, a lâmpada não muda e nada é repetido. Se a lâmpada não mudar mas o MCP disser «device updated»: `uncertain`, sem nova tentativa.
 - **PASS** só com as duas observações feitas à mão. Fim: `make mcp-writes-off`.
 
-### DEMO-01 — Dez demonstrações seguidas
+### DEMO-01 — Dez demonstrações seguidas — RETIRADO (BASE-04)
+
+- **Estado:** RETIRADO (BASE-04): o cenário executava os modos e gestos do ObjectOS removidos.
 - **Issue:** #28 · **Tipo:** indicar REAL ou SIMULADO
 - **Uma demo:** arrancar de fresco → entrar → caneca (pausa) → livro (leitura) → sair → espera → suspenso → regressar (restaurado) → **Desligar tudo** → `inativo`.
 - **Passos:** 10 demos seguidas sem corrigir nada entre elas; anotar hora e falhas.
 - **Esperado:** 10/10. Uma falha reinicia a contagem.
 - **PASS** com 10 consecutivas.
 
-### PB-01 — Plano B (apenas clip sintético)
+### PB-01 — Plano B (apenas clip sintético) — RETIRADO (BASE-04)
+
+- **Estado:** RETIRADO (BASE-04): esta demo dependia do processador ObjectOS; os fluxos de presença mantêm validação própria.
 - **Issue:** #3, #28 · **Tipo:** SIMULADO
 - **Passos:** 1) `PROFILE=demo`, `HOME_BACKEND=fake`, `ENABLE_DEV_VIDEO_PREVIEW=true`, `VIDEO_SOURCE=<clip sintético allowlisted>` e detetor de teste; 2) executar a demo só com os cenários da página Câmara; 3) não ligar MCP nem fontes reais.
 - **Esperado:** ambos funcionam; o painel mostra SIMULADO e os eventos dos cenários levam `[SIMULADO]`; a troca demora < 1 min.
