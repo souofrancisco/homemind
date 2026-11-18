@@ -3,7 +3,7 @@ SHELL := bash
 BACKEND  := app/backend
 FRONTEND := app/frontend
 
-.PHONY: demo-prepare demo-reset demo-replay demo-verify dev auth down test lint contracts build android smoke check worktree mcp-login mcp-doctor mcp-up mcp-down mcp-demo mcp-demo-reload mcp-demo-build mcp-demo-logs mcp-demo-check mcp-demo-down mcp-writes-on mcp-writes-off mcp-writes-status mcp-verify presence-wifi-scan
+.PHONY: demo-web-up demo-web-down demo-web-reset demo-web-clean demo-prepare demo-reset demo-replay demo-verify dev auth down test lint contracts build android smoke check worktree mcp-login mcp-doctor mcp-up mcp-down mcp-demo mcp-demo-reload mcp-demo-build mcp-demo-logs mcp-demo-check mcp-demo-down mcp-writes-on mcp-writes-off mcp-writes-status mcp-verify presence-wifi-scan
 
 dev:  ## ambiente completo com hot reload (Docker)
 	docker compose -f app/compose.yaml up --build
@@ -121,3 +121,29 @@ demo-replay:
 
 demo-verify:
 	uv run --offline --project $(BACKEND) python -m homemind.demo.cli verify
+
+# Demo web local: Authentik com 6 contas (ana, bruno, carla, diogo, senhorio, operador; palavra-passe
+# demo-conta-certa) + backend/frontend sobre uma CÓPIA da base de demo com os `sub` verdadeiros.
+# Projeto Compose próprio e portas próprias: não toca na stack de `make dev`.
+DW_PORTS := BACKEND_PORT=$${BACKEND_PORT:-28000} FRONTEND_PORT=$${FRONTEND_PORT:-25173} AUTHENTIK_PORT=$${AUTHENTIK_PORT:-29000}
+DW := docker compose -p homemind-demoweb -f app/compose.yaml -f app/compose.demo-web.yaml
+DW_WEB := uv run --offline --project $(BACKEND) python -m homemind.demo.web
+demo-web-up:  ## cria/atualiza tudo e arranca; idempotente. Abrir http://localhost:25173
+	@export $(DW_PORTS); \
+	$(DW) stop backend frontend >/dev/null 2>&1; \
+	$(DW) up -d --wait authentik-server authentik-worker && \
+	$(MAKE) --no-print-directory demo-prepare >/dev/null && \
+	$(DW_WEB) users --compose "$(DW)" && \
+	$(DW_WEB) prepare && \
+	$(DW_WEB) link --authentik http://127.0.0.1:$$AUTHENTIK_PORT --web http://localhost:$$FRONTEND_PORT && \
+	$(DW) up -d --build --wait backend frontend && \
+	echo "demo web: http://localhost:$$FRONTEND_PORT  (ana|bruno|carla|diogo|senhorio|operador / demo-conta-certa)"
+
+demo-web-down:  ## pára (mantém contas e dados)
+	@export $(DW_PORTS); $(DW) down
+
+demo-web-reset:  ## recria só a base (cópia nova da demo), mantém as contas
+	@export $(DW_PORTS); $(DW) stop backend frontend; $(DW_WEB) clean && $(MAKE) --no-print-directory demo-web-up
+
+demo-web-clean:  ## apaga tudo: containers, volumes (Authentik) e a cópia da base
+	@export $(DW_PORTS); $(DW) down -v; $(DW_WEB) clean
