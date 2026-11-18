@@ -63,6 +63,14 @@ Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), 
 | `AgentToolRequest/Result`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3); as ferramentas não persistem resultados; `AutomationRule` é AGENT-04 | modelos | P-06 (LLM e dados) |
 | `DomainEvent` (23 tipos), `StoredEvent` | cada módulo | cada módulo | **IMPLEMENTADA** (`domain_event`) | `test_events`, cenário | — |
 
+**APP-03 #96 / P-18 — aditivo PROPOSTA a aprovar pela P5:** `ConfirmationRequest` acrescenta
+`likely_owner_resident_id: UUID | None = None` e `match_confidence: Confidence | None = None`.
+Os dois campos são conjuntos ou ambos `None`; o dono provável tem de constar em
+`eligible_resident_ids`. Billing só os preenche para aparelho identificado com confiança ≥ 0,8
+e dono declarado que seja inquilino ativo. O texto da notificação só mostra o nome se o diretório
+confirmar que o morador é membro ativo. A dica é inferencial e não altera D-32. Esta proposta não
+autoriza expor propriedade de terceiros na API de aparelhos.
+
 ## 4. Eventos de domínio
 
 Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `ts` (UTC), `household_id`, `correlation_id`, `provenance`, `data` (payload **tipado por tipo**, discriminador `type`). `seq` **não** está no envelope do produtor: `StoredEvent{seq, event}` é atribuído pela base de dados ao gravar. O envelope valida que `provenance` e `household_id` coincidem com os do payload.
