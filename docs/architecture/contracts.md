@@ -87,7 +87,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `notification.responded` | P3 | `NotificationRespondedData` (resposta + `ref` + `outcome` nas confirmações: um evento por voto; P4 só atribui com `outcome.decided`) | P4 | idem |
 | `alerts.threshold_crossed` | P4 | `BudgetThreshold` | P3 (`notifications.budget_threshold`, **IMPLEMENTADO**); P3 (`agent.budget_light`, ALERT-06: proposta de cor na lâmpada, **IMPLEMENTADO**) | idem |
 | `alerts.alert_raised` | P4 | `AlertRaisedData` | P3 (`notifications.peak_alert`, `kind=peak` e `kind=anomaly`, **IMPLEMENTADO**) | idem |
-| `alerts.cold_room` | P4 | `ColdRoomData` (ALERT-06: quarto do morador várias noites < 18 °C; privado) | P3 (`notifications.cold_room`, **IMPLEMENTADO**) | idem |
+| `alerts.cold_room` | P4 | `ColdRoomData` (ALERT-06: quarto do morador várias noites < 18 °C; privado; `allowance_left_wh` = plafond solidário que resta no mês ou `null`) | P3 (`notifications.cold_room`, **IMPLEMENTADO**) | idem |
 | `agent.action_proposed` | P3 | `ProposedAction` | P3 (`notifications.agent_action`, **IMPLEMENTADO**: aviso pessoal sem botões; emitido pelo chat e pelo `agent.safety_suggestion`; o contrato não tem `source`, #157) | idem |
 | `automation.proposed` | P3 | `AutomationRule` | P3 | idem |
 | `automation.executed` | P1 | `AutomationExecutedData` | P3 | idem |
@@ -174,7 +174,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | `GET` · `PUT` `DELETE` | `/api/households/{id}/rules` · `…/rules/next` | L, T (ler) · T (agendar/cancelar) | **IMPLEMENTADO (HOUSE-04):** `HouseRulesView`; `HouseRulesIn` agenda para o dia 1 do mês seguinte |
 | `GET` `PUT` | `/api/households/{id}/budgets/me?period` | T | **IMPLEMENTADO (ALERT-01):** `BudgetIn` → `BudgetStatus` (com `forecast: BudgetForecast \| null`, ALERT-02) |
 | `GET` `PUT` | `/api/households/{id}/tariff` | L (definir), L e T (ver) | **IMPLEMENTADO (ALERT-02):** `TariffIn` → `TariffStatus` (simples ou bi-horário; só estimativas) |
-| `GET` `PUT` | `/api/households/{id}/room-allowances` | L | Plafond por quarto |
+| `GET` · `PUT` | `/api/households/{id}/room-allowances` · `…/{room_id}` | L, T (ler) · L (agendar) | **IMPLEMENTADO (BILL-03):** `RoomAllowanceView`; `RoomAllowanceIn` vale no mês seguinte |
 
 ### Notificações (P3)
 

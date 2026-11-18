@@ -63,6 +63,7 @@ def test_tres_noites_frias_avisam_o_morador_uma_vez(app):
     assert (d.resident_id, d.room_id, d.cold_nights, d.window_nights) == (fx.ANA, fx.ROOM_ANA, 3, 7)
     assert d.coldest_night_c == 15.5 and d.threshold_c == 18.0
     assert str(d.last_night) == "2026-11-14"
+    assert d.allowance_left_wh == 30_000  # plafond do quarto da Ana por usar em novembro
     assert _aplicar(app, [*_noite(15), _manha(16)]) == []  # mesma janela: não repete
 
 
@@ -121,10 +122,34 @@ def test_aviso_privado_chega_so_a_ana(app, client):
     [aviso] = avisos
     assert aviso["title"] == "O teu quarto tem estado frio"
     assert "18 °C em 3 das últimas 7 noites" in aviso["body"] and "SIMULADO" in aviso["body"]
-    assert "plafond solidário" in aviso["body"] and "€" not in aviso["body"]
+    assert "ainda tem 30,0 kWh do plafond solidário" in aviso["body"] and "€" not in aviso["body"]
     for quem in (BRUNO, LANDLORD):
         outros = client.get(f"{H}/notifications", headers=quem).json()
         assert not [n for n in outros if n["kind"] == "comfort_alert"]
+
+
+def test_aviso_diz_o_plafond_que_ainda_resta(app, client):
+    """BILL-03 + ALERT-06: o aquecimento provado já coberto desconta-se do plafond do mês."""
+    from homemind.features.billing.tests.test_budgets import _aquecedor, _consumo
+
+    _aquecedor(app)
+    _consumo(app, "aquecedor", 12_000)  # 12 kWh de aquecedor no quarto da Ana
+    [ev] = _aplicar(app, [*_noite(10), *_noite(12), *_noite(14), _manha(15)])
+    assert ev.data.allowance_left_wh == 18_000
+
+
+def test_aviso_com_plafond_gasto_e_sem_plafond(app):
+    from homemind.features.billing.tests.test_budgets import _aquecedor, _consumo
+
+    _aquecedor(app)
+    _consumo(app, "aquecedor", 45_000)  # passa os 30 kWh
+    [ev] = _aplicar(app, [*_noite(10), *_noite(12), *_noite(14), _manha(15)])
+    assert ev.data.allowance_left_wh == 0
+    app.state.db.run_sync(lambda c: c.execute("UPDATE room SET included_wh = NULL"))
+    b = fx.ROOM_BRUNO
+    frio = [*_noite(10, room=b), *_noite(12, room=b), *_noite(14, room=b), _manha(15, room=b)]
+    [ev] = _aplicar(app, frio)
+    assert ev.data.allowance_left_wh is None  # sem plafond não se promete nada
 
 
 # --- lâmpada do orçamento ---------------------------------------------------------------------
