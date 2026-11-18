@@ -1,12 +1,13 @@
 import {
   Alert, Badge, Button, Card, Group, Loader, NumberInput, SimpleGrid, Stack, Table, Text, TextInput, Title,
 } from "@mantine/core";
-import { IconAlertCircle } from "@tabler/icons-react";
+import { IconAlertCircle, IconChevronDown, IconChevronUp } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
+import ReceiptExplanationView from "../components/billing/ReceiptExplanationView";
 import {
-  createBill, finalizeBill, getBillSummary, getMyReceipt, listBills, previewBill,
-  type BillAllocation, type BillIn, type BillPreview, type BillView, type LandlordBillView,
+  createBill, finalizeBill, getBillSummary, getMyReceipt, getMyReceiptExplanation, listBills, previewBill,
+  type BillAllocation, type BillIn, type BillPreview, type BillView, type LandlordBillView, type ReceiptExplanation,
 } from "../services/billing/api";
 
 const money = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" });
@@ -48,6 +49,37 @@ function Receipt({ householdId, bill }: { householdId: string; bill: BillView })
       </Table>
       <Group justify="space-between"><Text fw={700}>O teu total</Text><Text fw={700}>{eur(r.amount_cents)}</Text></Group>
       <Text size="xs" c="dimmed">Fixa {eur(r.fixed_share_cents)} · resíduo comum {eur(r.residual_share_cents)} · individual {eur(r.individual_cents)}. Calculado no servidor.</Text>
+      <Explanation householdId={householdId} billId={bill.id} />
+    </Stack>
+  );
+}
+
+/** «Porque pago isto?» (BILL-05): só se pede ao servidor quando o morador abre. */
+function Explanation({ householdId, billId }: { householdId: string; billId: string }) {
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState<{ status: "idle" | "loading" | "error" | "ready"; data?: ReceiptExplanation }>({ status: "idle" });
+  const load = () => {
+    setState({ status: "loading" });
+    getMyReceiptExplanation(householdId, billId)
+      .then((data) => setState({ status: "ready", data }))
+      .catch(() => setState({ status: "error" }));
+  };
+  const toggle = () => {
+    if (!open && state.status === "idle") load();
+    setOpen(!open);
+  };
+  return (
+    <Stack gap="sm">
+      <Button w="fit-content" variant="subtle" px={0} onClick={toggle} aria-expanded={open}
+        rightSection={open ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}>
+        Porque pago isto?
+      </Button>
+      {open && (state.status === "loading" ? <Loader size="sm" aria-label="A carregar explicação" />
+        : state.status === "error" ? (
+          <Alert color="red" variant="light" icon={<IconAlertCircle />} title="Não foi possível carregar a explicação">
+            <Button size="xs" color="red" variant="light" onClick={load}>Tentar novamente</Button>
+          </Alert>
+        ) : state.data ? <ReceiptExplanationView data={state.data} /> : null)}
     </Stack>
   );
 }

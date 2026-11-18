@@ -91,7 +91,9 @@ O recibo mostra **cada linha** com a proveniência dos kWh (`measured` / `estima
 - **Reconciliação ao cêntimo:** os cêntimos de cada linha `room`/`common` do recibo repartem-se pelos seus consumos (maior resto pelos Wh), logo `fixa + resíduo + Σ own + Σ common = amount_cents`. Se a evidência não bate certo com o recibo (fatura fechada antes desta versão), `evidence_available=false` e as listas vêm vazias: nunca se inventa uma repartição.
 - Inclui `equal_split_cents` (o que pagaria com a divisão igual) para responder a «porque é que pago mais?».
 
-**PLANEADO:** página na app (APP-06); política versionada por data (HOUSE-04: hoje mostra-se a regra da sala em vigor); contagem de votos por consumo; contestação (BILL-06).
+**IMPLEMENTADO (app):** no recibo do morador (página de faturas da APP-06), «Porque pago isto?» abre a explicação, que só é pedida ao servidor nesse momento: comparação com a divisão igual, os meus consumos com a linha temporal e a proveniência, a conta comum por aparelho e o não atribuído (`components/billing/ReceiptExplanationView.tsx`; a app não faz contas).
+
+**PLANEADO:** política versionada por data (HOUSE-04: hoje mostra-se a regra da sala em vigor); contagem de votos por consumo; contestação (BILL-06).
 
 ### Exemplos de aceitação (valores do PDF; fatura de 120 € = 24 € fixos + 600 kWh × 0,16 €)
 
