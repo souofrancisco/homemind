@@ -180,6 +180,37 @@ def compose_cold_room(
     )
 
 
+def compose_agent_action(
+    *,
+    source_event_id: UUID,
+    action_id: UUID,
+    household_id: UUID,
+    resident_id: UUID,
+    rationale: str,
+    expires_at: datetime,
+    origin: Origin,
+    correlation_id: UUID,
+    now: datetime,
+) -> Notification:
+    """Ação proposta pelo assistente: pessoal e SEM botões (a confirmação é na rota do agente,
+    `POST …/agent/actions/{id}/confirm|reject`; a UI usa o `ref`). Nada é executado aqui."""
+    return Notification(
+        id=notification_id_for(source_event_id, NotificationKind.agent_action),
+        household_id=household_id,
+        scope=NotificationScope.personal,
+        recipient_resident_id=resident_id,
+        kind=NotificationKind.agent_action,
+        severity=NotificationSeverity.info,
+        title="Ação por confirmar",
+        body=_tag(f"{rationale} Nada é executado sem a tua confirmação.", origin),
+        origin=origin,
+        expires_at=expires_at,
+        ref=NotificationRef(type=RefType.agent_action, id=action_id),
+        correlation_id=correlation_id,
+        created_at=now,
+    )
+
+
 def _tag(body: str, origin: Origin) -> str:
     return body + (_SIMULATED if origin is Origin.simulated else "")
 
