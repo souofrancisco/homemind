@@ -22,7 +22,7 @@ from homemind.contracts.notification import (
     RefType,
 )
 from homemind.contracts.presence import PRESENCE_CONFIRMATION_ACTIONS, UncertainReason
-from homemind.features.notifications.text import format_eur
+from homemind.features.notifications.text import format_eur, format_kw
 
 # Espaço de nomes dos ids determinísticos da P3 (idempotência: mesmo evento, mesmo id).
 _NAMESPACE_P3 = UUID("8c3f5b7e-1d24-4e6a-9b0c-5a1e7d3c2f40")
@@ -265,6 +265,47 @@ def compose_smoke_alert(
         body=_tag(body, origin),
         origin=origin,
         ref=NotificationRef(type=RefType.safety_alert, id=alert_id),
+        correlation_id=correlation_id,
+        created_at=now,
+    )
+
+
+def compose_peak_alert(
+    *,
+    source_event_id: UUID,
+    household_id: UUID,
+    room: tuple[str, RoomKind] | None,
+    appliance_name: str | None,
+    power_w: float,
+    minutes: int,
+    origin: Origin,
+    correlation_id: UUID,
+    now: datetime,
+) -> Notification:
+    """Pico numa zona comum (ALERT-03): da casa, aviso, sem botões. Sem zona comum conhecida
+    diz «por identificar» e não sugere aparelho nem divisão."""
+    place = _place(room)
+    if place:
+        title = f"Pico de consumo na zona «{place}»"
+        body = f"A zona «{place}» está a gastar {format_kw(power_w)} há {minutes} min."
+        if appliance_name:
+            body += f" Provavelmente: {appliance_name}."
+    else:
+        title = "Pico de consumo por identificar"
+        body = (
+            f"Uma tomada está a gastar {format_kw(power_w)} há {minutes} min. "
+            "Ainda não sabemos em que zona está."
+        )
+    return Notification(
+        id=notification_id_for(source_event_id, NotificationKind.peak_alert),
+        household_id=household_id,
+        scope=NotificationScope.household,
+        kind=NotificationKind.peak_alert,
+        severity=NotificationSeverity.warning,
+        title=title,
+        body=_tag(body, origin),
+        origin=origin,
+        ref=None,
         correlation_id=correlation_id,
         created_at=now,
     )

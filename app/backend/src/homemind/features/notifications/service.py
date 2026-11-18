@@ -33,6 +33,7 @@ from homemind.features.notifications.compose import (
     compose_attribution_info,
     compose_budget_alert,
     compose_confirmation,
+    compose_peak_alert,
     compose_presence_check,
     compose_receipt_info,
     compose_smoke_alert,
@@ -147,6 +148,42 @@ class NotificationService:
             correlation_id=correlation_id,
             source_event_id=source_event_id,
             now=now,
+        )
+        return self._create(n, provenance, dedupe=False)
+
+    def on_peak_alert(
+        self,
+        alert: de.AlertRaisedData,
+        *,
+        source_event_id: UUID,
+        ts: datetime,
+        household_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
+    ) -> Outcome:
+        """`alerts.alert_raised` com `kind=peak` -> aviso da casa (ALERT-03).
+
+        Sem potência ou início do episódio não se escreve o aviso (não se inventam números).
+        A idempotência vem do id derivado do evento (o detetor já avisa uma vez por incidente).
+        """
+        if alert.kind is not de.AlertKind.peak or alert.power_w is None or alert.since is None:
+            return Outcome(None)
+        room = self._directory.room(household_id, alert.room_id) if alert.room_id else None
+        name = (
+            self._directory.appliance_name(household_id, alert.appliance_id)
+            if alert.appliance_id and room
+            else None
+        )
+        n = compose_peak_alert(
+            source_event_id=source_event_id,
+            household_id=household_id,
+            room=room,
+            appliance_name=name,
+            power_w=alert.power_w,
+            minutes=int((ts - alert.since).total_seconds() // 60),
+            origin=provenance.origin,
+            correlation_id=correlation_id,
+            now=self._clock(),
         )
         return self._create(n, provenance, dedupe=False)
 
