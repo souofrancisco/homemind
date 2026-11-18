@@ -529,7 +529,7 @@ async def propose_house_rules(
 ) -> HouseRulesView:
     """Propõe a regra para o dia 1 do mês seguinte (substitui a proposta aberta). Só fica
     agendada (`upcoming`) quando pelo menos metade dos moradores aprova; quem propõe conta como
-    «sim». `presence` (C) ainda não existe e a regra que já vai valer não se propõe: `400`."""
+    «sim». A regra que já vai valer não se propõe: `400`."""
     now, policy = clock(), body.policy()
     return await _rules_change(
         request,
