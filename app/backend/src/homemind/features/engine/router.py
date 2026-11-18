@@ -26,7 +26,10 @@ from homemind.connectors.mcp_home import McpHome
 from homemind.contracts.eventos import Evento
 from homemind.contracts.home import Home
 from homemind.contracts.regras import Rule
+from homemind.core.config import get_settings
+from homemind.features.appliances.repo import SqliteApplianceCatalog
 from homemind.features.auth.service import CurrentUser, current_user
+from homemind.features.energy.kit import attach_kit_collectors
 from homemind.features.engine.config import EngineSettings, get_engine_settings
 from homemind.features.engine.engine import (
     Engine,
@@ -82,6 +85,13 @@ async def lifespan(app: FastAPI):
     iniciar_home = getattr(engine.home, "iniciar", None)
     if iniciar_home is not None:
         await iniciar_home()
+    await attach_kit_collectors(
+        engine.home,
+        settings=get_settings(),
+        db=app.state.db,
+        bus=app.state.bus,
+        catalog=SqliteApplianceCatalog(),
+    )
     tarefas: list[asyncio.Task] = []
     try:
         await engine.iniciar()
