@@ -110,7 +110,9 @@ def test_json_mal_formado_duas_vezes():
     [
         lambda: Assistant(registry(), None),
         lambda: Assistant(registry(), FakeLLM([LLMUnavailable("x")])),
-        lambda: Assistant(registry(), FakeLLM([GOOD], delay_s=0.2), timeout_s=0.01),
+        # Limite do passo (0,05 s) muito abaixo do prazo total (50 × 0,05 = 2,5 s): sob carga o
+        # prazo total nunca dispara antes e o motivo é sempre `llm_unavailable`.
+        lambda: Assistant(registry(), FakeLLM([GOOD], delay_s=30), timeout_s=0.05, max_steps=50),
     ],
     ids=["sem_complete", "llm_unavailable", "timeout"],
 )
@@ -257,10 +259,12 @@ def test_recurso_lento_nao_e_cancelado_pelo_prazo_total(monkeypatch):
     original = mod.fallback_reply
 
     def lento(*args, **kwargs):
-        _time.sleep(0.1)  # mais do que o prazo total (4 × 0,01 s)
+        _time.sleep(0.6)  # mais do que o prazo total (10 × 0,02 s = 0,2 s)
         return original(*args, **kwargs)
 
     monkeypatch.setattr(mod, "fallback_reply", lento)
-    r = run(Assistant(registry(), FakeLLM([GOOD], delay_s=0.2), timeout_s=0.01))
+    # Limite do passo 10× abaixo do prazo total: sob carga o prazo total não dispara antes do
+    # passo (motivo `timeout` em vez de `llm_unavailable`).
+    r = run(Assistant(registry(), FakeLLM([GOOD], delay_s=30), timeout_s=0.02, max_steps=10))
     assert r.degraded_reason == "llm_unavailable"
     assert "64,00 €" in r.text
