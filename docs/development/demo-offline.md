@@ -157,6 +157,8 @@ presença anónima, falha de leitura, reinício e faturas A/B.
 
 ## Demo web com login real (local) — IMPLEMENTADO
 
+> Fluxo recomendado: `make demo-up` / `make demo-reset` (backend e frontend no anfitrião; ver [../development.md](../development.md)). O que se segue descreve a alternativa em Docker.
+
 `make demo-web-up` cria, de forma idempotente e só em local: Authentik próprio (projeto Compose
 `homemind-demoweb`, portas 25173/28000/29000) com seis contas (`ana`, `bruno`, `carla`, `diogo`,
 `senhorio`, `operador`; palavra-passe `demo-conta-certa`, sem email para não acionar MFA), uma
