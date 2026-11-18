@@ -94,7 +94,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `alerts.cold_room` | P4 | `ColdRoomData` (ALERT-06: quarto do morador várias noites < 18 °C; privado; `allowance_left_wh` = plafond solidário que resta no mês ou `null`) | P3 (`notifications.cold_room`, **IMPLEMENTADO**) | idem |
 | `agent.action_proposed` | P3 | `ProposedAction` | P3 (`notifications.agent_action`, **IMPLEMENTADO**: aviso pessoal sem botões; emitido pelo chat e pelo `agent.safety_suggestion`; o contrato não tem `source`, #157) | idem |
 | `automation.proposed` | P3 | `AutomationRule` | P3 | idem |
-| `automation.executed` | P1 | `AutomationExecutedData` | P3 | idem |
+| `automation.executed` | P1 | `AutomationExecutedData` (SAFE-04: hoje emitido por `features/automations/runner.py`, uma vez por disparo, id estável por regra+evento+dispositivo, com o resultado REAL do executor, `blocked` incluído; só simulado na demo; contrato inalterado) | P3 | idem |
 | `automation.vote_decided` | P3 | `AutomationVoteDecidedData` (SAFE-04, **PROPOSTA D-35**: veredicto `approved`/`rejected`, `votes_for`, `votes_against`, `eligible`, `expired`; sem quem votou o quê; categoria de retenção `operational`) | P3 | idem |
 | `automation.status_changed` | P3 | `AutomationStatusChangedData` (SAFE-04, **PROPOSTA D-35**: `from_status`→`to_status`, `resident_id` ou `null` = sistema; ex.: suspensão `active→disabled`) | P3 | idem |
 
