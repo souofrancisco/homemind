@@ -2,10 +2,10 @@
 
 IMPLEMENTADO: `GET .../notifications`, `POST .../notifications/{id}/read`, `POST .../respond`,
 `GET|PUT .../notification-preferences` e os consumidores de `billing.confirmation_needed`,
-`presence.confirmation_needed`, `safety.alert_raised`, `billing.attribution_changed` e
-`billing.allocation_published` (ver `handlers.CONSUMERS`) e o varrimento de expiração (60 s,
-`sweeper.py`). PLANEADO: WebSocket, limiares de orçamento/picos (`alerts.*`) e push (ver
-`docs/modules/notifications.md`).
+`presence.confirmation_needed`, `safety.alert_raised`, `billing.attribution_changed`,
+`billing.allocation_published`, `alerts.threshold_crossed` e `alerts.alert_raised` (picos) (ver
+`handlers.CONSUMERS`) e o varrimento de expiração (60 s, `sweeper.py`). PLANEADO: WebSocket e
+push (ver `docs/modules/notifications.md`).
 
 Todas as rotas exigem membership na casa do caminho (`require_access`); o `resident_id` vem
 sempre da base de dados, nunca do cliente. As respostas são `NotificationView`, nunca a entidade.

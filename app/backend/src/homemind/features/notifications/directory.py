@@ -58,3 +58,10 @@ class SqliteResidentDirectory:
             (str(household_id), str(room_id), today, today),
         ).fetchall()
         return [UUID(r["resident_id"]) for r in rows]
+
+    def appliance_name(self, household_id: UUID, appliance_id: UUID) -> str | None:
+        row = self._conn.execute(
+            "SELECT name FROM appliance WHERE household_id = ? AND id = ?",
+            (str(household_id), str(appliance_id)),
+        ).fetchone()
+        return row["name"] if row else None

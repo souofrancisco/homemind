@@ -23,6 +23,7 @@ from homemind.contracts.agent import ActionExecutionResult, AutomationRule, Prop
 from homemind.contracts.billing import Attribution, BudgetThreshold
 from homemind.contracts.common import (
     ContractModel,
+    PowerW,
     Provenance,
     UtcDatetime,
     new_id,
@@ -111,10 +112,23 @@ class AlertKind(StrEnum):
 
 
 class AlertRaisedData(ContractModel):
+    """Campos de contexto opcionais (compatível com v1): o aviso só diz o que foi medido.
+
+    `peak` (ALERT-03): `device_id`, `power_w` (última potência acima do limite) e `since`
+    (início do episódio; a duração é `ts - since`); `room_id` só se a tomada estiver numa
+    zona comum registada (`None` = «pico de consumo por identificar»); `appliance_id` só com
+    identificação confiante de um aparelho comum (nunca pessoal: o nome identificaria o dono).
+    """
+
     kind: AlertKind
     severity: NotificationSeverity
     ref: NotificationRef | None = None
     resident_id: UUID | None = None  # alertas pessoais
+    device_id: UUID | None = None
+    room_id: UUID | None = None
+    appliance_id: UUID | None = None
+    power_w: PowerW | None = None
+    since: UtcDatetime | None = None
 
 
 class AutomationExecutedData(ContractModel):

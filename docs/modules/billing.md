@@ -126,7 +126,7 @@ O sumário executivo cita 21,20 €; o corpo do documento (§6.2 e §7.1) cita 4
 
 | Alerta | Gatilho (PDF §6.9) | Prio |
 |---|---|---|
-| Pico em zona comum | > 1,5 kW durante > 30 min, ou conta da sala do dia > 2× a média | P0 (ALERT-03 #102) |
+| Pico em zona comum | > 1,5 kW durante > 30 min (IMPLEMENTADO); conta da sala do dia > 2× a média (PLANEADO) | P0 (ALERT-03 #102) |
 | Aparelho esquecido | Aparelho grande ligado com o dono fora há > 1 h (precisa de presença) | P2 |
 | Não bate certo | Assinatura do aparelho de um morador fora do quarto dele; consumo noturno anormal | P2 |
 
@@ -147,7 +147,9 @@ Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `
 | Entrada da fatura (BILL-01): `BillIn` → pré-visualização → rascunho em `billing_bill` (migração `0100`), `billing.bill_created`, leitura por papel | IMPLEMENTADO (`features/billing/{bills,router}.py`) |
 | Fecho do mês (BILL-04, `features/billing/closing.py`, migração `0102`): finalizar (parcelas imutáveis, Σ = total ao cêntimo, `409` ao repetir), correções por revisão (a anterior fica `superseded`), resumo do senhorio por quarto e recibo do inquilino | IMPLEMENTADO |
 | Orçamento pessoal e avisos 50/80/100 % (ALERT-01, `features/billing/budgets.py`, migração `0103`): gasto com todos os custos (D-31), desconhecido sem preço, um aviso por limiar e ciclo (ao saltar vários avisa só o mais alto), reset explícito ao redefinir; reavaliado em cada atribuição, fecho de fatura e a cada 60 s. `alerts.threshold_crossed` → aviso pessoal (consumidor `notifications.budget_threshold`) | IMPLEMENTADO |
-| Plafond por quarto (BILL-03), previsão (ALERT-02), picos (ALERT-03), contestação (BILL-06) | PLANEADO |
+| Picos nas zonas comuns (ALERT-03, `features/billing/peaks.py`, consumidor `billing.peaks`, migração `0105`): por tomada, a partir de `energy.reading_recorded`; > 1,5 kW durante > 30 min (leituras utilizáveis; lacuna > 10 min recomeça a contagem) → `alerts.alert_raised` (`kind=peak`, potência, início do episódio). Um aviso por incidente (só rearma depois de > 30 min abaixo do limite). Tomada de zona comum → `room_id`; sem divisão ou não registada → «pico de consumo por identificar»; quarto e `main_meter` nunca avisam. Aparelho só com um único consumo a decorrer identificado com confiança ≥ 0,8 e de âmbito `common`. Aviso da casa pelo consumidor `notifications.peak_alert` | IMPLEMENTADO |
+| Pico por baseline (conta da sala do dia > 2× a média) | PLANEADO |
+| Plafond por quarto (BILL-03), previsão (ALERT-02), contestação (BILL-06) | PLANEADO |
 
 Validação da fatura (PROPOSTA de limiares, ajustáveis em `bills.py`): preço médio 0,01–1,00 €/kWh (apanha erros de unidades), período ≤ 62 dias e já terminado, tarifa declarada opcional que tem de fechar com `total − fixa` (folga de 1 %, mínimo 5 cêntimos). Foto/PDF lido por LLM fica para depois e passará pela mesma pré-visualização.
 
