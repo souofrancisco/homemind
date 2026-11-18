@@ -92,7 +92,7 @@ Os PDFs continuam a mencionar Telegram; essa parte **não faz parte da arquitetu
 | P-11 | Prazos reais (resumo PDF e apresentação): os documentos antigos diziam 18/11 19h00 e 20/11 17h30 | P5 com a organização | Hoje |
 | P-12 | Testes automáticos de frontend (componentes) para as notificações interativas? | P5 | C-P3-01 |
 | P-13 | Apagar os apontadores nos caminhos antigos (`docs/contratos.md`, …) quando o código, `.env.example` e CODEOWNERS forem atualizados | P5 | Fase M4 |
-| P-14 | Renomear «HomeMind» no Android e no pacote `homemind` (hoje mantido) | Equipa | Depois da demo |
+| P-14 | Renomear os identificadores `homemind` (Android `pt.homemind.app`: `applicationId`, pacote Java, esquema de URL do login e `fileprovider`; pacote Python; cliente OIDC; Compose), hoje mantidos. O **nome visível** do Android já é «Conta Certa». Mudar o `applicationId` cria outra app para o Android e o esquema de URL tem de coincidir com o redirect OIDC no Authentik | Equipa | Depois da demo |
 | P-15 | Validação jurídica (RGPD, câmara, repartição de custos) | Equipa/jurista | Piloto |
 | P-16 | Limiares de `stale` (leitura desatualizada) e de «aparelho identificado» (0,9?) | P1 | Motor de energia |
 | P-17 | HOUSE-02 implementa convite tenant dirigido a email verificado, associado ao `sub` do Authentik numa transação; endpoints e matriz no [ADR](architecture/house-02-memberships.md). **IMPLEMENTADO na main (#143); ativação real BLOQUEADA até o Authentik emitir `email_verified` e haver rate limit. O backend falha fechado. A configuração real Authentik de email verificado ainda é bloqueio de ativação.** | P5 + equipa | Antes de HOUSE-05 |

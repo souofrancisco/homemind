@@ -23,7 +23,6 @@ Evidência detalhada em [integrations/mcp-capabilities.md](../integrations/mcp-c
 | Identificação errada de aparelho com um só medidor (aparelhos < 100 W, cargas sobrepostas, aparelhos iguais) | Alta | Médio | `confidence` + `unknown` + pergunta na aplicação; resíduo por igual |
 | Persistência nova (SQLite) e barramento atrasam P1–P4 | Média | Alto | P5 entrega `core/db` e `core/events` primeiro; testes com base em memória |
 | Divergência de contratos entre 5 pessoas em paralelo | Média | Alto | [Definição de pronto dos contratos](roadmap.md); PRs de contrato pequenos e revistos por P5 |
-| Regressão do ObjectOS durante a migração | Baixa | Médio | `make check` verde; remoções só na fase M4 ([migration.md](../architecture/migration.md)) |
 | Ordem de arranque alfabética dos `lifespan` | Média | Médio | Recursos partilhados em `core/`; sem dependência entre features ([overview.md](../architecture/overview.md)) |
 | LLM a inventar números | Média | Alto | Guarda-corpos: números só de ferramentas ([agent.md](../modules/agent.md)) |
 | Dados de consumo enviados a um LLM externo | Média | Médio (privacidade) | Dados mínimos; decisão P-06; assistente opcional |

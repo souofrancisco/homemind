@@ -21,7 +21,7 @@ Um processo FastAPI; routers descobertos em `features/*/router.py` (`core/featur
 | `app/backend/src/homemind/core/` | config, SQLite (`db.py`), barramento (`events.py`), papéis (`access.py`), arranque |
 | `…/contracts/` | modelos partilhados, eventos de domínio, `fixtures.py` (casa demo) |
 | `…/connectors/` | `fake_home`, `mcp_home`, `altice_auth`, `write_grant`, `mcp_verify` |
-| `…/features/<nome>/` | `households`, `appliances`, `energy`, `billing`, `notifications`, `presence`, `safety`, `agent`, `integration`, `auth`, `health` (+ legado ObjectOS: `engine`, `gestos`, `visao`, `video`, `mcp`) |
+| `…/features/<nome>/` | `households`, `appliances`, `energy`, `billing`, `notifications`, `presence`, `safety`, `agent`, `integration`, `auth`, `health`, `video`, `mcp` |
 | `…/demo/` | `cli.py` (base de demo determinística), `web.py` (contas Authentik + cópia web) |
 | `app/frontend/src/` | `app`, `pages`, `components`, `hooks`, `services`, `types`; tipos da API gerados por `make contracts` |
 | `app/infra/` | blueprint do Authentik, `local.sh`, alvos `make` auxiliares |

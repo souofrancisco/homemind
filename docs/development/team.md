@@ -12,7 +12,7 @@ Cinco pessoas, cinco áreas com o mínimo de sobreposição. **PLANEADO.** Prior
 
 > O pedido original escrevia `brunoviera88`; o utilizador real nas issues e no `CODEOWNERS` é `brunovieira88`.
 
-**Transferências de conhecimento** (herdadas do ObjectOS, ver [archive/objectos/parallel-work.md](../archive/objectos/parallel-work.md)): o **MCP** passa da P3 antiga (RafaelMat0s-Dev) para P1 — ler [integrations/mcp-p3-relatorio.md](../integrations/mcp-p3-relatorio.md); o **YOLO/visão** passa da P1 antiga para P2 — ler `features/visao/README.md`; o motor e o NVIDIA (`llm.py`) passam da P4 antiga para P3.
+**Transferências de conhecimento** (registadas no histórico do ObjectOS, ver [archive/objectos/parallel-work.md](../archive/objectos/parallel-work.md)): o **MCP** passou da P3 antiga (RafaelMat0s-Dev) para P1 — consultar [integrations/mcp-p3-relatorio.md](../integrations/mcp-p3-relatorio.md); o **YOLO/visão** passou da P1 antiga para P2; o motor e o NVIDIA (`llm.py`) passaram da P4 antiga para P3.
 
 ## Regras de colaboração (resumo; texto completo em [CLAUDE.md](../../CLAUDE.md))
 
@@ -77,9 +77,9 @@ Contagem das issues `[CC · …]` abertas (17/11/2026), por prioridade/fase: ver
 
 **Objetivo.** Saber quando alguém entra ou sai e quem está em casa, sem identificar pessoas pela imagem. Documento: [modules/presence.md](../modules/presence.md).
 
-**Módulos.** `features/video`, `features/visao`, `features/gestos` (parcial), novo `features/presence`.
+**Módulos atuais.** `features/video`, `features/visao` (dispositivo e pesos reutilizados), `features/presence`. `features/gestos` foi removido na BASE-04.
 
-**Reutilizável.** `video/*`, `visao/{detetor,thread,dispositivo,pesos,anotar}.py`, `gestos/{ponte,presenca}.py`, `contracts/{video,visao,base}.py`, `visao/README.md`.
+**Reutilizável.** `video/*`, `visao/{dispositivo,pesos}.py`, `contracts/{video,base}.py`.
 
 **Novos.** `features/presence/{door,fusion,router,service}.py`, `contracts/presence.py`.
 
@@ -101,7 +101,7 @@ Contagem das issues `[CC · …]` abertas (17/11/2026), por prioridade/fase: ver
 
 **Módulos.** Novos `features/notifications`, `features/agent`, `features/automations`; UI com P5.
 
-**Implementado/reutilizável.** `features/agent/{llm,router}.py` e os contratos atuais do agente. O cliente e as rotas do motor foram removidos na BASE-04; páginas ObjectOS do frontend estão a ser eliminadas separadamente.
+**Implementado/reutilizável.** `features/agent/{llm,router}.py` e os contratos atuais do agente. O cliente, as rotas do motor e as páginas antigas do frontend foram removidos na BASE-04.
 
 **Novos.** `contracts/{notification,agent}.py`, `features/notifications/*`, `features/agent/*`.
 
@@ -157,7 +157,7 @@ Contagem das issues `[CC · …]` abertas (17/11/2026), por prioridade/fase: ver
 |---|---|
 | P0 | Contratos acordados e publicados; `core/db`, `core/events`; papéis e DTOs por papel; seed da casa de demo (4 moradores); navegação por papel; centro de notificações (UI); recibos (UI); rótulos REAL/SIMULADO; reset da demo; `make check` verde |
 | P1 | Páginas de consumo, orçamento e casa; exportação de dados do morador (RP-03); diagnóstico do operador |
-| P2 | Remoção do código ObjectOS ([migration.md](../architecture/migration.md) M4); push; aplicação Android |
+| P2 | BASE-04: remoção do código ObjectOS concluída ([migration.md](../architecture/migration.md) M4); push; aplicação Android |
 
 **Aceitação.** Demo ponta a ponta com simulador duas vezes seguidas sem intervenção; senhorio sem acesso a dados pessoais; `make check` e `make smoke` verdes. **Testes.** Autorização por papel; migrações; barramento; build do frontend.
 

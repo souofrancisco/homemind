@@ -2,7 +2,7 @@
 
 Guia único para todos os agentes: **[CLAUDE.md](CLAUDE.md)**. Por área: [app/backend/AGENTS.md](app/backend/AGENTS.md) e [app/frontend/AGENTS.md](app/frontend/AGENTS.md). Documentação: [docs/README.md](docs/README.md).
 
-O produto é a **Conta Certa** (casas partilhadas: cada um paga o que usa). A `main` tem o vertical Conta Certa ligado ao runtime (+ código ObjectOS legado até à BASE-04); o que está «planeado» nos documentos não existe. Distinguir sempre IMPLEMENTADO de PLANEADO.
+O produto é a **Conta Certa** (casas partilhadas: cada um paga o que usa). A `main` tem o vertical Conta Certa ligado ao runtime; o código ObjectOS foi removido na BASE-04. O que está «planeado» nos documentos não existe. Distinguir sempre IMPLEMENTADO de PLANEADO.
 
 Resumo das regras que nunca se quebram:
 

@@ -8,7 +8,7 @@
 
 **IMPLEMENTADO (fundação F0)**: modelos Pydantic, eventos de domínio, SQLite, barramento persistente, guardas por casa/papel e OpenAPI→TS. **PLANEADO**: os motores e a maior parte das rotas de P1–P5; **HOUSE-02** (IMPLEMENTADO) acrescenta as rotas de convites e memberships. **DECISÃO PENDENTE**: marcadas por «(proposta)» e listadas em §9 e em [decisions.md](../decisions.md).
 
-A API ativa está em [api-implementada.md](api-implementada.md); as rotas do motor ObjectOS foram removidas na BASE-04. Entidades e estados: [data-model.md](data-model.md); eventos: [event-flow.md](event-flow.md).
+A API ativa está em [api-implementada.md](api-implementada.md). Entidades e estados: [data-model.md](data-model.md); eventos: [event-flow.md](event-flow.md).
 
 ## 1. Como mudar um contrato
 
@@ -228,7 +228,7 @@ O servidor só envia notificações do utilizador autenticado (pessoais) e da su
 
 ## 9. Pontos para revisão da equipa (DECISÃO PENDENTE)
 
-Prioridade para aprovar antes de implementar os módulos: ver [decisions.md](../decisions.md) D-23…D-30 e P-16…P-21. Resumo: (1) `Provenance` em duas dimensões; (2) Wh inteiros + milicêntimos; (3) semântica do barramento; (4) 404 vs 403 e membership por datas; (5) `None` em energia/custo; (6) regras de resposta das notificações; (7) OpenAPI por `OPENAPI_MODELS`; (8) o código ObjectOS de domínio está removido, sem novas dependências; (9) quem aprova cada pendência.
+Prioridade para aprovar antes de implementar os módulos: ver [decisions.md](../decisions.md) D-23…D-30 e P-16…P-21. Resumo: (1) `Provenance` em duas dimensões; (2) Wh inteiros + milicêntimos; (3) semântica do barramento; (4) 404 vs 403 e membership por datas; (5) `None` em energia/custo; (6) regras de resposta das notificações; (7) OpenAPI por `OPENAPI_MODELS`; (8) sem dependências do código de domínio removido na BASE-04; (9) quem aprova cada pendência.
 
 > **PRIV-02 #119 (revisão de acesso):** o âmbito de leitura do recurso `presence` foi restringido de `household` a `own` para o inquilino; a regra de escrita `own` não mudou. A API de presença permanece planeada. Ver [módulo presença](../modules/presence.md#priv-02-119--investigação-e-arquitetura-de-privacidade-17112026).
 

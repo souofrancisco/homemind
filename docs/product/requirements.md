@@ -78,7 +78,7 @@ Todos **PLANEADO** (nada disto existe ainda no código, salvo indicação). Orig
 | RI-02 | Assistente integrado na aplicação, com ferramentas read-only (M4; AGENT-01/02 #110/#111) | DECISÃO, PDF §9 | P0 | P3 (UI: P5) |
 | RI-03 | Explicar recibos («porque pago mais?») | PDF §12 | P0 | P3 |
 | RI-04 | Ações sugeridas, com confirmação antes de executar | DECISÃO | P2 | P3 |
-| RI-05 | Regras escritas em português → automação (fluxo do motor ObjectOS removido em BASE-04; automação nova continua planeada) | PDF §12; proposta de produto | P2 | P3 |
+| RI-05 | Regras escritas em português → automação (o fluxo antigo do ObjectOS foi removido em BASE-04; a automação da Conta Certa continua planeada) | PDF §12; proposta de produto | P2 | P3 |
 
 ## Privacidade e operação
 

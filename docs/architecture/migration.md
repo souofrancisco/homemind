@@ -2,7 +2,7 @@
 
 > **Estado:** BASE-04 (#74) removeu do backend o motor ObjectOS, as rotas de estado/regras e a cadeia antiga de gestos e deteções. O runtime do `Home` e os coletores MCP foram movidos para `features/energy/home_runtime.py`. A matriz abaixo regista o que foi removido e o legado deliberadamente mantido; não é uma lista de trabalho por executar. O frontend é tratado separadamente.
 
-Estado verificado na worktree `chore/74-migrar-backend`, após a remoção BASE-04. As verificações efetivamente corridas ficam registadas no relatório do PR; não se inferem resultados anteriores.
+Estado documentado após a conclusão da BASE-04 (#74). A matriz abaixo é o registo histórico das decisões e do destino dos componentes durante a migração; os componentes listados como removidos não existem no código atual.
 
 ## Categorias
 
@@ -29,7 +29,7 @@ Caminhos relativos a `app/backend/src/homemind/` (backend) e `app/frontend/src/`
 | Engine de modos e regras JSON | REMOVE | O assistente usa `features/agent/llm.py`; não depende do cliente do motor |
 | Eventos e WebSocket | Motor removido | O futuro WebSocket de notificações está PLANEADO e sem rota definida |
 | Authentik | KEEP | Papéis na base de dados (P-02) |
-| Frontend | KEEP / ADAPT | Rename «HomeMind» no Android: **DEFER** (P-14) |
+| Frontend | KEEP / ADAPT | Nome visível do Android já é «Conta Certa»; os identificadores `pt.homemind.app`: **DEFER** (P-14) |
 | Docker, Makefile, CI | KEEP | `compose.gpu.yaml`, `compose.mcp*.yaml`: **DEFER** (sem alterações previstas) |
 | Testes | KEEP / REMOVE (saem com o motor antigo) | Testes novos por módulo |
 
@@ -63,27 +63,27 @@ Caminhos relativos a `app/backend/src/homemind/` (backend) e `app/frontend/src/`
 |---|---|---|---|
 | `features/video` (`fonte.py`, `service.py`, `router.py`, `medir.py`) | **ADAPT** | No serviço só clips sintéticos allowlisted em `PROFILE=demo` + `HOME_BACKEND=fake`; fontes RTSP recusadas por PRIV-02; ferramentas não devem recolher dados reais | P2 |
 | `features/video/router.py` (`GET /api/video` MJPEG) | **ADAPT** | MJPEG desligado por omissão (PRIV-02: `404` salvo clip allowlisted em demo/fake com flag) e, quando ligado, só para o `operator` (**IMPLEMENTADO**, fix/video-mjpeg-operador); máscara da soleira **PLANEADO** | P2 |
-| `features/visao/router.py`, `thread.py`, `detetor.py`, `conversao.py`, `anotar.py` | **REMOVIDO** (BASE-04) | A presença tem o seu detetor e pipeline em `features/presence`; não usa a thread ObjectOS nem pose/objetos | P2 |
+| `features/visao/router.py`, `thread.py`, `detetor.py`, `conversao.py`, `anotar.py` | **REMOVIDO** (BASE-04) | A presença usa o pipeline de `features/presence`, sem pose nem deteção de objetos | P2 |
 | `features/visao/dispositivo.py`, `pesos.py` | **KEEP** | `presence/yolo.py` escolhe o dispositivo e usa o peso YOLO de pessoas | P2 |
 | `features/gestos/gesto.py`, `parametros.py`, `presenca.py`, `processador.py` | **REMOVIDO** (BASE-04) | Gesto «objeto levantado» e presença binária antiga sem consumidores | P2 |
-| `features/gestos/ponte.py` | **KEEP** | KEEP explícito do plano; sem consumidor de produção atual | P2 |
-| `contracts/eventos.py`, `contracts/visao.py` | **ADAPTADO** (BASE-04) | Mantêm só os tipos ainda importados pela ponte preservada; deteções, pose e simulação removidas | P2 + P5 |
+| `features/gestos/ponte.py` | **REMOVIDO** (BASE-04, limpeza final) | O KEEP previsto no plano não foi mantido na remoção final do módulo | P2 |
+| `contracts/eventos.py`, `contracts/visao.py` | **REMOVIDO** (BASE-04, limpeza final) | Os tipos deixaram de ter consumidores após a remoção da ponte | P2 + P5 |
 | `contracts/simulacao.py` | **REMOVIDO** (BASE-04) | Geradores só eram usados nos testes dos gestos ObjectOS | P1 + P2 |
 
 ### Backend — motor de regras e eventos
 
 | Caminho | Destino | Justificação | Resp. |
 |---|---|---|---|
-| `features/engine/` (código e testes) | **REMOVIDO** (BASE-04) | Nenhuma feature ativa importa o motor; as rotas antigas deixam de ser registadas | P5 |
+| `features/engine/` (código e testes) | **REMOVIDO** (BASE-04) | Nenhuma feature ativa importa o motor; as rotas antigas já não são registadas | P5 |
 | `core/config.py` | **ADAPTADO** (BASE-04) | Campos exclusivos de gestos e YOLO de objetos/pose removidos; config de presença, vídeo e assistente mantida | P5 |
-| `contracts/regras.py` | **KEEP temporário** | Ainda referenciado pelos tipos antigos de `app/frontend`; frontend fora do âmbito desta tarefa | P3 |
+| `contracts/regras.py` | **REMOVIDO** (BASE-04, limpeza final) | O contrato deixou de ser necessário após a remoção dos tipos antigos do frontend | P3 |
 
 ### Frontend
 
 | Caminho | Destino | Justificação | Resp. |
 |---|---|---|---|
 | React 19 + Vite + TypeScript + Mantine, `tsconfig`, ESLint | **KEEP** | Stack pedida | P5 |
-| Capacitor / `android/` / `capacitor.config.ts` | **KEEP** | App móvel; o nome «HomeMind» do Android continua cosmético. Push (`@capacitor/push-notifications`) é futuro (**PROPOSTA**) | P5 |
+| Capacitor / `android/` / `capacitor.config.ts` | **KEEP** | App móvel; o nome visível é «Conta Certa» e o `applicationId`/esquema de URL `pt.homemind.app` ficam até depois da demo (P-14). Push (`@capacitor/push-notifications`) é futuro (**PROPOSTA**) | P5 |
 | `app/App.tsx`, `routes.tsx`, `components/layout/Shell.tsx` | **ADAPT** | Estrutura de navegação mantém-se; novas páginas por papel | P5 |
 | `app/providers/AuthProvider.tsx`, `services/auth/*` (OIDC + PKCE) | **KEEP** | Login Authentik | P5 |
 | `app/providers/HomeProvider.tsx`, `hooks/useHome.ts` (WebSocket único) | **ADAPT** | Passa a transportar `notification` e `notification_update` | P5 + P3 |
@@ -120,7 +120,7 @@ Não foi alterado (fora do âmbito desta tarefa): comentários de código e `app
 | **M1 — Contratos e base** | Modelos Pydantic dos contratos aceites; `core/db.py` e `core/events.py` | Contratos acordados pelos 5 |
 | **M2 — Módulos em paralelo** | `households`, `energy`, `billing`, `notifications`, `presence` em paralelo com o motor antigo ainda a correr | M1 |
 | **M3 — Interface** | Novas páginas e navegação por papel; WebSocket com notificações | M2 parcial |
-| **M4 — Remoção do ObjectOS (backend)** | **EXECUTADO nesta worktree:** motor, rotas, gestos/deteções antigas removidos; ponte KEEP | BASE-04 (#74) |
+| **M4 — Remoção do ObjectOS (backend)** | **EXECUTADO nesta worktree:** motor, rotas, gestos/deteções e ponte removidos | BASE-04 (#74) |
 
 As rotas antigas não fazem parte do OpenAPI atual. `compose*.yaml`, Makefile e `.github/` ficaram fora das alterações BASE-04; referências residuais são reportadas no PR.
 

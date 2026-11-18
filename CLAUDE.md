@@ -7,7 +7,7 @@ Hierarquia de verdade: decisões da equipa ([`docs/decisions.md`](docs/decisions
 # Parte A — Regras de desenvolvimento
 
 ## Stack e estrutura
-Python 3.12 + FastAPI + Pydantic v2 + SQLite (barramento de eventos); React 19 + Vite + TS + Mantine; Authentik (OIDC). Monorepo `app/` ([`docs/architecture.md`](docs/architecture.md)). Os nomes `homemind` (pacote, cliente OIDC, Compose) são herdados: não renomear. Código ObjectOS (engine, gestos, páginas antigas) só sai num PR da BASE-04 (#74); ler [`docs/architecture/migration.md`](docs/architecture/migration.md) antes de lhe tocar.
+Python 3.12 + FastAPI + Pydantic v2 + SQLite (barramento de eventos); React 19 + Vite + TS + Mantine; Authentik (OIDC). Monorepo `app/` ([`docs/architecture.md`](docs/architecture.md)). Os nomes `homemind` (pacote, cliente OIDC, Compose) são herdados: não renomear. O código ObjectOS (motor, gestos e páginas antigas) foi removido na BASE-04 (#74); consultar [`docs/architecture/migration.md`](docs/architecture/migration.md) para o registo histórico.
 
 ## Arquitetura (não quebrar)
 - Uma feature **não importa outra**: comunica por `contracts/` e eventos de domínio. Recursos partilhados (SQLite, barramento) em `core/` (P5).

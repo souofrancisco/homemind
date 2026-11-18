@@ -36,8 +36,7 @@ Regras gerais em [`../../CLAUDE.md`](../../CLAUDE.md). Aqui só o específico do
 | Módulo | Responsabilidade | Destino (ver migração) |
 |---|---|---|
 | `features/video` | Fontes de vídeo locais e endpoint protegido de diagnóstico | Ver PRIV-02 e [`presence`](../../docs/modules/presence.md) |
-| `features/visao` | `dispositivo.py` e `pesos.py`, importados pelo detetor de presença | Sem thread ObjectOS, deteção de objetos ou pose |
-| `features/gestos` | `ponte.py` preservada (KEEP), sem consumidor de produção | Não contém processador de gestos nem presença binária |
+| `features/presence` | Pipeline e detetor de pessoas na soleira | Não deteta objetos nem pose |
 | `features/agent` (**parcial**, P3) | Assistente só de leitura: `POST /api/households/{id}/agent/messages`, dados SIMULADOS da casa demo, LLM desligado por omissão (`AGENT_LLM_ENABLED`); AGENT-03: ações propostas com confirmação (`agent_action`, `0310`), executor injetado (nesta feature só o simulado), nunca sem `confirm`; AGENT-03b: consumidor `agent.safety_suggestion` (só propõe); histórico `GET …/agent/messages` (`agent_message`, `0311`, só o próprio, nunca ao LLM) | [agent](../../docs/modules/agent.md) |
 | `features/notifications` (**parcial**, P3) | Notificações por casa (lista, leitura, resposta, preferências), persistência SQLite e consumidor `notifications.confirmation_needed`. WebSocket, limiares e picos PLANEADOS | [notifications](../../docs/modules/notifications.md) |
 | `features/auth`, `features/health`, `features/mcp` | JWT Authentik, healthz, diagnóstico MCP | KEEP/ADAPT |
