@@ -3,12 +3,13 @@
 import asyncio
 import time
 from datetime import timedelta
+from uuid import uuid4
 
 from homemind.contracts import domain_events as de
 from homemind.contracts import fixtures as fx
 from homemind.contracts.billing import AttributionMethod, AttributionTarget
 from homemind.contracts.common import cost_cents, replace, stable_id
-from homemind.contracts.energy import ConsumptionStatus, CostEstimate, LocationKind
+from homemind.contracts.energy import ApplianceMatch, ConsumptionStatus, CostEstimate, LocationKind
 from homemind.contracts.notification import (
     ConfirmationOutcome,
     ConfirmationVerdict,
@@ -107,6 +108,36 @@ def test_sala_acima_do_limiar_pergunta_uma_vez(app):
     assert _handle(app, _evento(_consumo(), ts=TS + timedelta(hours=1)), seq=2) == []
 
 
+def test_pedido_inclui_nome_apenas_com_aparelho_identificado(app):
+    appliance_id = uuid4()
+    app.state.db.run_sync(
+        lambda c: c.execute(
+            "INSERT INTO appliance (id, household_id, name, category, registered_by_resident_id,"
+            " created_at) VALUES (?,?,?,'heating',?,?)",
+            (
+                str(appliance_id),
+                str(fx.HOUSEHOLD),
+                "Aquecedor da sala",
+                str(fx.ANA),
+                TS.isoformat(timespec="microseconds"),
+            ),
+        )
+    )
+    identified = replace(
+        _consumo(), match=ApplianceMatch(appliance_id=appliance_id, confidence=0.95)
+    )
+    [named] = _handle(app, _evento(identified))
+    assert isinstance(named, de.BillingConfirmationNeeded)
+    assert named.data.appliance_name == "Aquecedor da sala"
+
+    ambiguous = replace(
+        _consumo(), id=uuid4(), match=ApplianceMatch(), appliance_owner_resident_id=None
+    )
+    [unnamed] = _handle(app, _evento(ambiguous), seq=2)
+    assert isinstance(unnamed, de.BillingConfirmationNeeded)
+    assert unnamed.data.appliance_name is None
+
+
 def test_votacao_e_minha_atribui_a_quem_assumiu(app):
     _handle(app, _evento(_consumo()))
     [ev] = _handle(app, _votacao(ConfirmationVerdict.self_claimed, fx.CARLA), seq=2)
@@ -175,10 +206,28 @@ def _ate(fn, timeout=5.0):
 def test_ponta_a_ponta_com_barramento_e_notificacoes(app, client, now):
     """Consumo na sala → pedido → notificação (P3) → Carla vota «É minha» → atribuição."""
     now["value"] = TS + timedelta(minutes=1)
+    appliance_id = uuid4()
+    app.state.db.run_sync(
+        lambda c: c.execute(
+            "INSERT INTO appliance (id, household_id, name, category, registered_by_resident_id,"
+            " created_at) VALUES (?,?,?,'heating',?,?)",
+            (
+                str(appliance_id),
+                str(fx.HOUSEHOLD),
+                "Aquecedor da sala",
+                str(fx.ANA),
+                TS.isoformat(timespec="microseconds"),
+            ),
+        )
+    )
+    event = _evento(
+        replace(_consumo(), match=ApplianceMatch(appliance_id=appliance_id, confidence=0.95))
+    )
     carla = {"x-test-sub": "sub-carla"}
     url = f"/api/households/{fx.HOUSEHOLD}/notifications"
-    app.state.bus.publish_threadsafe(_evento(_consumo()))
+    app.state.bus.publish_threadsafe(event)
     [n] = _ate(lambda: client.get(url, headers=carla).json() or None)
+    assert n["body"].startswith("O Aquecedor da sala está ligado numa zona comum")
     assert n["voting"]["eligible"] == 4
     r = client.post(f"{url}/{n['id']}/respond", json={"action_id": "mine"}, headers=carla)
     assert r.status_code == 200, r.text

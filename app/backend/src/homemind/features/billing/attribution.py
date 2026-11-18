@@ -52,6 +52,7 @@ def decide(
     tenants: Sequence[UUID],
     now: datetime,
     sole_occupant: tuple[UUID, float, bool] | None = None,
+    appliance_name: str | None = None,
 ) -> Decision:
     """`room_resident`: quarto → morador ativo; `tenants`: inquilinos ativos (quem responde).
     `sole_occupant` (regra C): (morador, confiança, prova simulada) se só ele estava em casa."""
@@ -80,6 +81,7 @@ def decide(
                 estimated_cost_cents=event.cost_estimate.cents,
                 eligible_resident_ids=list(tenants),
                 expires_at=now + timedelta(hours=policy.ask_timeout_hours),
+                appliance_name=appliance_name[:120] if appliance_name else None,
             )
         )
     if event.status is ConsumptionStatus.ongoing:
