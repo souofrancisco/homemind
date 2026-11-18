@@ -36,3 +36,7 @@ class ResidentDirectory(Protocol):
     def landlords(self, household_id: UUID, at: datetime) -> list[UUID]:
         """Senhorios ativos da casa no instante `at`."""
         ...
+
+    def tenants(self, household_id: UUID, at: datetime) -> list[UUID]:
+        """Inquilinos ativos da casa no instante `at` (ENERGY-04)."""
+        ...

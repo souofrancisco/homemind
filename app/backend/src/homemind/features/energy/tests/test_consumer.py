@@ -182,6 +182,9 @@ class MemoryCatalog:
     def appliances_for_household(self, conn, household_id, at):  # ENERGY-01 (contrato)
         raise AssertionError("unexpected appliance listing")
 
+    def create_learned_appliance(self, conn, household_id, **kwargs):  # ENERGY-04 (contrato)
+        raise AssertionError("unexpected catalogue write")
+
 
 @pytest.mark.parametrize("aggregated", [False, True])
 def test_catalog_socket_location_in_detected_and_closed(aggregated):

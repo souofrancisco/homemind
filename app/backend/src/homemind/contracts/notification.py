@@ -61,6 +61,8 @@ class NotificationKind(StrEnum):
     automation_proposal = "automation_proposal"
     agent_action = "agent_action"
     info = "info"
+    # «O que é este aparelho?» (ENERGY-04): da casa, a primeira resposta fecha (não é votação).
+    appliance_identification = "appliance_identification"
 
 
 class NotificationSeverity(StrEnum):
@@ -116,6 +118,7 @@ class RefType(StrEnum):
     presence_check = "presence_check"  # `PresenceConfirmationRequest.id`
     safety_alert = "safety_alert"  # `SafetyAlert.id`
     contestation = "contestation"  # `Contestation.id` (BILL-06)
+    appliance_identification = "appliance_identification"  # `ApplianceIdentificationRequest.id`
 
 
 class NotificationRef(ContractModel):

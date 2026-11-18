@@ -45,6 +45,9 @@ COLD_ROOM_EVENT_TYPES = ("alerts.cold_room",)
 CONTESTATION_CONSUMER = "notifications.contestation"
 CONTESTATION_EVENT_TYPES = ("billing.contestation_changed",)
 
+IDENTIFICATION_CONSUMER = "notifications.appliance_identification"
+IDENTIFICATION_EVENT_TYPES = ("energy.identification_needed",)
+
 Handler = Callable[[sqlite3.Connection, StoredEvent], list[de.DomainEvent]]
 
 
@@ -218,6 +221,24 @@ def make_contestation_handler(clock: Callable[[], datetime]) -> Handler:
     return handler
 
 
+def make_identification_handler(clock: Callable[[], datetime]) -> Handler:
+    """`energy.identification_needed` (ENERGY-04) -> «O que é este aparelho?» da casa."""
+
+    def handler(conn: sqlite3.Connection, stored: StoredEvent) -> list[de.DomainEvent]:
+        ev = stored.event
+        if not isinstance(ev, de.EnergyIdentificationNeeded):
+            return []
+        out = _service(conn, clock).on_identification_needed(
+            ev.data,
+            household_id=ev.household_id,
+            correlation_id=ev.correlation_id,
+            provenance=ev.provenance,
+        )
+        return list(out.events)
+
+    return handler
+
+
 # Todos os consumidores da feature: (nome, fábrica, tipos).
 CONSUMERS: tuple[tuple[str, Callable[[Callable[[], datetime]], Handler], tuple[str, ...]], ...] = (
     (CONFIRMATION_CONSUMER, make_confirmation_handler, CONFIRMATION_EVENT_TYPES),
@@ -229,4 +250,5 @@ CONSUMERS: tuple[tuple[str, Callable[[Callable[[], datetime]], Handler], tuple[s
     (PEAK_CONSUMER, make_peak_handler, PEAK_EVENT_TYPES),
     (COLD_ROOM_CONSUMER, make_cold_room_handler, COLD_ROOM_EVENT_TYPES),
     (CONTESTATION_CONSUMER, make_contestation_handler, CONTESTATION_EVENT_TYPES),
+    (IDENTIFICATION_CONSUMER, make_identification_handler, IDENTIFICATION_EVENT_TYPES),
 )

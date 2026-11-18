@@ -19,6 +19,7 @@ Ser o **único canal de comunicação com o utilizador**: avisos, perguntas inte
 | `security_alert` | `safety.alert_raised` (fumo; P2) | Casa | Não | «Detetor de fumo em alarme. Se houver perigo, sai de casa e liga 112. Este sistema não substitui um detetor de fumo certificado.» |
 | `comfort_alert` | `safety.alert_raised` (janela aberta com aquecimento; P2) | Pessoal (inquilino do quarto) ou casa | Não | «A janela do teu quarto está aberta há mais de 5 minutos com o aquecimento ligado.» |
 | `presence_check` | `presence.confirmation_needed` (P2) | Pessoal | Sim | «Não temos a certeza se estás em casa. Podes confirmar?» [Estou em casa] [Estou fora] |
+| `appliance_identification` | `energy.identification_needed` (P1, ENERGY-04) | Casa (inquilinos ativos) | Sim, a primeira resposta fecha | «Um aparelho de ~800 W liga muitas vezes por volta das 8h. O que é?» [É meu] [É da casa] [Ignorar] |
 | `saving_tip` | `alerts`/agente | Pessoal | Não | Recomendação de poupança |
 | `automation_proposal` | `automations` | Casa | Sim | Proposta de regra para aprovar |
 | `agent_action` | agente | Pessoal | Sim | Ação sugerida com confirmação |
@@ -105,6 +106,7 @@ Refs #95 (APP-02) e #96 (APP-03); não as fecham (faltam UI, WebSocket e os prod
 | `notifications.attribution_changed` | `billing.attribution_changed` | Só atribuições `active` de um consumo que a P3 perguntou (existe um `confirmation_request` com esse `ref`); alvo morador -> info pessoal «Registado na tua conta» ao pagador; alvo comum -> info pessoal «Dividido por todos» a cada votante ainda inquilino ativo. Nunca da casa; sem nomes de terceiros (P-18) |
 | `notifications.allocation_published` | `billing.allocation_published` | info pessoal «Recibo disponível» (`ref = allocation`) ao inquilino ativo; o valor fica na app |
 | `notifications.budget_threshold` | `alerts.threshold_crossed` | `budget_alert` pessoal ao dono do orçamento (ALERT-01) |
+| `notifications.appliance_identification` | `energy.identification_needed` | `appliance_identification` **da casa** para os inquilinos ativos (`ResidentDirectory.tenants`), `info`; ações `mine` («É meu»), `household` («É da casa»), `ignore` («Ignorar»); `expires_at` do pedido; `ref = appliance_identification`; id derivado do pedido; saltado se já caducou ou sem inquilinos; texto só com potência arredondada e hora local, sem nomes. A primeira resposta fecha; a energia trata `notification.responded` (ENERGY-04). O senhorio não a vê (allow-list) |
 | `notifications.peak_alert` | `alerts.alert_raised` (`kind=peak`) | `peak_alert` da casa, `warning`, sem botões (ALERT-03): «A zona «Sala» está a gastar 2,0 kW há 35 min.»; aparelho só se vier no evento (comum, identificado com confiança); sem zona comum → «Pico de consumo por identificar»; sem potência ou início → nada. Os outros `kind` ainda não têm produtor e são ignorados |
 
 Todos: membership terminada ou papel que não seja inquilino -> nada; origem simulada -> «(SIMULADO)»; o senhorio continua a ver só `info` (allow-list), e as informações são pessoais, por isso não lhe chegam.

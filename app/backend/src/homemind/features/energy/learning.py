@@ -1,6 +1,10 @@
-"""Deterministic session observations and incremental appliance signatures."""
+"""Deterministic session observations and incremental appliance signatures.
 
-from dataclasses import dataclass
+ENERGY-04: the signature is rebuilt from the non-revoked per-event samples
+(`rebuild_signature`), plus a fixed baseline for signatures learned before 0401.
+"""
+
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
@@ -140,4 +144,71 @@ def learn(
         samples=n + 1,
         origin=SignatureOrigin.learned,
         updated_at=obs.ended_at,
+    ), counts
+
+
+def signature_id_for(appliance_id: UUID) -> UUID:
+    """One learned signature per appliance (ENERGY-01)."""
+    return stable_id("energy.signature", str(appliance_id))
+
+
+@dataclass(frozen=True)
+class SignatureSample:
+    """One non-revoked per-event sample (ENERGY-04): power above base, duration, pattern, hour."""
+
+    power_w: float
+    duration_s: float
+    pattern: SignaturePattern
+    hour_local: int
+
+
+@dataclass(frozen=True)
+class SignatureBaseline:
+    """Aggregate learned before per-event samples existed (migration 0401); never revocable."""
+
+    samples: int
+    watts_mean: float
+    duration_typical_s: int | None
+    typical_hours: tuple[int, ...] = ()
+    pattern_counts: dict[SignaturePattern, int] = field(default_factory=dict)
+
+
+def rebuild_signature(
+    appliance_id: UUID,
+    samples: list[SignatureSample],
+    *,
+    baseline: SignatureBaseline | None = None,
+    locked: SignaturePattern | None = None,
+    updated_at: datetime,
+) -> tuple[ApplianceSignature | None, dict[SignaturePattern, int]]:
+    """Signature from the current samples (same rules as `learn`): mean power and duration,
+    tolerance max(50 W, 10 %), most frequent pattern (lexical tie-break) unless locked, and the
+    union of local start hours. No samples and no baseline: no signature (`None`)."""
+    n0 = baseline.samples if baseline else 0
+    n = n0 + len(samples)
+    counts: dict[SignaturePattern, int] = dict(baseline.pattern_counts) if baseline else {}
+    for s in samples:
+        counts[s.pattern] = counts.get(s.pattern, 0) + 1
+    if n == 0:
+        return None, {}
+    mean = ((baseline.watts_mean * n0 if baseline else 0) + sum(s.power_w for s in samples)) / n
+    if mean <= 50:
+        raise ValueError("a signature requires a mean power above 50 W")
+    duration = (
+        ((baseline.duration_typical_s or 0) * n0 if baseline else 0)
+        + sum(s.duration_s for s in samples)
+    ) / n
+    dominant = min(counts, key=lambda p: (-counts[p], p.value))
+    hours = set(baseline.typical_hours if baseline else ()) | {s.hour_local for s in samples}
+    return ApplianceSignature(
+        id=signature_id_for(appliance_id),
+        appliance_id=appliance_id,
+        watts_mean=mean,
+        watts_tolerance=max(50.0, mean * 0.1),
+        duration_typical_s=max(1, round(duration)),
+        pattern=locked or dominant,
+        typical_hours=sorted(hours),
+        samples=n,
+        origin=SignatureOrigin.learned,
+        updated_at=updated_at,
     ), counts
