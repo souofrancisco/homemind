@@ -9,7 +9,10 @@ import type { AppRole, SectionId } from "../app/routes";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { useAuth } from "../app/providers/AuthProvider";
 import BillsContent from "./BillsPage";
+import RoomAllowanceLine from "../components/billing/RoomAllowanceLine";
+import { listRoomAllowances, type RoomAllowanceView } from "../services/billing/allowances";
 import HouseRulesCard from "../components/billing/HouseRulesCard";
+import OccupancyCard from "../components/presence/OccupancyCard";
 import Dashboard from "./DashboardPage";
 import AppliancesContent from "./AppliancesPage";
 import EnergyContent from "./EnergyPage";
@@ -152,6 +155,18 @@ function HouseContent() {
   const membership = session.membership;
   const role = membership?.role;
   const ownRoom = session.rooms.find((room) => room.id === membership?.room_id);
+  const householdId = membership?.household_id;
+  // Plafond por quarto em vigor este mês e mudança agendada (BILL-03); sem resposta, o valor
+  // da criação do quarto (`RoomView.included_wh`).
+  const [allowances, setAllowances] = useState<Record<string, RoomAllowanceView>>({});
+  useEffect(() => {
+    if (!householdId || role === "operator") return;
+    let active = true;
+    listRoomAllowances(householdId)
+      .then((list) => { if (active) setAllowances(Object.fromEntries(list.map((v) => [v.room_id, v]))); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [householdId, role]);
   if (session.houseStatus === "loading") {
     return <Group gap="sm" role="status"><Loader size="sm" /><Text>A carregar a casa…</Text></Group>;
   }
@@ -189,6 +204,7 @@ function HouseContent() {
           <Text c="dimmed" size="sm">Esta associação vem do teu contrato, não de sensores de presença.</Text>
         </Card>
       )}
+      {role === "tenant" && <OccupancyCard householdId={session.house.id} />}
       <section aria-labelledby="room-list-title">
         <Title id="room-list-title" order={3} size="h4" mb="sm">Divisões da casa</Title>
         {session.rooms.length ? (
@@ -200,7 +216,10 @@ function HouseContent() {
                   <Stack gap={3}>
                     <Text fw={600}>{room.name}</Text>
                     <Text size="xs" c="dimmed">{room.kind === "common" ? "Zona comum" : "Quarto"}</Text>
-                    {room.included_wh ? (
+                    {householdId && allowances[room.id] ? (
+                      <RoomAllowanceLine householdId={householdId} view={allowances[room.id]} canEdit={role === "landlord"}
+                        onChange={(v) => setAllowances((all) => ({ ...all, [v.room_id]: v }))} />
+                    ) : room.included_wh ? (
                       <Text size="xs" c="teal">Plafond solidário: {(room.included_wh / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 1 })} kWh/mês de aquecimento pagos por todos</Text>
                     ) : null}
                   </Stack>

@@ -153,18 +153,32 @@ def compose_cold_room(
     window_nights: int,
     threshold_c: float,
     coldest_night_c: float,
+    allowance_left_wh: int | None = None,
     origin: Origin,
     correlation_id: UUID,
     source_event_id: UUID,
     now: datetime,
 ) -> Notification:
-    """Quarto frio (ALERT-06): pessoal, privado e sem ações. Não promete valores de plafond."""
+    """Quarto frio (ALERT-06): pessoal, privado e sem ações. Diz o plafond solidário que o
+    quarto ainda tem no mês, só se billing o calculou (`None`: sem plafond, não se promete)."""
     t, c = f"{threshold_c:.0f}".replace(".", ","), f"{coldest_night_c:.1f}".replace(".", ",")
     body = (
         f"O teu quarto esteve abaixo de {t} °C em {cold_nights} das últimas {window_nights}"
-        f" noites (a mais fria em média: {c} °C). Não deixes de aquecer por causa da conta;"
-        " se precisares, fala com a casa sobre o plafond solidário."
+        f" noites (a mais fria em média: {c} °C). Não deixes de aquecer por causa da conta"
     )
+    if allowance_left_wh is None:
+        body += "; se precisares, fala com a casa sobre o plafond solidário."
+    elif allowance_left_wh > 0:
+        kwh = f"{allowance_left_wh / 1000:.1f}".replace(".", ",")
+        body += (
+            f": este mês o teu quarto ainda tem {kwh} kWh do plafond solidário, e esse"
+            " aquecimento é pago por todos."
+        )
+    else:
+        body += (
+            ": o plafond solidário do teu quarto deste mês já foi usado; se precisares,"
+            " fala com a casa."
+        )
     return Notification(
         id=notification_id_for(source_event_id, NotificationKind.comfort_alert),
         household_id=household_id,

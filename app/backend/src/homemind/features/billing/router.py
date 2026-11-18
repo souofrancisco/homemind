@@ -33,6 +33,8 @@ from homemind.contracts.billing import (
     LandlordBillView,
     LandlordContestationView,
     ReceiptExplanation,
+    RoomAllowanceIn,
+    RoomAllowanceView,
     RuleVoteIn,
     TariffIn,
     TariffStatus,
@@ -62,6 +64,7 @@ from homemind.features.billing import (
     explanation,
     peaks,
     presence_rule,
+    room_allowances,
     rules,
     tariff,
 )
@@ -562,3 +565,40 @@ async def withdraw_house_rules(
     return await _rules_change(
         request, db, lambda conn: rules.withdraw(conn, access.household_id, access.resident_id, now)
     )
+
+
+# --- plafond solidário editado (BILL-03) ---------------------------------------------------------
+
+RoomRead = Annotated[HouseholdAccess, Depends(require_access(Resource.room))]
+RoomWrite = Annotated[HouseholdAccess, Depends(require_access(Resource.room, Operation.write))]
+
+
+@router.get("/households/{household_id}/room-allowances")
+async def list_room_allowances(
+    access: RoomRead, db: DbDep, clock: ClockDep
+) -> list[RoomAllowanceView]:
+    """Plafond de cada quarto este mês e a mudança agendada (visível a todos os membros)."""
+    now = clock()
+    return await db.run(lambda conn: room_allowances.views(conn, access.household_id, now))
+
+
+@router.put("/households/{household_id}/room-allowances/{room_id}")
+async def set_room_allowance(
+    room_id: UUID, body: RoomAllowanceIn, access: RoomWrite, db: DbDep, clock: ClockDep
+) -> RoomAllowanceView:
+    """Só senhorio. Agenda o novo plafond mensal para o dia 1 do mês seguinte (substitui o
+    agendado); nunca muda o mês em curso nem faturas fechadas. `404` quarto de outra casa ·
+    `400` zona comum."""
+    now = clock()
+    try:
+        return await db.run(
+            lambda conn: room_allowances.schedule(
+                conn, access.household_id, room_id, body.included_wh, access.resident_id, now
+            )
+        )
+    except LookupError:
+        raise HTTPException(
+            404, {"code": "room_not_found", "message": "Quarto não encontrado"}
+        ) from None
+    except ValueError as e:
+        raise HTTPException(400, {"code": "invalid_request", "message": str(e)}) from None

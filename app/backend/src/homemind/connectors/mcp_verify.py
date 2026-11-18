@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from homemind.connectors.mcp_home import McpHome, _lamp_state, _rgb_confere
+from homemind.connectors.mcp_home import McpHome, _lamp_state, _rgb_confere, cor_verificavel
 from homemind.connectors.write_grant import write_grant
 from homemind.core.config import get_settings
 
@@ -53,7 +53,8 @@ async def verify_lamp(home: McpHome) -> dict[str, Any]:
             f"restaurar o estado inicial ({inicial.model_dump(mode='json')})",
         ],
     )
-    test = [{"type": "power", "value": "on"}, TEST_COLOR, TEST_BRIGHTNESS]
+    # Brilho antes da cor: escrever o brilho depois anula a cor (mcp-capabilities.md).
+    test = [{"type": "power", "value": "on"}, TEST_BRIGHTNESS, TEST_COLOR]
 
     def aplicado(d: dict) -> bool:
         s = _lamp_state(d)
@@ -65,18 +66,24 @@ async def verify_lamp(home: McpHome) -> dict[str, Any]:
     result["failure_reason"] = home.ultima_falha
     # Restauro sempre tentado, mesmo que a alteração tenha falhado.
     restore: list[dict[str, Any]] = []
+    if inicial.brilho:
+        restore.append({"type": "brightness", "value": inicial.brilho})
     if inicial.rgb:
         r, g, b = inicial.rgb
         restore.append({"type": "color_rgb", "redValue": r, "greenValue": g, "blueValue": b})
-    if inicial.brilho:
-        restore.append({"type": "brightness", "value": inicial.brilho})
     restore.append({"type": "power", "value": "on" if inicial.ligada else "off"})
+    # A brilho baixo a cor lida não distingue cores: só se confirma ligada e brilho.
+    cor_confirmavel = cor_verificavel(_escalar(inicial), inicial.brilho)
+    result["restored_color_verified"] = cor_confirmavel
 
     def restaurado(d: dict) -> bool:
         s = _lamp_state(d)
         return s.ligada is inicial.ligada and (
             not inicial.ligada
-            or (s.brilho == inicial.brilho and _rgb_confere(d, _escalar(inicial)))
+            or (
+                s.brilho == inicial.brilho
+                and (not cor_confirmavel or _rgb_confere(d, _escalar(inicial)))
+            )
         )
 
     result["restored_confirmed"] = await home._escrever("lamp", restore, restaurado)

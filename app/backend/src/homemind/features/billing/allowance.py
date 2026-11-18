@@ -2,9 +2,10 @@
 
 Premissas (explícitas, documentadas em `docs/modules/billing.md`):
 - O plafond é `room.included_wh` por MÊS e por quarto (configurado pelo senhorio na criação do
-  quarto, visível antes da adesão). Uma fatura que não seja um mês de calendário recebe a
-  proporção de cada mês que cobre (dias do período nesse mês ÷ dias do mês), arredondado
-  para baixo ao Wh: novembro inteiro = X; outubro + novembro = 2X.
+  quarto, visível antes da adesão). O senhorio pode mudá-lo depois, só a partir do mês seguinte
+  (`billing_room_allowance`, ver `closing.monthly_allowance`). Uma fatura que não seja um mês
+  de calendário recebe a proporção de cada mês que cobre (dias do período nesse mês ÷ dias do
+  mês), arredondado para baixo ao Wh: novembro inteiro = X; outubro + novembro = 2X.
 - Só conta o aquecimento PROVADO: consumo com aparelho identificado (assinatura com vencedor)
   da categoria `heating`, medido numa tomada do PRÓPRIO quarto e atribuído ao seu morador.
   Sem prova (aparelho não identificado ou ambíguo) o benefício não se aplica; a explicação do
@@ -17,7 +18,7 @@ Funções puras: sem base de dados.
 """
 
 import calendar
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import date, timedelta
 from fractions import Fraction
@@ -29,16 +30,20 @@ from homemind.contracts.energy import ConsumptionEvent, LocationKind
 from homemind.features.billing.allocation import EnergyShare
 
 
-def period_limit(monthly_wh: int, period: BillPeriod) -> int:
-    """Plafond de um período: soma, por mês de calendário, da fração do mês coberta."""
-    months = Fraction(0)
+def period_limit(monthly_wh: int | Callable[[date], int], period: BillPeriod) -> int:
+    """Plafond de um período: soma, por mês de calendário, da fração do mês coberta.
+
+    `monthly_wh` pode depender do mês (função do dia 1 → Wh): um plafond editado só vale a
+    partir do mês em que começa."""
+    per_month = monthly_wh if callable(monthly_wh) else (lambda _: monthly_wh)
+    total = Fraction(0)
     d = period.start
     while d <= period.end:
         last = date(d.year, d.month, calendar.monthrange(d.year, d.month)[1])
         end = min(last, period.end)
-        months += Fraction((end - d).days + 1, last.day)
+        total += per_month(d.replace(day=1)) * Fraction((end - d).days + 1, last.day)
         d = end + timedelta(days=1)
-    return floor(monthly_wh * months)
+    return floor(total)
 
 
 def is_proven_heating(

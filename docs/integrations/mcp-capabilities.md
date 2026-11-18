@@ -265,6 +265,23 @@ RESULTADO REAL, obtido com `get_home_devices` e `get_device_details` (nenhuma es
 
 Para ajudar a distinguir H1, quando uma escrita não é confirmada o `McpHome` acrescenta ao motivo o tempo sem contacto, por exemplo «estado final não corresponde ao pedido (dispositivo sem contactar a cloud há 14 min)». É só diagnóstico: nunca bloqueia nem repete escritas. **PRESSUPOSTO:** `lastCommunicationTime` reflete o último contacto do dispositivo com a cloud; confirmar com os mentores.
 
+### Escrita da lâmpada: a ordem dos comandos importa — **OBSERVADO** em 2026-11-18 (REAL)
+
+Três observações com o operador a olhar para a lâmpada (`workMode: colour`):
+
+| Sequência enviada | Resultado físico e na leitura |
+|---|---|
+| `power` → `color_rgb` vermelho → `brightness` 40 (verificação de 18/11) | Lâmpada vista vermelha; a cor antiga já era essa, por isso parecia certo (em 17/11 a mesma sequência não teve efeito físico, causa não apurada) |
+| `color_rgb` branco-azulado → `brightness` 1 → `power` (restauro de 18/11) | Cor azulada vista e depois **vermelho a 1 %** (leitura bruta `3,0,0`) |
+| `power` → `color_rgb` branco-azulado → `brightness` 40 (ensaio de 18/11) | Cor azulada vista e depois **vermelho a 40 %** (`102,0,0`) |
+| `brightness` 40 → `color_rgb` branco-azulado (ensaio de 18/11) | **Branco-azulado a 40 %** (`80,80,102`), visto pelo operador |
+
+**Conclusão (observada, 3 casos):** escrever `brightness` **depois** de `color_rgb` anula a cor e repõe a cor anterior; com `brightness` primeiro e a cor depois ficam as duas. H1 (lâmpada sem ligação) e a hipótese do «comando perdido» não são necessárias para explicar estes resultados; a lâmpada seguiu sempre o estado devolvido pela nuvem. **Não se sabe** se a cor antiga é guardada pela nuvem ou pela lâmpada.
+
+**Consequências (IMPLEMENTADO neste branch, validado só por testes com `FakeMcp`; falta repetir no kit real):**
+- `McpHome._escrever_lampada` e `mcp_verify.verify_lamp` (teste e restauro) enviam agora `brightness` **antes** de `color_rgb`.
+- `_rgb_confere` compara com a tolerância `_RGB_TOL = 3` sobre o RGB escalado pelo brilho; a brilho muito baixo qualquer cor passava (o restauro «confirmado» a 18/11 era um falso positivo). `cor_verificavel` devolve `False` quando o RGB escalado não excede `2 × _RGB_TOL` (brilho < ~2,4 % para 255): aí `_rgb_confere` nunca «confere», e as escritas só exigem ligada e brilho (`restored_color_verified: false` no `verify_lamp`; a cor vê-se a olho).
+
 ## Limites da evidência
 
 - Leituras de `get_home_devices` e `get_device_details` foram efetuadas. Escritas: ver a

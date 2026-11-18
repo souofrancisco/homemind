@@ -187,10 +187,19 @@ def _normalizar(rgb: tuple[int, int, int] | None, brilho: int | None):
     return tuple(min(255, round(c * 100 / brilho)) for c in rgb)
 
 
+def cor_verificavel(esperado: tuple[int, int, int], brilho: int | None) -> bool:
+    """A cor só se confirma se o RGB escalado pelo brilho excede a tolerância.
+
+    A brilho baixo o RGB devolvido tem valores 0–3 e a tolerância cobre-os todos: qualquer cor
+    «confere» (observado em 2026-11-18: vermelho a 1 % passou por branco-azulado).
+    """
+    return brilho is not None and max(esperado) * brilho / 100 >= 2 * _RGB_TOL
+
+
 def _rgb_confere(device: dict[str, Any], esperado: tuple[int, int, int]) -> bool:
     """Compara com o valor efetivamente devolvido, escalado pelo brilho devolvido."""
     raw, brilho = _rgb(_capabilities(device).get("color_rgb")), _brilho(device)
-    if raw is None or brilho is None:
+    if raw is None or brilho is None or not cor_verificavel(esperado, brilho):
         return False
     return all(abs(r - e * brilho / 100) <= _RGB_TOL for r, e in zip(raw, esperado, strict=True))
 
@@ -372,6 +381,12 @@ class McpHome:
             self._poll_task = None
         await self._con.fechar()
 
+    @property
+    def lamp_ref(self) -> str | None:
+        """Id MCP da lâmpada descoberta (`None` antes da descoberta ou sem lâmpada). Só para o
+        conector derivar um id interno estável; nunca sai para a API, logs ou eventos."""
+        return (self._ids or {}).get("lamp")
+
     # ---- Home ----------------------------------------------------------------------------
     async def definir_lampada(
         self, ligada: bool, cor: Cor | None = None, brilho: int | None = None
@@ -396,17 +411,24 @@ class McpHome:
         # O power é sempre enviado (idempotente): a cache pode estar desatualizada (alguém
         # apagou a luz na app da Altice) e omiti-lo daria um falso negativo.
         changes.append({"type": "power", "value": "on" if ligada else "off"})
+        # O brilho vai ANTES da cor: no kit real escrever `brightness` depois de `color_rgb`
+        # anula a cor enviada e repõe a anterior (observado em 2026-11-18, mcp-capabilities.md).
+        if brilho is not None:
+            changes.append({"type": "brightness", "value": brilho})
         if cor is not None:
             r, g, b = CORES[cor]
             changes.append({"type": "color_rgb", "redValue": r, "greenValue": g, "blueValue": b})
-        if brilho is not None:
-            changes.append({"type": "brightness", "value": brilho})
 
         def confirmado(d: dict[str, Any]) -> bool:
             casa = _lamp_state(d)
             return (
                 casa.ligada is ligada
-                and (cor is None or _rgb_confere(d, CORES[cor]))
+                # a brilho muito baixo a cor lida não distingue cores: só se exige ligada e brilho
+                and (
+                    cor is None
+                    or not cor_verificavel(CORES[cor], casa.brilho)
+                    or _rgb_confere(d, CORES[cor])
+                )
                 and (brilho is None or casa.brilho == brilho)
             )
 

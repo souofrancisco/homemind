@@ -74,7 +74,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `presence.changed` | P2 | `PersonPresence` | P4, P3 | idem |
 | `presence.cue_recorded` (PROPOSTA) | P2 | `PresenceEvent` (Wi-Fi, manual, aparelho) | P2 | idem |
 | `presence.confirmation_needed` (PROPOSTA) | P2 | `PresenceConfirmationRequest` | P3 (`notifications.presence_check`, **IMPLEMENTADO**) | idem |
-| `presence.occupancy_changed` (PROPOSTA) | P2 | `HouseOccupancy` (anónimo) | P2, P3 | idem |
+| `presence.occupancy_changed` (PROPOSTA, **IMPLEMENTADO**, PRES-06) | P2 | `HouseOccupancy` (anónimo; só quando o estado muda; `likely_empty` = porta fiável a 0) | P2, P3, SAFE-02 (futuro) | idem |
 | `sensor.reading_recorded` (PROPOSTA) | P1 | `SensorReading` | P2 | idem |
 | `safety.alert_raised` (PROPOSTA) | P2 | `SafetyAlert` (o mesmo `id` volta com `status=resolved`) | P3 (`notifications.safety_alert`, **IMPLEMENTADO**); P3 (`agent.safety_suggestion`, **IMPLEMENTADO**, AGENT-03b: só propõe, uma `ProposedAction` por inquilino ativo; alerta resolvido → propostas pendentes `rejected`; em runtime real só dispara quando a `safety` tiver o resolvedor de aquecedores, ENERGY-03 #81; hoje só na demo SIMULADA e nos testes) | idem |
 | `billing.confirmation_needed` | P4 | `ConfirmationRequest` | P3 (consumidor `notifications.confirmation_needed`, **IMPLEMENTADO**) | idem |
@@ -87,7 +87,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `notification.responded` | P3 | `NotificationRespondedData` (resposta + `ref` + `outcome` nas confirmações: um evento por voto; P4 só atribui com `outcome.decided`) | P4 | idem |
 | `alerts.threshold_crossed` | P4 | `BudgetThreshold` | P3 (`notifications.budget_threshold`, **IMPLEMENTADO**); P3 (`agent.budget_light`, ALERT-06: proposta de cor na lâmpada, **IMPLEMENTADO**) | idem |
 | `alerts.alert_raised` | P4 | `AlertRaisedData` | P3 (`notifications.peak_alert`, `kind=peak` e `kind=anomaly`, **IMPLEMENTADO**) | idem |
-| `alerts.cold_room` | P4 | `ColdRoomData` (ALERT-06: quarto do morador várias noites < 18 °C; privado) | P3 (`notifications.cold_room`, **IMPLEMENTADO**) | idem |
+| `alerts.cold_room` | P4 | `ColdRoomData` (ALERT-06: quarto do morador várias noites < 18 °C; privado; `allowance_left_wh` = plafond solidário que resta no mês ou `null`) | P3 (`notifications.cold_room`, **IMPLEMENTADO**) | idem |
 | `agent.action_proposed` | P3 | `ProposedAction` | P3 (`notifications.agent_action`, **IMPLEMENTADO**: aviso pessoal sem botões; emitido pelo chat e pelo `agent.safety_suggestion`; o contrato não tem `source`, #157) | idem |
 | `automation.proposed` | P3 | `AutomationRule` | P3 | idem |
 | `automation.executed` | P1 | `AutomationExecutedData` | P3 | idem |
@@ -157,7 +157,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | `GET` | `/api/households/{id}/presence` | T | **Só o próprio** (opt-in); **L/O: 403**; ainda PLANEADO |
 | `PUT` | `/api/presence/me` | T | `PresenceMeIn` `{ "state": "in" \| "out" }` (substitui «cheguei/saí») |
 | `GET` | `/api/presence/camera/status` | O | `CameraStatus`: só diagnóstico (FPS, `camera_ok`, fonte e origem); sem imagens nem URL |
-| `GET` | `/api/households/{id}/occupancy` | T | `HouseOccupancy` (PROPOSTA): número de pessoas e visitas, sem nomes; **L: 403** |
+| `GET` | `/api/presence/occupancy?household_id=` | T | `HouseOccupancy` (PRES-05, **IMPLEMENTADO**): número de pessoas e visitas, sem nomes; **L/O: 403**; `uncertain` com contagem incoerente |
 | `GET`·`POST`·`DELETE` | `/api/presence/devices` | T (own) | `PresenceDeviceView` (PROPOSTA): telemóvel para o Wi-Fi, consentimento e revogação; nunca o MAC |
 
 ### Atribuição, fatura e recibos (P4)
@@ -174,7 +174,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | `GET` · `PUT` `DELETE` | `/api/households/{id}/rules` · `…/rules/next` | L, T (ler) · T (agendar/cancelar) | **IMPLEMENTADO (HOUSE-04):** `HouseRulesView`; `HouseRulesIn` agenda para o dia 1 do mês seguinte |
 | `GET` `PUT` | `/api/households/{id}/budgets/me?period` | T | **IMPLEMENTADO (ALERT-01):** `BudgetIn` → `BudgetStatus` (com `forecast: BudgetForecast \| null`, ALERT-02) |
 | `GET` `PUT` | `/api/households/{id}/tariff` | L (definir), L e T (ver) | **IMPLEMENTADO (ALERT-02):** `TariffIn` → `TariffStatus` (simples ou bi-horário; só estimativas) |
-| `GET` `PUT` | `/api/households/{id}/room-allowances` | L | Plafond por quarto |
+| `GET` · `PUT` | `/api/households/{id}/room-allowances` · `…/{room_id}` | L, T (ler) · L (agendar) | **IMPLEMENTADO (BILL-03):** `RoomAllowanceView`; `RoomAllowanceIn` vale no mês seguinte |
 
 ### Notificações (P3)
 
