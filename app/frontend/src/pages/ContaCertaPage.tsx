@@ -9,6 +9,9 @@ import type { AppRole, SectionId } from "../app/routes";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { useAuth } from "../app/providers/AuthProvider";
 import BillsContent from "./BillsPage";
+import Dashboard from "./DashboardPage";
+import AppliancesContent from "./AppliancesPage";
+import EnergyContent from "./EnergyPage";
 import BudgetContent from "./BudgetPage";
 import NotificationsContent from "./NotificationsPage";
 import { getCameraStatus, listMcpTools, type CameraStatus, type McpTool } from "../services/diagnostics/api";
@@ -16,14 +19,16 @@ import { getCameraStatus, listMcpTools, type CameraStatus, type McpTool } from "
 type Placeholder = { title: string; detail: string; dependency: string; badge?: string };
 const placeholders: Record<"consumption" | "appliances" | "notifications" | "assistant" | "diagnostics", Placeholder> = {
   consumption: {
-    title: "O consumo ainda não está disponível",
-    detail: "O collector MCP já produz leituras internamente, mas ainda não existe uma API de produto para consultar medições ou resumos nesta página.",
-    dependency: "Faltam os motores ENERGY e os endpoints de leitura. Não apresentamos métricas inventadas.",
+    title: "Sem consumo para mostrar neste papel",
+    detail: "Leituras e sessões são dados de hábitos e só estão disponíveis ao morador. O senhorio consulta totais mensais por quarto em «Contas e recibos».",
+    dependency: "Isolamento de privacidade (PRIV-01).",
+    badge: "Restrito",
   },
   appliances: {
-    title: "O catálogo de aparelhos ainda não está disponível",
-    detail: "O contrato distingue aparelhos consumidores de dispositivos físicos e medidores. Não existe ainda uma API de catálogo integrada.",
-    dependency: "HOUSE-03 (#86, PR #142) continua aberto. Não inferimos propriedade nem quem paga.",
+    title: "Catálogo restrito ao morador",
+    detail: "O operador vê apenas diagnóstico técnico de dispositivos; aparelhos e proprietários são dados do morador.",
+    dependency: "Isolamento de privacidade (PRIV-01).",
+    badge: "Restrito",
   },
   notifications: {
     title: "Não existem notificações visíveis",
@@ -277,6 +282,12 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
   const session = useHouseholdSession();
   const role = session.membership?.role;
   if (!role) return null;
+  if (section === "home" && role === "tenant") return (
+    <Stack gap="xl">
+      <PageHeading title="A tua energia, com contas claras" description="Tudo o que o servidor sabe agora; o que falta aparece como «Sem dados»." />
+      <Dashboard />
+    </Stack>
+  );
   if (section === "home") return <HomeContent role={role} />;
   if (section === "house") return (
     <Stack gap="xl">
@@ -290,6 +301,18 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
         ? "Faturas registadas e estado do processamento. Os rascunhos são visíveis apenas ao senhorio."
         : "Faturas finalizadas que o backend disponibiliza à tua membership."} />
       <BillsContent />
+    </Stack>
+  );
+  if (section === "consumption" && role === "tenant") return (
+    <Stack gap="xl">
+      <PageHeading title={screenLabels.consumption} description="Leituras por tomada e sessões detetadas, com origem e confiança." />
+      <EnergyContent />
+    </Stack>
+  );
+  if (section === "appliances" && role === "tenant") return (
+    <Stack gap="xl">
+      <PageHeading title={screenLabels.appliances} description="Catálogo dos aparelhos da casa (HOUSE-03)." />
+      <AppliancesContent />
     </Stack>
   );
   if (section === "budget") return (
