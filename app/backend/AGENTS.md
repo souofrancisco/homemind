@@ -1,16 +1,16 @@
 # Backend — Conta Certa
 
-Regras gerais em [`../../CLAUDE.md`](../../CLAUDE.md). Aqui só o específico do backend (`src/homemind/`). **O código de produto é ainda o do ObjectOS**; a **fundação F0 está implementada** (contratos, SQLite, barramento, guardas por papel, OpenAPI) e os módulos novos de P1–P4 são **planeados** (ver [`../../docs/architecture/migration.md`](../../docs/architecture/migration.md)).
+Regras gerais em [`../../CLAUDE.md`](../../CLAUDE.md). Aqui só o específico do backend (`src/homemind/`). A API de produto é a Conta Certa; o motor ObjectOS e as rotas antigas foram removidos na BASE-04 (#74). Ver o estado IMPLEMENTADO/PLANEADO em [`../../docs/architecture/migration.md`](../../docs/architecture/migration.md).
 
 ## FastAPI (implementado)
 
 - **Features:** cada `features/<nome>/router.py` expõe `router = APIRouter(...)`; `core/features.py` descobre-os por ordem alfabética e falha se houver rota duplicada. Não registar routers à mão em `main.py`.
-- **Ciclo de vida:** recursos arrancam e param no `lifespan` do router da feature. A ordem é a alfabética das pastas e hoje é usada de propósito: `engine` → `video` → `visao` (a visão precisa de `app.state.engine`). Quem cria uma tarefa ou thread, cancela-a e aguarda-a no `finally`.
-- **Dependências:** `CurrentUser` (`features/auth/service.py`) em todas as rotas `/api/*`; `EngineDep` para o motor antigo. Só `/healthz` é público. O WebSocket autentica-se na primeira mensagem; nunca tokens no URL.
+- **Ciclo de vida:** recursos arrancam e param no `lifespan` do router da feature. Não depender da ordem alfabética; quem cria uma tarefa ou thread, cancela-a e aguarda-a no `finally`.
+- **Dependências:** rotas `/api/*` usam a autenticação e guardas atuais de cada feature. Só `/healthz` é público. Não há WebSocket ativo no backend após BASE-04.
 - **Modelos:** Pydantic v2 com tipos de retorno nas rotas (geram o OpenAPI). Entradas com `extra="forbid"`.
 - **Erros:** `HTTPException(status, {"code": "...", "message": "..."})`; `core/errors.py` devolve sempre `{"error": {"code", "message"}}`. Nunca detalhes de exceções, URLs ou cabeçalhos na resposta ou no log (só o tipo).
 - **Event loop:** nada bloqueante em `async def`. I/O bloqueante vai para `def` (threadpool) ou `asyncio.to_thread`. Chamadas externas têm sempre timeout.
-- **Configuração:** `core/config.py` (`Settings`) para o comum; `features/engine/config.py` para o motor antigo. Sem `os.environ` espalhado.
+- **Configuração:** `core/config.py` (`Settings`) para a configuração comum. Sem `os.environ` espalhado.
 - **Logs:** `logging.getLogger(__name__)`; o logger `homemind` está a INFO. Só metadados: nunca frames, URL RTSP, tokens ou dados de pessoas.
 
 ## Fundação F0 (implementada)
@@ -35,10 +35,9 @@ Regras gerais em [`../../CLAUDE.md`](../../CLAUDE.md). Aqui só o específico do
 
 | Módulo | Responsabilidade | Destino (ver migração) |
 |---|---|---|
-| `features/video` | Último frame local de clip de teste; RTSP recusado no serviço e `GET /api/video` responde sempre 404 (PRIV-02) | ADAPT; não reabrir stream sem contrato/autorização e revisão |
-| `features/visao` | `DetetorYolo` (extra `visao`), thread de visão, anotação | ADAPT: só pessoa + linha na porta |
-| `features/gestos` | Gesto, presença, ponte thread→loop. Lógica pura | Gesto REMOVE (afinador já removido); ponte KEEP; presença ADAPT |
-| `features/engine` | Regras (`rules.json`), máquina de estados, energia, registo (`events.jsonl`), NVIDIA, REST e WS | Motor REMOVE; `llm.py` e WS ADAPT |
+| `features/video` | Fontes de vídeo locais e endpoint protegido de diagnóstico | Ver PRIV-02 e [`presence`](../../docs/modules/presence.md) |
+| `features/visao` | `dispositivo.py` e `pesos.py`, importados pelo detetor de presença | Sem thread ObjectOS, deteção de objetos ou pose |
+| `features/gestos` | `ponte.py` preservada (KEEP), sem consumidor de produção | Não contém processador de gestos nem presença binária |
 | `features/agent` (**parcial**, P3) | Assistente só de leitura: `POST /api/households/{id}/agent/messages`, dados SIMULADOS da casa demo, LLM desligado por omissão (`AGENT_LLM_ENABLED`); AGENT-03: ações propostas com confirmação (`agent_action`, `0310`), executor injetado (nesta feature só o simulado), nunca sem `confirm`; AGENT-03b: consumidor `agent.safety_suggestion` (só propõe); histórico `GET …/agent/messages` (`agent_message`, `0311`, só o próprio, nunca ao LLM) | [agent](../../docs/modules/agent.md) |
 | `features/notifications` (**parcial**, P3) | Notificações por casa (lista, leitura, resposta, preferências), persistência SQLite e consumidor `notifications.confirmation_needed`. WebSocket, limiares e picos PLANEADOS | [notifications](../../docs/modules/notifications.md) |
 | `features/auth`, `features/health`, `features/mcp` | JWT Authentik, healthz, diagnóstico MCP | KEEP/ADAPT |
@@ -48,16 +47,12 @@ Regras gerais em [`../../CLAUDE.md`](../../CLAUDE.md). Aqui só o específico do
 
 | Módulo | Dono | Documento |
 |---|---|---|
-| `households` (leituras e `core/*` implementados; escrita por REST planeada) | P5 | [households](../../docs/modules/households.md) |
-| `devices`, `energy` | P1 | [energy](../../docs/modules/energy.md) |
-| `presence` | P2 | [presence](../../docs/modules/presence.md) |
-| `billing`, `budgets`, `alerts` | P4 | [billing](../../docs/modules/billing.md) |
-| `automations` | P3 | [notifications](../../docs/modules/notifications.md) |
+| Funcionalidades planeadas em cada módulo | Vários | Consultar o estado por módulo em [`docs/modules`](../../docs/modules/). |
 
 O SDK `mcp` só é importado em `connectors/`. O resto do código só conhece o protocolo `Home` (`contracts/home.py`).
 
 ## Testes
 
-`uv run pytest -q` em `app/backend` (ou `make test`). Testes junto da feature em `tests/`; fakes em `tests/_fakes.py`, `contracts/simulacao.py` e `FakeMcp` (`connectors/tests`). Lógica testa-se com `FakeHome`, relógio injetado e simuladores. Sem rede, hardware, YOLO, NVIDIA/LLM ou MCP real. Estratégia: [`docs/development/testing.md`](../../docs/development/testing.md).
+Os testes usam `python -m pytest -q` em `app/backend` (ou `make test`). Testes junto da feature em `tests/`; lógicas de integração usam fakes e relógios injetados. Sem rede, hardware, YOLO, NVIDIA/LLM ou MCP real. Estratégia: [`docs/development/testing.md`](../../docs/development/testing.md).
 
 Dependências: versões fixas em `pyproject.toml` + `uv.lock` (revisão de P5); YOLO/torch só no extra `visao`, fora do Docker e do CI. Nova dependência (ex.: biblioteca SQLite, P-05) exige acordo.

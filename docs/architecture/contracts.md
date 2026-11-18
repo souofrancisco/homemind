@@ -1,10 +1,14 @@
 # Contratos
 
+> **Estado BASE-04 (#74):** o motor ObjectOS e as rotas `/api/status`, `/api/state`,
+> `/api/events`, `/api/rules*`, `/api/off`, `/api/simulate` e `WS /api/ws` foram **REMOVIDOS**.
+> As propostas abaixo descrevem a API da Conta Certa; não implicam a existência de WebSocket.
+
 > **HOUSE-03 #86 (IMPLEMENTADO, PR #142):** catálogo temporal de aparelhos e medidores, API filtrada por papel e port tipado de leitura histórica para P1/P4 em `contracts/appliance_catalog.py`. Ver [house-03-appliance-catalog.md](house-03-appliance-catalog.md).
 
 **IMPLEMENTADO (fundação F0)**: modelos Pydantic, eventos de domínio, SQLite, barramento persistente, guardas por casa/papel e OpenAPI→TS. **PLANEADO**: os motores e a maior parte das rotas de P1–P5; **HOUSE-02** (IMPLEMENTADO) acrescenta as rotas de convites e memberships. **DECISÃO PENDENTE**: marcadas por «(proposta)» e listadas em §9 e em [decisions.md](../decisions.md).
 
-A API que já existia (ObjectOS) está em [api-implementada.md](api-implementada.md) e **não mudou**. Entidades e estados: [data-model.md](data-model.md); eventos: [event-flow.md](event-flow.md).
+A API ativa está em [api-implementada.md](api-implementada.md); as rotas do motor ObjectOS foram removidas na BASE-04. Entidades e estados: [data-model.md](data-model.md); eventos: [event-flow.md](event-flow.md).
 
 ## 1. Como mudar um contrato
 
@@ -36,7 +40,7 @@ A API que já existia (ObjectOS) está em [api-implementada.md](api-implementada
 
 ## 3. Matriz de contratos
 
-Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), `household.py`, `devices.py`, `energy.py`, `presence.py`, `sensors.py`, `safety.py`, `billing.py`, `notification.py`, `agent.py`, `domain_events.py`, `api.py` (erros e `OPENAPI_MODELS`), `fixtures.py` (determinísticas). Os contratos ObjectOS (`base.py`, `eventos.py`, `home.py`, `regras.py`, `simulacao.py`, `video.py`, `visao.py`) **não foram tocados**.
+Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), `household.py`, `devices.py`, `energy.py`, `presence.py`, `sensors.py`, `safety.py`, `billing.py`, `notification.py`, `agent.py`, `domain_events.py`, `api.py` (erros e `OPENAPI_MODELS`), `fixtures.py` (determinísticas). Na BASE-04 foram removidos `simulacao.py` e os modelos de deteção/keypoints de `visao.py`; `eventos.py` e `visao.py` mantêm apenas os tipos ainda necessários à ponte preservada. `regras.py` permanece por ser referenciado pelos tipos antigos do frontend, que esta tarefa não altera.
 
 | Contrato | Produtor (dono) | Consumidores | Persistência | Testes | Pendente |
 |---|---|---|---|---|---|
@@ -184,7 +188,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | `POST` | `/api/households/{household_id}/notifications/{id}/read` | dono | **IMPLEMENTADO.** Caminho por casa; revisão P5 |
 | `POST` | `/api/households/{household_id}/notifications/{id}/respond` | T autorizado | **IMPLEMENTADO.** `NotificationRespondIn` `{ "action_id": "mine" \| "everyone" \| "unknown" \| "other", "target_resident_id"? }` (alvo só com `other`, outro inquilino elegível); `409 already_responded` (já votou / já fechada), `409 notification_expired`, `400 invalid_request` (alvo inválido). Caminho por casa; revisão P5 |
 | `GET` `PUT` | `/api/households/{household_id}/notification-preferences` | T, L | **IMPLEMENTADO.** Silêncio noturno e tipos desligados, por casa (`security_alert` não se desliga: `400`). Caminho por casa; revisão P5 |
-| `WS` | `/api/ws` | todos | **PLANEADO.** Novas mensagens: `notification`, `notification_update` (ver abaixo) |
+| `WS` | (caminho a acordar) | todos | **PLANEADO.** O `/api/ws` antigo foi removido em BASE-04; mensagens futuras: `notification`, `notification_update` |
 
 ### Assistente e automações (P3)
 
@@ -195,15 +199,15 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | `GET` | `/api/households/{id}/agent/actions[/{aid}]` · `POST …/agent/actions/{aid}/confirm` · `…/reject` | T | **IMPLEMENTADO** (AGENT-03; ver `api-implementada.md`). Só no `confirm` uma ação é executada, no máximo uma vez; na casa demo o executor é SIMULADO. O executor real (hardware) é **PLANEADO** (P1). Caminho por casa (substitui o `/api/agent/actions/{id}/…` proposto); revisão P5 |
 | `GET` `POST` | `/api/households/{id}/automations` | T, O | |
 | `PATCH` | `/api/automations/{id}` | T, O | `{ "status" }`; ativação é passo explícito |
-| `POST` | `/api/automations/parse` | T, O | Reaproveita `POST /api/rules/parse` (NVIDIA); não grava |
+| `POST` | `/api/automations/parse` | T, O | **PLANEADO.** Definir o contrato próprio do assistente; não há dependência da rota removida `/api/rules/parse` |
 
 ### Operação (P1/P5, existentes)
 
-`GET /healthz`, `GET /api/status` e `GET /api/mcp/tools` continuam. `GET /api/video` responde sempre `404` por PRIV-02; nenhuma role recebe frames. Ver [migration.md](migration.md).
+`GET /healthz` e `GET /api/mcp/tools` continuam. `/api/status` foi removido com o motor. `GET /api/video` não devolve frames a utilizadores não autorizados; ver PRIV-02 e [migration.md](migration.md).
 
 ## 7. WebSocket (PLANEADO)
 
-O protocolo atual (`auth` na primeira mensagem, snapshot, `event`, `home_state`, `error`; ver [api-implementada.md](api-implementada.md) §3) mantém-se. Mensagens novas:
+**PLANEADO:** definir e implementar um protocolo de notificações. O protocolo ObjectOS (`auth`, `home_state`, `event`, `error`) foi removido em BASE-04 e não é o protocolo futuro. Mensagens propostas:
 
 ```json
 { "type": "notification",        "data": Notification }
@@ -224,7 +228,7 @@ O servidor só envia notificações do utilizador autenticado (pessoais) e da su
 
 ## 9. Pontos para revisão da equipa (DECISÃO PENDENTE)
 
-Prioridade para aprovar antes de implementar os módulos: ver [decisions.md](../decisions.md) D-23…D-30 e P-16…P-21. Resumo: (1) `Provenance` em duas dimensões; (2) Wh inteiros + milicêntimos; (3) semântica do barramento; (4) 404 vs 403 e membership por datas; (5) `None` em energia/custo; (6) regras de resposta das notificações; (7) OpenAPI por `OPENAPI_MODELS`; (8) nenhuma alteração ao código ObjectOS de domínio; (9) **sem dependências novas**; (10) quem aprova cada pendência.
+Prioridade para aprovar antes de implementar os módulos: ver [decisions.md](../decisions.md) D-23…D-30 e P-16…P-21. Resumo: (1) `Provenance` em duas dimensões; (2) Wh inteiros + milicêntimos; (3) semântica do barramento; (4) 404 vs 403 e membership por datas; (5) `None` em energia/custo; (6) regras de resposta das notificações; (7) OpenAPI por `OPENAPI_MODELS`; (8) o código ObjectOS de domínio está removido, sem novas dependências; (9) quem aprova cada pendência.
 
 > **PRIV-02 #119 (revisão de acesso):** o âmbito de leitura do recurso `presence` foi restringido de `household` a `own` para o inquilino; a regra de escrita `own` não mudou. A API de presença permanece planeada. Ver [módulo presença](../modules/presence.md#priv-02-119--investigação-e-arquitetura-de-privacidade-17112026).
 

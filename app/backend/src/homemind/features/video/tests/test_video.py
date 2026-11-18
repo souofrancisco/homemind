@@ -199,7 +199,6 @@ def test_parar_fonte_e_idempotente():
 
 def test_lifespan_never_starts_configured_rtsp_source(monkeypatch):
     monkeypatch.setenv("VIDEO_SOURCE", "rtsp://camera.invalid")
-    monkeypatch.delenv("VISAO_DETETOR", raising=False)
     get_settings.cache_clear()
     opened = []
     monkeypatch.setattr(

@@ -1,8 +1,4 @@
-"""Configuração do assistente (env). Local à feature; mesmos nomes de env que o motor antigo.
-
-`features/engine/config.py` é REMOVE na migração: estes campos passam para `core/config` ou
-ficam aqui (a decidir; ver docs/modules/agent.md).
-"""
+"""Configuração do assistente (env), local à feature."""
 
 from functools import lru_cache
 

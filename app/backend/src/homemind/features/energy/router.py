@@ -30,6 +30,7 @@ from homemind.core.access import (
 )
 from homemind.core.events import Handler
 from homemind.features.energy.consumer import make_step_consumer
+from homemind.features.energy.home_runtime import home_runtime
 from homemind.features.energy.identification_consumer import INPUT_TYPES as IDENTIFICATION_TYPES
 from homemind.features.energy.identification_consumer import make_identification_consumer
 from homemind.features.energy.learning_consumer import INPUT_TYPES as LEARNING_TYPES
@@ -113,7 +114,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.bus.subscribe(
         IDENTIFICATION_CONSUMER, make_identification_dispatcher(app), IDENTIFICATION_TYPES
     )
-    yield
+    # O `Home` do kit (MCP) e os seus coletores/atuador (antes no lifespan do motor ObjectOS).
+    async with home_runtime(app):
+        yield
 
 
 router = APIRouter(

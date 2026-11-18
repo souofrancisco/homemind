@@ -49,9 +49,20 @@ def test_no_fake_endpoints_for_shared_models(spec):
     paths = set(spec["paths"])
     for banned in ("/api/contracts", "/api/schemas", "/api/models", "/api/bills"):
         assert banned not in paths
-    # as rotas existentes antes da fundação continuam
-    for kept in ("/healthz", "/api/me", "/api/status", "/api/state", "/api/events", "/api/rules"):
+    # Rotas vivas da aplicação mantêm-se; o motor ObjectOS já foi removido.
+    for kept in ("/healthz", "/api/me"):
         assert kept in paths, kept
+    registered = {route.path for route in app.routes}
+    for removed in (
+        "/api/status",
+        "/api/state",
+        "/api/events",
+        "/api/rules",
+        "/api/ws",
+        "/api/off",
+        "/api/simulate",
+    ):
+        assert removed not in registered, removed
 
 
 def test_response_fields_with_defaults_are_required_and_null_is_explicit(spec):

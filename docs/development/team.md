@@ -101,7 +101,7 @@ Contagem das issues `[CC · …]` abertas (17/11/2026), por prioridade/fase: ver
 
 **Módulos.** Novos `features/notifications`, `features/agent`, `features/automations`; UI com P5.
 
-**Reutilizável.** `features/engine/{llm,router}.py` (cliente NVIDIA, WS, `parse`), `frontend/src/components/events/*`, `HomeProvider.tsx`, `NewAutomationPage`, `useNewRule.ts`.
+**Implementado/reutilizável.** `features/agent/{llm,router}.py` e os contratos atuais do agente. O cliente e as rotas do motor foram removidos na BASE-04; páginas ObjectOS do frontend estão a ser eliminadas separadamente.
 
 **Novos.** `contracts/{notification,agent}.py`, `features/notifications/*`, `features/agent/*`.
 
@@ -123,7 +123,7 @@ Contagem das issues `[CC · …]` abertas (17/11/2026), por prioridade/fase: ver
 
 **Módulos.** Novos `features/billing`, `features/budgets`, `features/alerts`.
 
-**Reutilizável.** Padrão de testes do motor antigo (`features/engine/tests/`, relógio injetado), `TARIFA_EUR_KWH`, `core/errors.py`. O resto é novo.
+**Reutilizável.** Padrão de testes das features atuais (relógio injetado) e `core/errors.py`. Os testes do motor ObjectOS e `TARIFA_EUR_KWH` foram removidos na BASE-04.
 
 **Novos.** `contracts/billing.py`, `features/billing/{attribution,allocation,receipt}.py`, `features/budgets/*`, `features/alerts/*`.
 

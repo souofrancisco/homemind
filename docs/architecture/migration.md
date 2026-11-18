@@ -1,8 +1,8 @@
 # Migração do ObjectOS para a Conta Certa
 
-> **Estado:** a preparação (BASE-05 #130, M0) é só documental: o código, as dependências, o Docker, o Makefile e o CI não foram alterados e `make check` continua verde (ver [development/testing.md](../development/testing.md)). A matriz abaixo é o plano que a BASE-04 (#74) executa; os estados descrevem o destino previsto, não migração executada. Nada do ObjectOS se remove fora de um PR da BASE-04.
+> **Estado:** BASE-04 (#74) removeu do backend o motor ObjectOS, as rotas de estado/regras e a cadeia antiga de gestos e deteções. O runtime do `Home` e os coletores MCP foram movidos para `features/energy/home_runtime.py`. A matriz abaixo regista o que foi removido e o legado deliberadamente mantido; não é uma lista de trabalho por executar. O frontend é tratado separadamente.
 
-Fontes analisadas: código em `app/` na `main` (commit `302f0c9`), `README.md`, `CLAUDE.md`, os três `AGENTS.md`, `docs/` anterior (agora em [archive/objectos/](../archive/objectos/README.md) e [integrations/](../integrations/altice-mcp.md)), Makefile, Compose, issues e PRs (só leitura). Não se executou `make check` nesta tarefa.
+Estado verificado na worktree `chore/74-migrar-backend`, após a remoção BASE-04. As verificações efetivamente corridas ficam registadas no relatório do PR; não se inferem resultados anteriores.
 
 ## Categorias
 
@@ -11,7 +11,7 @@ Fontes analisadas: código em `app/` na `main` (commit `302f0c9`), `README.md`, 
 | **KEEP** | Reutilizável sem grandes alterações |
 | **ADAPT** | Reutilizável com alterações (indicadas) |
 | **REPLACE** | A implementação será substituída; o conceito mantém-se |
-| **REMOVE** | Deixa de fazer parte do produto (a remoção real é uma tarefa posterior) |
+| **REMOVE** | Já removido do backend nesta fase BASE-04 |
 | **DEFER** | Mantém-se como está e só se decide depois (ver tabela abaixo) |
 
 ## Matriz de migração
@@ -24,10 +24,10 @@ Caminhos relativos a `app/backend/src/homemind/` (backend) e `app/frontend/src/`
 |---|---|---|
 | MCP e OAuth (`connectors/*`, `features/mcp`) | KEEP / ADAPT (P1) | Escrita física e unidade de `instantPower`: DEFER até MCP-01 e MCP-04 |
 | FakeHome | ADAPT (perfis de aparelhos, MCP-05) | — |
-| Vídeo e YOLO | KEEP / ADAPT (só «pessoa» + soleira) | `medir_latencia.py` REMOVE |
-| Gestos antigos | REMOVE / REPLACE | `ponte.py` KEEP; `presenca.py` ADAPT |
-| Engine de modos e regras JSON | REMOVE / REPLACE (SQLite + eventos) | Cliente NVIDIA (`llm.py`) ADAPT para o assistente |
-| Eventos e WebSocket | REPLACE / ADAPT | — |
+| Vídeo e YOLO | KEEP / ADAPT (só presença na soleira) | Thread, anotação e deteção de objetos/pose removidas; permanecem `dispositivo.py` e `pesos.py` usados pela presença |
+| Gestos antigos | REMOVE | `ponte.py` KEEP explícito; sem consumidor de produção |
+| Engine de modos e regras JSON | REMOVE | O assistente usa `features/agent/llm.py`; não depende do cliente do motor |
+| Eventos e WebSocket | Motor removido | O futuro WebSocket de notificações está PLANEADO e sem rota definida |
 | Authentik | KEEP | Papéis na base de dados (P-02) |
 | Frontend | KEEP / ADAPT | Rename «HomeMind» no Android: **DEFER** (P-14) |
 | Docker, Makefile, CI | KEEP | `compose.gpu.yaml`, `compose.mcp*.yaml`: **DEFER** (sem alterações previstas) |
@@ -63,29 +63,20 @@ Caminhos relativos a `app/backend/src/homemind/` (backend) e `app/frontend/src/`
 |---|---|---|---|
 | `features/video` (`fonte.py`, `service.py`, `router.py`, `medir.py`) | **ADAPT** | No serviço só clips sintéticos allowlisted em `PROFILE=demo` + `HOME_BACKEND=fake`; fontes RTSP recusadas por PRIV-02; ferramentas não devem recolher dados reais | P2 |
 | `features/video/router.py` (`GET /api/video` MJPEG) | **ADAPT** | MJPEG desligado por omissão (PRIV-02: `404` salvo clip allowlisted em demo/fake com flag) e, quando ligado, só para o `operator` (**IMPLEMENTADO**, fix/video-mjpeg-operador); máscara da soleira **PLANEADO** | P2 |
-| `features/visao/detetor.py` (`DetetorYolo`, YOLO11 + pose + ByteTrack) | **ADAPT** | Mantém-se a classe «pessoa» e o tracking; **sai** a deteção de caneca/livro/comando e a pose | P2 |
-| `features/visao/thread.py`, `dispositivo.py`, `pesos.py` | **KEEP** | Thread de visão, escolha de dispositivo (MPS/CUDA/CPU), descarga de pesos | P2 |
-| `features/visao/anotar.py` | **ADAPT** | Passa a desenhar só a soleira e a máscara a preto | P2 |
-| `features/visao/medir_latencia.py` | **REMOVIDO** (BASE-04, #74) | Mede «gesto → luz», métrica do produto antigo | P2 |
-| `features/gestos/gesto.py`, `repeticao.py`, `afinador.py`, `parametros.py` | **REMOVE** (`repeticao.py` e `afinador.py` **REMOVIDOS**, BASE-04 #74; `gesto.py` e `parametros.py` ficam enquanto `visao/router.py` usar o `ProcessadorObjectOS`) | Gesto «objeto levantado» deixa de existir | P2 |
-| `features/gestos/presenca.py` (debounce de presença binária) | **ADAPT** | Ideia reutilizada (2 frames para entrar, 3 s para sair) na deteção de passagem na porta | P2 |
-| `features/gestos/ponte.py` (thread → `asyncio.Queue`) | **KEEP** | A visão continua numa thread e publica eventos no loop | P2 |
-| `features/gestos/processador.py` | **REPLACE** | Passa a emitir `DoorCrossed` (linha na soleira) em vez de `ObjetoLevantado` | P2 |
-| `contracts/eventos.py` (`ObjetoLevantado`, `Presenca`) | **REPLACE** | Substituído por `DoorCrossed` e eventos de presença ([contracts.md](contracts.md)) | P2 + P5 |
-| `contracts/visao.py`, `contracts/video.py`, `contracts/base.py` | **ADAPT** / **KEEP** / **KEEP** | `visao.py` perde `ObjetoDetetado` e `keypoints`; vídeo e base ficam | P2 |
-| `contracts/simulacao.py` | **ADAPT** | Gerador de cenários passa de gestos para leituras e passagens simuladas | P1 + P2 |
+| `features/visao/router.py`, `thread.py`, `detetor.py`, `conversao.py`, `anotar.py` | **REMOVIDO** (BASE-04) | A presença tem o seu detetor e pipeline em `features/presence`; não usa a thread ObjectOS nem pose/objetos | P2 |
+| `features/visao/dispositivo.py`, `pesos.py` | **KEEP** | `presence/yolo.py` escolhe o dispositivo e usa o peso YOLO de pessoas | P2 |
+| `features/gestos/gesto.py`, `parametros.py`, `presenca.py`, `processador.py` | **REMOVIDO** (BASE-04) | Gesto «objeto levantado» e presença binária antiga sem consumidores | P2 |
+| `features/gestos/ponte.py` | **KEEP** | KEEP explícito do plano; sem consumidor de produção atual | P2 |
+| `contracts/eventos.py`, `contracts/visao.py` | **ADAPTADO** (BASE-04) | Mantêm só os tipos ainda importados pela ponte preservada; deteções, pose e simulação removidas | P2 + P5 |
+| `contracts/simulacao.py` | **REMOVIDO** (BASE-04) | Geradores só eram usados nos testes dos gestos ObjectOS | P1 + P2 |
 
 ### Backend — motor de regras e eventos
 
 | Caminho | Destino | Justificação | Resp. |
 |---|---|---|---|
-| `features/engine/engine.py` (máquina de estados objeto→modo, espera/suspensão, poupança) | **REMOVE** | Lógica do produto antigo; o conceito de «estados da casa» renasce em presença/alertas | P5 (remoção) |
-| `features/engine/rules.py`, `rules.json` | **REMOVE** | Regras objeto→ação deixam de existir. `AutomationRule` é novo | P3 |
-| `features/engine/llm.py` (cliente NVIDIA via SDK `openai`, 1 retry, prompt com schema) | **ADAPT** | Reaproveitado para o assistente e para regras de automação em português; continua só texto, sem vídeo | P3 |
-| `features/engine/eventlog.py` (`events.jsonl`) | **REPLACE** | Substituído por `domain_event` em SQLite | P5 |
-| `features/engine/router.py` (REST + WebSocket `/api/ws`) | **REPLACE** / **ADAPT** | Gestor de ligações WS, autenticação na 1.ª mensagem e fila por cliente extraem-se para um módulo comum e reaproveitam-se; as rotas de modos/regras saem | P5 |
-| `features/engine/schemas.py`, `config.py`, `tests/` | **REMOVE** | Associados ao motor antigo (testes saem com o motor) | P5 |
-| `contracts/regras.py` | **REMOVE** | Modelo `Rule` do produto antigo | P3 |
+| `features/engine/` (código e testes) | **REMOVIDO** (BASE-04) | Nenhuma feature ativa importa o motor; as rotas antigas deixam de ser registadas | P5 |
+| `core/config.py` | **ADAPTADO** (BASE-04) | Campos exclusivos de gestos e YOLO de objetos/pose removidos; config de presença, vídeo e assistente mantida | P5 |
+| `contracts/regras.py` | **KEEP temporário** | Ainda referenciado pelos tipos antigos de `app/frontend`; frontend fora do âmbito desta tarefa | P3 |
 
 ### Frontend
 
@@ -129,9 +120,9 @@ Não foi alterado (fora do âmbito desta tarefa): comentários de código e `app
 | **M1 — Contratos e base** | Modelos Pydantic dos contratos aceites; `core/db.py` e `core/events.py` | Contratos acordados pelos 5 |
 | **M2 — Módulos em paralelo** | `households`, `energy`, `billing`, `notifications`, `presence` em paralelo com o motor antigo ainda a correr | M1 |
 | **M3 — Interface** | Novas páginas e navegação por papel; WebSocket com notificações | M2 parcial |
-| **M4 — Remoção do ObjectOS** | Apagar `engine`, `gestos` (parte), regras e páginas de sugestões; limpar CODEOWNERS e apontadores | M3 estável e demo ensaiada |
+| **M4 — Remoção do ObjectOS (backend)** | **EXECUTADO nesta worktree:** motor, rotas, gestos/deteções antigas removidos; ponte KEEP | BASE-04 (#74) |
 
-Regra: **enquanto o ObjectOS correr, `make check` tem de continuar verde**; as remoções são PRs próprios, um por módulo, com o dono do módulo a rever.
+As rotas antigas não fazem parte do OpenAPI atual. `compose*.yaml`, Makefile e `.github/` ficaram fora das alterações BASE-04; referências residuais são reportadas no PR.
 
 ## Documentação antiga
 
