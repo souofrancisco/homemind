@@ -8,6 +8,10 @@ from homemind.core.errors import register_errors
 from homemind.core.features import register_features
 from homemind.core.lifespan import core_lifespan
 from homemind.core.openapi_models import install_shared_schemas
+from homemind.core.redact import install_log_redaction
+
+# PRIV-04: todos os registos do processo saem mascarados (segredos, RTSP, MAC, emails, ids).
+install_log_redaction()
 
 # O uvicorn só configura os seus próprios loggers: sem isto os INFO da app (visão ligada,
 # tempos das escritas MCP) perdiam-se. Nunca se registam segredos, URLs de vídeo nem frames.
