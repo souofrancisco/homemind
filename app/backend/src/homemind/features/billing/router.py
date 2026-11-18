@@ -25,7 +25,11 @@ from homemind.contracts.billing import (
     BillView,
     BudgetIn,
     BudgetStatus,
+    Contestation,
+    ContestationDecisionIn,
+    ContestationIn,
     LandlordBillView,
+    LandlordContestationView,
     ReceiptExplanation,
 )
 from homemind.contracts.common import new_id, stable_id
@@ -48,6 +52,7 @@ from homemind.features.billing import (
     budgets,
     closing,
     comfort,
+    contestations,
     explanation,
     peaks,
 )
@@ -206,12 +211,18 @@ async def _commit(request: Request, db: Database, work):
 
     try:
         events, result = await db.run(run)
+    except contestations.ContestationNotFound:
+        raise HTTPException(
+            404, {"code": "contestation_not_found", "message": "Contestação não encontrada"}
+        ) from None
     except LookupError:
         raise _not_found() from None
     except closing.BillStateError as e:
         raise _state_error(e) from None
     except BillInconsistentError as e:
         raise _inconsistent(e) from None
+    except contestations.InvalidContestation as e:
+        raise HTTPException(400, {"code": "invalid_request", "message": str(e)}) from None
     for e in events:
         await request.app.state.bus.publish(e)  # idempotente por id
     return result
@@ -249,6 +260,7 @@ async def revise_bill(
         events = closing.revise(
             conn, access.household_id, bill_id, body, new, access.resident_id, now
         )
+        contestations.carry_over(conn, access.household_id, bill_id, new)
         return events, bills.get_bill(conn, access.household_id, new)
 
     return bills.to_view(await _commit(request, db, work))
@@ -315,6 +327,72 @@ async def my_receipt_explanation(
         return await db.run(read)
     except LookupError:
         raise _not_found() from None
+
+
+# --- contestações (BILL-06) --------------------------------------------------------------------
+
+ContestWrite = Annotated[
+    HouseholdAccess, Depends(require_access(Resource.receipt, Operation.write))
+]
+
+
+@router.post("/households/{household_id}/bills/{bill_id}/contestations", status_code=201)
+async def contest_receipt(
+    bill_id: UUID,
+    body: ContestationIn,
+    access: ContestWrite,
+    db: DbDep,
+    clock: ClockDep,
+    request: Request,
+) -> Contestation:
+    """Inquilino contesta o PRÓPRIO recibo (opcionalmente um consumo atribuído a si). Uma
+    aberta por fatura (`409 contestation_open`); fatura substituída: `409 bill_not_finalized`."""
+    now, cid = clock(), new_id()
+
+    def work(conn):
+        return contestations.open_contestation(
+            conn, access.household_id, bill_id, access.resident_id, body, cid, now
+        )
+
+    return await _commit(request, db, work)
+
+
+@router.get("/households/{household_id}/contestations/mine")
+async def my_contestations(access: ReceiptAccess, db: DbDep) -> list[Contestation]:
+    if access.grant is not Grant.own:
+        raise HTTPException(403, {"code": "forbidden_role", "message": "Só para inquilinos"})
+    return await db.run(lambda c: contestations.mine(c, access.household_id, access.resident_id))
+
+
+@router.get("/households/{household_id}/contestations")
+async def house_contestations(access: ReceiptAccess, db: DbDep) -> list[LandlordContestationView]:
+    """Senhorio: contestações por quarto, motivo e decisão (nunca o consumo nem presença)."""
+    if access.grant is not Grant.aggregate:
+        raise HTTPException(403, {"code": "forbidden_role", "message": "Só para o senhorio"})
+    return await db.run(lambda c: contestations.for_landlord(c, access.household_id))
+
+
+@router.post("/households/{household_id}/contestations/{contestation_id}/decision")
+async def decide_contestation(
+    contestation_id: UUID,
+    body: ContestationDecisionIn,
+    access: WriteAccess,
+    db: DbDep,
+    clock: ClockDep,
+    request: Request,
+) -> Contestation:
+    """Senhorio decide com justificação. Aceitar reemite a fatura (nova revisão) com antes/depois;
+    já decidida: `409 contestation_resolved`."""
+    now, new_bill = clock(), new_id()
+
+    def work(conn):
+        if body.bill is not None:
+            _validate(conn, access, body.bill, now)
+        return contestations.decide(
+            conn, access.household_id, contestation_id, access.resident_id, body, new_bill, now
+        )
+
+    return await _commit(request, db, work)
 
 
 # --- orçamento pessoal (ALERT-01) --------------------------------------------------------------

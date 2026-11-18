@@ -222,6 +222,9 @@ def _record(
     )
 
 
+record = _record  # para correções auditadas fora do atribuidor (contestações, BILL-06)
+
+
 # --- leituras partilhadas com o fecho da fatura ------------------------------------------------
 
 

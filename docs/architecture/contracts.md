@@ -78,6 +78,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `billing.attribution_changed` | P4 | `Attribution` | P3, P4 | idem |
 | `billing.bill_created` / `bill_finalized` | P4 | `BillRef` | P3, UI | idem |
 | `billing.allocation_published` | P4 | `AllocationPublished` | P3 | idem |
+| `billing.contestation_changed` | P4 | `Contestation` (BILL-06: aberta → aviso ao senhorio; decidida → aviso a quem contestou) | P3 | idem |
 | `notification.created` | P3 | `NotificationCreatedData` | UI (DTO) | idem |
 | `notification.responded` | P3 | `NotificationRespondedData` (resposta + `ref` + `outcome` nas confirmações: um evento por voto; P4 só atribui com `outcome.decided`) | P4 | idem |
 | `alerts.threshold_crossed` | P4 | `BudgetThreshold` | P3 | idem |

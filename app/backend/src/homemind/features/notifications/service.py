@@ -12,7 +12,13 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from homemind.contracts import domain_events as de
-from homemind.contracts.billing import Attribution, AttributionStatus, AttributionTarget
+from homemind.contracts.billing import (
+    Attribution,
+    AttributionStatus,
+    AttributionTarget,
+    Contestation,
+    ContestationStatus,
+)
 from homemind.contracts.common import Provenance, ValueKind, replace
 from homemind.contracts.household import MembershipRole, RoomKind
 from homemind.contracts.notification import (
@@ -34,6 +40,8 @@ from homemind.features.notifications.compose import (
     compose_budget_alert,
     compose_cold_room,
     compose_confirmation,
+    compose_contestation_decided,
+    compose_contestation_opened,
     compose_peak_alert,
     compose_presence_check,
     compose_receipt_info,
@@ -363,6 +371,49 @@ class NotificationService:
             allocation_id=data.allocation_id,
             household_id=household_id,
             resident_id=data.resident_id,
+            origin=provenance.origin,
+            correlation_id=correlation_id,
+            now=now,
+        )
+        return self._create(n, provenance, dedupe=False)
+
+    def on_contestation(
+        self,
+        c: Contestation,
+        *,
+        household_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
+    ) -> Outcome:
+        """`billing.contestation_changed` (BILL-06): aberta -> aviso aos senhorios (sem o motivo
+        nem o consumo); decidida -> aviso pessoal a quem contestou, com a justificação."""
+        now = self._clock()
+        if c.status is ContestationStatus.open:
+            events: list[de.DomainEvent] = []
+            first = None
+            for landlord in self._directory.landlords(household_id, now):
+                n = compose_contestation_opened(
+                    contestation_id=c.id,
+                    household_id=household_id,
+                    landlord_id=landlord,
+                    origin=provenance.origin,
+                    correlation_id=correlation_id,
+                    now=now,
+                )
+                out = self._create(n, provenance, dedupe=False)
+                first = first or out.notification
+                events += out.events
+            return Outcome(first, tuple(events))
+        if self._directory.role_in(household_id, c.resident_id, now) is not MembershipRole.tenant:
+            return Outcome(None)
+        n = compose_contestation_decided(
+            contestation_id=c.id,
+            household_id=household_id,
+            resident_id=c.resident_id,
+            accepted=c.status is ContestationStatus.accepted,
+            resolution=c.resolution or "",
+            before_cents=c.before_cents,
+            after_cents=c.after_cents,
             origin=provenance.origin,
             correlation_id=correlation_id,
             now=now,

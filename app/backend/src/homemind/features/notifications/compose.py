@@ -407,3 +407,55 @@ def compose_receipt_info(
         correlation_id=correlation_id,
         created_at=now,
     )
+
+
+# --- contestações (BILL-06) ---------------------------------------------------------------------
+
+
+def compose_contestation_opened(
+    *, contestation_id: UUID, household_id: UUID, landlord_id: UUID, origin: Origin,
+    correlation_id: UUID, now: datetime,
+) -> Notification:  # fmt: skip
+    """Ao senhorio: só que há uma contestação (o detalhe, por quarto, está na lista)."""
+    return Notification(
+        id=notification_id_for_ref(NotificationKind.info, contestation_id, landlord_id),
+        household_id=household_id,
+        scope=NotificationScope.personal,
+        recipient_resident_id=landlord_id,
+        kind=NotificationKind.info,
+        severity=NotificationSeverity.warning,
+        title="Nova contestação de um recibo",
+        body=_tag("Um morador contestou a sua parcela da fatura. Decide com justificação.", origin),
+        origin=origin,
+        ref=NotificationRef(type=RefType.contestation, id=contestation_id),
+        correlation_id=correlation_id,
+        created_at=now,
+    )
+
+
+def compose_contestation_decided(
+    *, contestation_id: UUID, household_id: UUID, resident_id: UUID, accepted: bool,
+    resolution: str, before_cents: int | None, after_cents: int | None, origin: Origin,
+    correlation_id: UUID, now: datetime,
+) -> Notification:  # fmt: skip
+    """A quem contestou: a decisão, a justificação e, se aceite, o antes/depois da parcela."""
+    body = f"Justificação: {resolution}"
+    if accepted and before_cents is not None and after_cents is not None:
+        body = (
+            f"A fatura foi reemitida: a tua parcela passou de {format_eur(before_cents)}"
+            f" para {format_eur(after_cents)}. " + body
+        )
+    return Notification(
+        id=notification_id_for_ref(NotificationKind.info, contestation_id, resident_id),
+        household_id=household_id,
+        scope=NotificationScope.personal,
+        recipient_resident_id=resident_id,
+        kind=NotificationKind.info,
+        severity=NotificationSeverity.info,
+        title="Contestação aceite" if accepted else "Contestação rejeitada",
+        body=_tag(body, origin),
+        origin=origin,
+        ref=NotificationRef(type=RefType.contestation, id=contestation_id),
+        correlation_id=correlation_id,
+        created_at=now,
+    )

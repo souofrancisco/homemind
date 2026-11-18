@@ -33,6 +33,9 @@ class ErrorCode(StrEnum):
     bill_finalized = "bill_finalized"
     bill_not_finalized = "bill_not_finalized"
     bill_inconsistent = "bill_inconsistent"
+    contestation_not_found = "contestation_not_found"
+    contestation_open = "contestation_open"  # já tens uma aberta para esta fatura
+    contestation_resolved = "contestation_resolved"
     simulation_disabled = "simulation_disabled"
     internal_error = "internal_error"
 
@@ -75,6 +78,9 @@ OPENAPI_MODELS: tuple[type[BaseModel], ...] = (
     billing.LandlordBillView,
     billing.Budget,
     billing.Contestation,
+    billing.ContestationIn,
+    billing.ContestationDecisionIn,
+    billing.LandlordContestationView,
     # notificações
     notification.NotificationView,
     notification.NotificationPreferences,

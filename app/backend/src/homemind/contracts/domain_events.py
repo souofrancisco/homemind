@@ -21,7 +21,7 @@ from uuid import UUID
 from pydantic import Field, TypeAdapter, model_validator
 
 from homemind.contracts.agent import ActionExecutionResult, AutomationRule, ProposedAction
-from homemind.contracts.billing import Attribution, BudgetThreshold
+from homemind.contracts.billing import Attribution, BudgetThreshold, Contestation
 from homemind.contracts.common import (
     ContractModel,
     PowerW,
@@ -253,6 +253,13 @@ class BillingBillFinalized(EventBase):
     data: BillRef
 
 
+class BillingContestationChanged(EventBase):
+    """Contestação aberta ou decidida (BILL-06): `data.status` diz qual."""
+
+    type: Literal["billing.contestation_changed"] = "billing.contestation_changed"
+    data: Contestation
+
+
 class BillingAllocationPublished(EventBase):
     type: Literal["billing.allocation_published"] = "billing.allocation_published"
     data: AllocationPublished
@@ -321,6 +328,7 @@ DomainEvent = Annotated[
     | BillingBillCreated
     | BillingBillFinalized
     | BillingAllocationPublished
+    | BillingContestationChanged
     | NotificationCreated
     | NotificationResponded
     | AlertsThresholdCrossed
