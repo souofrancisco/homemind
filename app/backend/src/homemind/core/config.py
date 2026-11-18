@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     mcp_write_max_minutes: int = 60
     mcp_lamp_id: str = ""
     mcp_plug_id: str = ""
+    # ALERT-06: divisão (`room.id`) onde está a lâmpada do kit, na casa ENERGY_HOUSEHOLD_ID. Sem
+    # ela a lâmpada não tem divisão conhecida e nunca recebe a cor do orçamento (mais restritivo).
+    mcp_lamp_room_id: UUID | None = None
     # Unidade de `instantPower` quando o MCP não a declara (o kit real não declara). Vazio =
     # desconhecida: consumo_w fica null. Confirmar com carga conhecida (docs/mcp-capabilities.md).
     mcp_instantpower_unit: Literal["", "W", "dW", "mW"] = ""
@@ -39,6 +42,10 @@ class Settings(BaseSettings):
     # diários dos alertas ficam guardados. 0 = sem expurgo. Mínimo 62: o mês corrente e o
     # anterior têm de estar completos (totais de energia, fecho da fatura). PROPOSTA (P-08).
     retention_telemetry_days: int = 90
+    # PRIV-04: anonimizar um ex-morador N dias depois de o último contrato acabar (nome, conta,
+    # email do convite, conversa e notificações pessoais; os valores financeiros ficam).
+    # 0 = DESLIGADO (omissão) até a equipa/DPO fixar o prazo (P-08); se ligado, mínimo 30.
+    retention_anonymize_after_days: int = 0
     # Authentik (OIDC). Issuer = URL pública do provider (campo `iss` dos tokens);
     # jwks_url pode ser interno (ex.: http://authentik-server:9000/...) em Docker.
     oidc_issuer: str = "http://localhost:9000/application/o/homemind/"
@@ -107,6 +114,11 @@ class Settings(BaseSettings):
     # Um aparelho pessoal só prova presença se LIGOU há menos de isto (s); já ligado não prova.
     presence_appliance_fresh_s: float = Field(default=300.0, ge=0.0)
     presence_fusion_tick_s: float = Field(default=30.0, ge=1.0)
+    # PRIV-03: dias que os eventos BRUTOS de presença (pistas, passagens, mudanças de estado,
+    # pedidos de confirmação) ficam antes de passarem a agregados diários sem horários. PROPOSTA
+    # (30): o prazo definitivo é decisão da equipa e do DPO (P-08). 0 = sem compactação. Nunca
+    # menos de 2 dias: a fusão lê 48 h e a ocupação 24 h.
+    presence_retention_days: int = 30
     # --- fim P2 — presença ---
 
     # --- P1 — visão (YOLO objetos + pose + ByteTrack; extra opcional `visao`) ---
@@ -127,6 +139,22 @@ class Settings(BaseSettings):
     def _retencao(cls, v: int) -> int:
         if v != 0 and v < 62:
             raise ValueError("RETENTION_TELEMETRY_DAYS é 0 (sem expurgo) ou pelo menos 62")
+        return v
+
+    @field_validator("retention_anonymize_after_days")
+    @classmethod
+    def _anonimizar(cls, v: int) -> int:
+        if v != 0 and v < 30:
+            raise ValueError("RETENTION_ANONYMIZE_AFTER_DAYS é 0 (desligado) ou pelo menos 30")
+        return v
+
+    @field_validator("presence_retention_days")
+    @classmethod
+    def _retencao_presenca(cls, v: int) -> int:
+        if v != 0 and v < 2:
+            raise ValueError(
+                "PRESENCE_RETENTION_DAYS é 0 (sem compactação) ou pelo menos 2 (janela da fusão)"
+            )
         return v
 
     @field_validator("presence_door_inside_sign")

@@ -33,6 +33,7 @@ from homemind.contracts.billing import (
     LandlordBillView,
     LandlordContestationView,
     ReceiptExplanation,
+    RuleVoteIn,
     TariffIn,
     TariffStatus,
 )
@@ -70,10 +71,12 @@ EXPIRY_INTERVAL_S = 60.0
 
 async def run_expiry(db: Database, bus: EventBus, now: datetime) -> int:
     """Tarefa periódica: fecha os pedidos «De quem é esta conta?» sem decisão no prazo (→ por
-    todos) e reavalia os orçamentos do mês (a base estimada cresce com os dias)."""
+    todos), reavalia os orçamentos do mês (a base estimada cresce com os dias) e faz caducar as
+    propostas de regra cujo mês já começou sem maioria (HOUSE-04)."""
 
     def work(conn):
         events = attributor.expire_pending(conn, now) + budgets.evaluate_all(conn, now)
+        events += rules.expire_all(conn, now)
         for e in events:
             append_event(conn, e)  # mesma transação do efeito
         return events
@@ -493,34 +496,67 @@ RulesWrite = Annotated[
 ]
 
 
-async def _rules_change(db: Database, work) -> HouseRulesView:
+async def _rules_change(request: Request, db: Database, work) -> HouseRulesView:
+    def run(conn):
+        events, result = work(conn)
+        for e in events:
+            append_event(conn, e)
+        return events, result
+
     try:
-        return await db.run(work)
+        events, result = await db.run(run)
     except rules.RuleChangeError as e:
         raise HTTPException(400, {"code": "invalid_request", "message": str(e)}) from None
+    except rules.RuleVoteForbidden as e:
+        raise HTTPException(403, {"code": "forbidden_role", "message": str(e)}) from None
+    for e in events:
+        await request.app.state.bus.publish(e)  # idempotente por id
+    return result
 
 
 @router.get("/households/{household_id}/rules")
 async def house_rules(access: RulesRead, db: DbDep, clock: ClockDep) -> HouseRulesView:
-    """A regra da sala em vigor, a mudança agendada e as versões que já valeram."""
+    """A regra da sala em vigor, a mudança agendada, a proposta aberta e as que já valeram."""
     now = clock()
-    return await db.run(lambda conn: rules.view(conn, access.household_id, now))
+    return await db.run(lambda conn: rules.view(conn, access.household_id, now, access.resident_id))
 
 
 @router.put("/households/{household_id}/rules/next")
-async def schedule_house_rules(
-    body: HouseRulesIn, access: RulesWrite, db: DbDep, clock: ClockDep
+async def propose_house_rules(
+    body: HouseRulesIn, access: RulesWrite, db: DbDep, clock: ClockDep, request: Request
 ) -> HouseRulesView:
-    """Agenda a regra para o dia 1 do mês seguinte (substitui a agendada). Nunca muda o mês em
-    curso. `presence` (C) ainda não existe: `400`."""
+    """Propõe a regra para o dia 1 do mês seguinte (substitui a proposta aberta). Só fica
+    agendada (`upcoming`) quando pelo menos metade dos moradores aprova; quem propõe conta como
+    «sim». `presence` (C) ainda não existe e a regra que já vai valer não se propõe: `400`."""
     now, policy = clock(), body.policy()
     return await _rules_change(
-        db, lambda conn: rules.schedule(conn, access.household_id, access.resident_id, policy, now)
+        request,
+        db,
+        lambda conn: rules.propose(conn, access.household_id, access.resident_id, policy, now),
+    )
+
+
+@router.post("/households/{household_id}/rules/next/vote")
+async def vote_house_rules(
+    body: RuleVoteIn, access: RulesWrite, db: DbDep, clock: ClockDep, request: Request
+) -> HouseRulesView:
+    """Aprovar ou rejeitar a proposta aberta (o voto pode mudar até à decisão). Sem proposta
+    aberta: `400`."""
+    now = clock()
+    return await _rules_change(
+        request,
+        db,
+        lambda conn: rules.vote(conn, access.household_id, access.resident_id, body.approve, now),
     )
 
 
 @router.delete("/households/{household_id}/rules/next")
-async def cancel_house_rules(access: RulesWrite, db: DbDep, clock: ClockDep) -> HouseRulesView:
-    """Cancela a mudança agendada (`400` se não houver). As que já valeram nunca se apagam."""
+async def withdraw_house_rules(
+    access: RulesWrite, db: DbDep, clock: ClockDep, request: Request
+) -> HouseRulesView:
+    """Quem propôs retira a proposta aberta (`403` para os outros, `400` se não houver). Uma
+    mudança já aprovada só se desfaz com outra proposta aprovada."""
     now = clock()
-    return await _rules_change(db, lambda conn: rules.cancel(conn, access.household_id, now))
+    return await _rules_change(
+        request, db, lambda conn: rules.withdraw(conn, access.household_id, access.resident_id, now)
+    )

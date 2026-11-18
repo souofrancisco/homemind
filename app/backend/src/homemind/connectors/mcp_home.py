@@ -372,6 +372,12 @@ class McpHome:
             self._poll_task = None
         await self._con.fechar()
 
+    @property
+    def lamp_ref(self) -> str | None:
+        """Id MCP da lâmpada descoberta (`None` antes da descoberta ou sem lâmpada). Só para o
+        conector derivar um id interno estável; nunca sai para a API, logs ou eventos."""
+        return (self._ids or {}).get("lamp")
+
     # ---- Home ----------------------------------------------------------------------------
     async def definir_lampada(
         self, ligada: bool, cor: Cor | None = None, brilho: int | None = None

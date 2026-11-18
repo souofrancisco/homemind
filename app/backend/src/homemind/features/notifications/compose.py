@@ -5,7 +5,7 @@ resposta e de estado vivem no contrato (`contracts/notification.py`); aqui só s
 `Notification`.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID, uuid5
 
 from homemind.contracts.common import Origin
@@ -13,7 +13,7 @@ from homemind.contracts.energy import (
     APPLIANCE_IDENTIFICATION_ACTIONS,
     ApplianceIdentificationRequest,
 )
-from homemind.contracts.household import RoomKind
+from homemind.contracts.household import CommonAreaRule, HouseholdPolicy, RoomKind
 from homemind.contracts.notification import (
     ActionStyle,
     ConfirmationRequest,
@@ -574,3 +574,100 @@ def compose_contestation_decided(
         correlation_id=correlation_id,
         created_at=now,
     )
+
+
+# --- regras da casa (HOUSE-04) -----------------------------------------------------------------
+
+_MESES = (
+    "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+)  # fmt: skip
+
+
+def _pt_day(d: date) -> str:
+    return f"{d.day} de {_MESES[d.month - 1]}"
+
+
+def rule_text(p: HouseholdPolicy) -> str:
+    """A regra da sala em linguagem simples (sem números inventados: só os da própria regra)."""
+    if p.common_area_rule is CommonAreaRule.equal:
+        return "a conta da sala é dividida por igual"
+    if p.common_area_rule is CommonAreaRule.ask:
+        return (
+            f"pergunta-se «De quem é esta conta?» acima de {format_eur(p.ask_threshold_cents)}"
+            f" (sem resposta em {p.ask_timeout_hours} h, fica por igual)"
+        )
+    return "a conta da sala é dividida por quem estava em casa"
+
+
+def _rules_notification(
+    *, proposal_id: UUID, step: str, household_id: UUID, recipient: UUID, title: str, body: str,
+    severity: NotificationSeverity, correlation_id: UUID, now: datetime,
+) -> Notification:  # fmt: skip
+    return Notification(
+        # Um aviso por proposta, passo (votar/aprovada/…) e pessoa: reentregas não duplicam.
+        id=notification_id_for_ref(NotificationKind.info, uuid5(proposal_id, step), recipient),
+        household_id=household_id,
+        scope=NotificationScope.personal,
+        recipient_resident_id=recipient,
+        kind=NotificationKind.info,
+        severity=severity,
+        title=title,
+        # Uma decisão da casa, não uma medição: não leva etiqueta SIMULADO/REAL.
+        body=body,
+        origin=Origin.real,
+        ref=NotificationRef(type=RefType.rules_proposal, id=proposal_id),
+        correlation_id=correlation_id,
+        created_at=now,
+    )
+
+
+def compose_rules_vote(
+    *, proposal_id: UUID, household_id: UUID, recipient: UUID, policy: HouseholdPolicy,
+    effective_from: date, needed: int, eligible: int, correlation_id: UUID, now: datetime,
+) -> Notification:  # fmt: skip
+    """A cada morador (menos quem propôs): há uma proposta para votar na página da casa."""
+    return _rules_notification(
+        proposal_id=proposal_id, step="vote", household_id=household_id, recipient=recipient,
+        title="Proposta de mudança da regra da sala",
+        body=(
+            f"Foi proposto que, a partir de {_pt_day(effective_from)}, {rule_text(policy)}. "
+            f"Só muda se pelo menos {needed} de {eligible} moradores aprovarem. "
+            "Vota na página da casa."
+        ),
+        severity=NotificationSeverity.info, correlation_id=correlation_id, now=now,
+    )  # fmt: skip
+
+
+def compose_rules_approved(
+    *, proposal_id: UUID, household_id: UUID, recipient: UUID, policy: HouseholdPolicy,
+    effective_from: date, correlation_id: UUID, now: datetime,
+) -> Notification:  # fmt: skip
+    """A toda a casa (moradores e senhorio): a mudança foi aprovada e já está agendada."""
+    return _rules_notification(
+        proposal_id=proposal_id, step="approved", household_id=household_id, recipient=recipient,
+        title=f"A regra da sala muda a {_pt_day(effective_from)}",
+        body=(
+            f"A maioria dos moradores aprovou: a partir de {_pt_day(effective_from)}, "
+            f"{rule_text(policy)}. O mês em curso e as faturas fechadas não mudam."
+        ),
+        severity=NotificationSeverity.info, correlation_id=correlation_id, now=now,
+    )  # fmt: skip
+
+
+def compose_rules_not_approved(
+    *, proposal_id: UUID, household_id: UUID, recipient: UUID, expired: bool,
+    correlation_id: UUID, now: datetime,
+) -> Notification:  # fmt: skip
+    """A quem propôs: não houve maioria (rejeitada ou caducou com o mês). Nada muda."""
+    return _rules_notification(
+        proposal_id=proposal_id, step="expired" if expired else "rejected",
+        household_id=household_id, recipient=recipient,
+        title="A tua proposta de regra não foi aprovada",
+        body=(
+            "O mês começou sem a maioria dos moradores a aprovar; a regra da sala fica igual."
+            if expired
+            else "A maioria dos moradores já não pode aprovar; a regra da sala fica igual."
+        ),
+        severity=NotificationSeverity.info, correlation_id=correlation_id, now=now,
+    )  # fmt: skip

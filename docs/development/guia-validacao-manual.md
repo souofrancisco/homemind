@@ -363,6 +363,13 @@ uv run --env-file ../.env python -m homemind.connectors.runbook     # kit REAL, 
 - **Esperado:** < 4 s nas 10.
 - **PASS** com 10/10 < 4 s. Se MCP-04 falhou: **não executado**.
 
+### ALR-06 — ⚠️ Cor do orçamento na lâmpada real
+- **Issue:** #104 · **Tipo:** REAL — só depois de MCP-04 com PASS; uma pessoa, lâmpada à vista.
+- **Preparação:** `HOME_BACKEND=mcp`, `ENERGY_HOUSEHOLD_ID` = casa real de teste, `MCP_LAMP_ROOM_ID` = quarto do morador de teste (ou uma zona comum), `ENABLE_PHYSICAL_WRITES=true` e `make mcp-writes-on` só para `lamp`.
+- **Passos:** definir um orçamento baixo para o morador; esperar o aviso de 80 %; na página Orçamento carregar em «Mudar a cor»; observar a lâmpada; repetir com `make mcp-writes-off` antes de confirmar.
+- **Esperado:** com grant: lâmpada amarela e mensagem de sucesso só depois da releitura (`confirmed`); sem grant: `blocked`, a lâmpada não muda e nada é repetido. Se a lâmpada não mudar mas o MCP disser «device updated»: `uncertain`, sem nova tentativa.
+- **PASS** só com as duas observações feitas à mão. Fim: `make mcp-writes-off`.
+
 ### DEMO-01 — Dez demonstrações seguidas
 - **Issue:** #28 · **Tipo:** indicar REAL ou SIMULADO
 - **Uma demo:** arrancar de fresco → entrar → caneca (pausa) → livro (leitura) → sair → espera → suspenso → regressar (restaurado) → **Desligar tudo** → `inativo`.
@@ -468,6 +475,7 @@ Data: ________ · Testador(es): ________ · Hardware (GPU/CPU): ________ · Comm
 | MCP-04 | ⚠️ Lâmpada RGB | | | workMode: ____ · sem contacto: ____ min | #11 |
 | MCP-05 | ⚠️ Tomada | | | | #11 |
 | MCP-06 | Consumo | | | valor bruto: ____ com carga de ____ W | #12 |
+| ALR-06 | ⚠️ Cor do orçamento na lâmpada real | | | com grant: ____ · sem grant: ____ | #104 |
 | MCP-07 | ⚠️ Falhas e reconexão | | | | #11, #12 |
 | MCP-08 | Contacto: estado e latência | | | abrir: ____ s · fechar: ____ s | #122 |
 | MCP-09 | Clima: temperatura e humidade | | | ____ °C · ____ % | #122 |

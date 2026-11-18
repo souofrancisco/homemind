@@ -44,6 +44,8 @@ COLD_ROOM_EVENT_TYPES = ("alerts.cold_room",)
 
 CONTESTATION_CONSUMER = "notifications.contestation"
 CONTESTATION_EVENT_TYPES = ("billing.contestation_changed",)
+RULES_PROPOSAL_CONSUMER = "notifications.rules_proposal"
+RULES_PROPOSAL_EVENT_TYPES = ("billing.rules_proposal_changed",)
 
 AGENT_ACTION_CONSUMER = "notifications.agent_action"
 AGENT_ACTION_EVENT_TYPES = ("agent.action_proposed",)
@@ -234,6 +236,21 @@ def make_contestation_handler(clock: Callable[[], datetime]) -> Handler:
     return handler
 
 
+def make_rules_proposal_handler(clock: Callable[[], datetime]) -> Handler:
+    """`billing.rules_proposal_changed` (HOUSE-04) -> votar / aprovada / não aprovada."""
+
+    def handler(conn: sqlite3.Connection, stored: StoredEvent) -> list[de.DomainEvent]:
+        ev = stored.event
+        if not isinstance(ev, de.BillingRulesProposalChanged):
+            return []
+        out = _service(conn, clock).on_rules_proposal(
+            ev.data, correlation_id=ev.correlation_id, provenance=ev.provenance
+        )
+        return list(out.events)
+
+    return handler
+
+
 def make_identification_handler(clock: Callable[[], datetime]) -> Handler:
     """`energy.identification_needed` (ENERGY-04) -> «O que é este aparelho?» da casa."""
 
@@ -282,6 +299,7 @@ CONSUMERS: tuple[tuple[str, Callable[[Callable[[], datetime]], Handler], tuple[s
     (PEAK_CONSUMER, make_peak_handler, PEAK_EVENT_TYPES),
     (COLD_ROOM_CONSUMER, make_cold_room_handler, COLD_ROOM_EVENT_TYPES),
     (CONTESTATION_CONSUMER, make_contestation_handler, CONTESTATION_EVENT_TYPES),
+    (RULES_PROPOSAL_CONSUMER, make_rules_proposal_handler, RULES_PROPOSAL_EVENT_TYPES),
     (IDENTIFICATION_CONSUMER, make_identification_handler, IDENTIFICATION_EVENT_TYPES),
     (AGENT_ACTION_CONSUMER, make_agent_action_handler, AGENT_ACTION_EVENT_TYPES),
 )

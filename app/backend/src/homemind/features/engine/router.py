@@ -26,9 +26,11 @@ from homemind.connectors.mcp_home import McpHome
 from homemind.contracts.eventos import Evento
 from homemind.contracts.home import Home
 from homemind.contracts.regras import Rule
+from homemind.core.access import get_clock
 from homemind.core.config import get_settings
 from homemind.features.auth.service import CurrentUser, current_user
 from homemind.features.energy.kit import attach_kit_collectors
+from homemind.features.energy.kit_actuators import attach_kit_actuators
 from homemind.features.engine.config import EngineSettings, get_engine_settings
 from homemind.features.engine.engine import (
     Engine,
@@ -91,6 +93,13 @@ async def lifespan(app: FastAPI):
         bus=app.state.bus,
         # Publicado por `appliances` em app.state (o engine arranca depois; sem importar a feature).
         catalog=getattr(app.state, "appliance_catalog", None),
+    )
+    # ALERT-06/AGENT-03b: a lâmpada real nas ações confirmadas (só com HOME_BACKEND=mcp).
+    attach_kit_actuators(
+        app.state,
+        engine.home,
+        settings=get_settings(),
+        clock=app.dependency_overrides.get(get_clock, get_clock)(),
     )
     tarefas: list[asyncio.Task] = []
     try:
