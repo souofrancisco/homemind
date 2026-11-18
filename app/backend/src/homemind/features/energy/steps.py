@@ -48,6 +48,8 @@ class _Session:
     started_at: datetime
     watts: float
     provenance: Provenance
+    location: LocationKind = LocationKind.unknown
+    room_id: UUID | None = None
     watt_seconds: Decimal = Decimal(0)
     stopped_at: datetime | None = None
     cycles: int = 0
@@ -99,6 +101,7 @@ class StepTracker:
         classify: Callable[[SessionFeatures], ApplianceMatch] | None = None,
         timezone: tzinfo = UTC,
         ownership_at: Callable[[UUID, datetime], ApplianceOwnership | None] | None = None,
+        locate: Callable[[UUID], tuple[LocationKind, UUID | None]] | None = None,
     ) -> None:
         if not math.isfinite(threshold_w) or threshold_w <= 0:
             raise ValueError("threshold_w must be finite and positive")
@@ -113,6 +116,7 @@ class StepTracker:
         self.classify = classify
         self.timezone = timezone
         self.ownership_at = ownership_at
+        self.locate = locate
         self._sockets: dict[UUID, _Socket] = {}
 
     def _id(self, kind: str, device_id: UUID, at: datetime) -> UUID:
@@ -162,8 +166,8 @@ class StepTracker:
             status=ConsumptionStatus.closed if closed else ConsumptionStatus.ongoing,
             peak_w=session.watts,
             energy_wh=energy,
-            location=LocationKind.unknown,
-            room_id=None,
+            location=session.location,
+            room_id=session.room_id,
             cost_estimate=None,
             appliance_owner_resident_id=owner,
             provenance=session.provenance,
@@ -267,11 +271,20 @@ class StepTracker:
                 session.stopped_at = None
                 session.provenance = Provenance.combine(session.provenance, provenance)
             else:
+                # Snapshot socket evidence at opening; a later configuration
+                # change cannot move an already measured session to another room.
+                location, room_id = (
+                    self.locate(reading.device_id)
+                    if self.locate is not None
+                    else (LocationKind.unknown, None)
+                )
                 session = _Session(
                     id=self._id("session", reading.device_id, at),
                     started_at=at,
                     watts=delta,
                     provenance=provenance,
+                    location=location,
+                    room_id=room_id,
                 )
                 socket.sessions.append(session)
                 data = self._consumption(reading.device_id, session)

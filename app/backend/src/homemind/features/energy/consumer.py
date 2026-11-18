@@ -8,6 +8,7 @@ from homemind.contracts.appliance_catalog import ApplianceCatalog
 from homemind.contracts.domain_events import DomainEvent, EnergyReadingRecorded, StoredEvent
 from homemind.core.events import Handler
 from homemind.features.energy.classifier import classify
+from homemind.features.energy.locate import locate
 from homemind.features.energy.steps import StepTracker, reading_time
 
 
@@ -27,7 +28,7 @@ def make_step_consumer(tracker: StepTracker, *, catalog: ApplianceCatalog | None
             reading = event.data
             # Catalogue callbacks are valid only inside this handler transaction.
             # Restore constructor hooks even on failure; never retain its connection.
-            previous = tracker.classify, tracker.timezone, tracker.ownership_at
+            previous = tracker.classify, tracker.timezone, tracker.ownership_at, tracker.locate
             try:
                 if catalog is not None:
                     signatures = catalog.signatures_for_household(conn, tracker.household_id)
@@ -42,10 +43,15 @@ def make_step_consumer(tracker: StepTracker, *, catalog: ApplianceCatalog | None
                     tracker.ownership_at = lambda appliance_id, at: catalog.ownership_at(
                         conn, tracker.household_id, appliance_id, at
                     )
+                    # Resolve in this handler's transaction, without retaining conn
+                    # or caching configuration across handlers (it may change).
+                    tracker.locate = lambda device_id: locate(
+                        catalog.device_location(conn, tracker.household_id, device_id)
+                    )
                 events = tracker.tick(reading_time(reading))
                 events.extend(tracker.ingest(reading))
             finally:
-                tracker.classify, tracker.timezone, tracker.ownership_at = previous
+                tracker.classify, tracker.timezone, tracker.ownership_at, tracker.locate = previous
             results[event.id] = tuple(events)
         return list(results[event.id])
 
