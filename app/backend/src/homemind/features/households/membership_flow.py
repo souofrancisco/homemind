@@ -61,7 +61,7 @@ def create_room(
         included_wh=body.included_wh,
     )
     repo.insert_room(conn, room)
-    return RoomView(id=room.id, name=room.name, kind=room.kind)
+    return RoomView(id=room.id, name=room.name, kind=room.kind, included_wh=room.included_wh)
 
 
 def issue_invitation(

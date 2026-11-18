@@ -169,6 +169,8 @@ class RoomView(ContractModel):
     id: UUID
     name: str
     kind: RoomKind
+    # Plafond solidário mensal (BILL-03): visível a quem vê a casa, antes e depois da adesão.
+    included_wh: EnergyWh | None = None
 
 
 class ResidentView(ContractModel):

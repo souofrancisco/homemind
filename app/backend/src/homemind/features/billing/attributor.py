@@ -7,6 +7,15 @@
 - `expire_pending` (chamado periodicamente e no fecho da fatura): pedidos sem decisão no
   prazo → conta comum, por todos.
 
+Enquanto energy não localiza nem estima custo (ENERGY-05 #83, PLANEADO), billing completa a
+sua cópia do consumo com o que é configuração, não inferência:
+- localização `unknown` → a divisão configurada da tomada (`device.room_id`): tomada de quarto
+  → `room` («o teu quarto é teu»: tudo o que passa pela tomada do quarto); tomada de zona
+  comum → `common`. Sem divisão, tomada desconhecida ou contador geral → fica `unknown`.
+  Uma localização dada por energy nunca é substituída.
+- sem `cost_estimate` → energia × preço de referência da casa (ou o preço médio da última
+  fatura fechada), só para decidir se vale a pena perguntar; sem preço não se pergunta.
+
 Síncrono e determinístico (datas dos próprios eventos): reprocessar o histórico dá o mesmo
 resultado, e os ids derivados tornam os eventos de seguimento idempotentes. Nada se apaga.
 """
@@ -24,10 +33,23 @@ from homemind.contracts.billing import (
     AttributionTarget,
     supersede,
 )
-from homemind.contracts.common import Audit, Provenance, ValueKind, replace, stable_id
-from homemind.contracts.energy import ConsumptionEvent, ConsumptionStatus
+from homemind.contracts.common import (
+    Audit,
+    Provenance,
+    ValueKind,
+    cost_cents,
+    replace,
+    stable_id,
+)
+from homemind.contracts.energy import (
+    ConsumptionEvent,
+    ConsumptionStatus,
+    CostEstimate,
+    LocationKind,
+)
 from homemind.contracts.household import HouseholdPolicy
 from homemind.contracts.notification import ConfirmationVerdict, RefType
+from homemind.features.billing import bills
 from homemind.features.billing.attribution import SYSTEM, decide
 
 # Nome PERMANENTE (chave de idempotência em `processed_event`): renomear reprocessa tudo.
@@ -54,7 +76,7 @@ def handle(conn: sqlite3.Connection, stored: de.StoredEvent) -> list[de.DomainEv
 def _on_consumption(
     conn: sqlite3.Connection, ev: de.EnergyConsumptionDetected | de.EnergyConsumptionClosed
 ) -> list[de.DomainEvent]:
-    consumption = _save_consumption(conn, ev.data, ev.ts)
+    consumption = _save_consumption(conn, locate(conn, ev.data), ev.ts)
     cid = str(consumption.id)
     if active_attribution(conn, consumption.id) is not None:
         return []
@@ -64,7 +86,7 @@ def _on_consumption(
         return []  # já se perguntou: decide a votação (ou o prazo)
     tenants = active_tenants(conn, consumption.household_id, consumption.started_at)
     decision = decide(
-        consumption,
+        with_cost_estimate(conn, consumption),
         household_policy(conn, consumption.household_id),
         {room: r for r, room in tenants if room is not None},
         [r for r, _ in tenants],
@@ -90,6 +112,49 @@ def _on_consumption(
             )
         ]
     return []
+
+
+def locate(conn: sqlite3.Connection, c: ConsumptionEvent) -> ConsumptionEvent:
+    """Localização `unknown` → divisão configurada da tomada (ver docstring do módulo)."""
+    if c.location is not LocationKind.unknown:
+        return c
+    row = conn.execute(
+        "SELECT d.role, d.room_id, r.kind FROM device d"
+        " JOIN room r ON r.household_id = d.household_id AND r.id = d.room_id"
+        " WHERE d.household_id = ? AND d.id = ?",
+        (str(c.household_id), str(c.device_id)),
+    ).fetchone()
+    if row is None or row["role"] == "main_meter":
+        return c
+    kind = LocationKind.room if row["kind"] == "bedroom" else LocationKind.common
+    return replace(c, location=kind, room_id=UUID(row["room_id"]))
+
+
+def with_cost_estimate(conn: sqlite3.Connection, c: ConsumptionEvent) -> ConsumptionEvent:
+    """Sem custo de energy: energia × preço de referência (só para a decisão; não se grava)."""
+    if c.cost_estimate is not None or c.energy_wh is None:
+        return c
+    price = reference_price(conn, c.household_id)
+    if price is None:
+        return c
+    estimate = CostEstimate(cents=cost_cents(c.energy_wh, price), price_millicents_per_kwh=price)
+    return replace(c, cost_estimate=estimate)
+
+
+def reference_price(conn: sqlite3.Connection, household_id: UUID) -> int | None:
+    """Preço de referência da casa; senão o preço médio da última fatura fechada."""
+    row = conn.execute(
+        "SELECT energy_price_millicents_per_kwh AS p FROM household WHERE id = ?",
+        (str(household_id),),
+    ).fetchone()
+    if row and row["p"]:
+        return row["p"]
+    last = conn.execute(
+        "SELECT * FROM billing_bill WHERE household_id = ? AND status = 'finalized'"
+        " ORDER BY period_start DESC LIMIT 1",
+        (str(household_id),),
+    ).fetchone()
+    return bills.to_view(last).price_millicents_per_kwh if last else None
 
 
 def _save_consumption(conn: sqlite3.Connection, c: ConsumptionEvent, ts: datetime):
@@ -220,6 +285,9 @@ def _record(
         provenance=new.provenance,
         data=new,
     )
+
+
+record = _record  # para correções auditadas fora do atribuidor (contestações, BILL-06)
 
 
 # --- leituras partilhadas com o fecho da fatura ------------------------------------------------

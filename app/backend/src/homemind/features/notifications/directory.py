@@ -59,6 +59,18 @@ class SqliteResidentDirectory:
         ).fetchall()
         return [UUID(r["resident_id"]) for r in rows]
 
+    def landlords(self, household_id: UUID, at: datetime) -> list[UUID]:
+        today = self._today(household_id, at)
+        if today is None:
+            return []
+        rows = self._conn.execute(
+            "SELECT resident_id FROM membership WHERE household_id = ? AND role = 'landlord'"
+            " AND status = 'active' AND starts_on <= ? AND (ends_on IS NULL OR ends_on >= ?)"
+            " ORDER BY resident_id",
+            (str(household_id), today, today),
+        ).fetchall()
+        return [UUID(r["resident_id"]) for r in rows]
+
     def appliance_name(self, household_id: UUID, appliance_id: UUID) -> str | None:
         row = self._conn.execute(
             "SELECT name FROM appliance WHERE household_id = ? AND id = ?",

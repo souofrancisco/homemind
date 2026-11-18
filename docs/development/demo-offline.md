@@ -154,3 +154,19 @@ Dados reais terão `origin=real`, sem ocultar os restantes simulados.
 
 Testes: `make test` cobre determinismo, idempotência, reset, isolamento,
 presença anónima, falha de leitura, reinício e faturas A/B.
+
+## Demo web com login real (local) — IMPLEMENTADO
+
+`make demo-web-up` cria, de forma idempotente e só em local: Authentik próprio (projeto Compose
+`homemind-demoweb`, portas 25173/28000/29000) com seis contas (`ana`, `bruno`, `carla`, `diogo`,
+`senhorio`, `operador`; palavra-passe `demo-conta-certa`, sem email para não acionar MFA), uma
+**cópia** da base de demo em `app/.demo-web/` e o backend/frontend sobre essa cópia.
+
+- O `sub` de cada conta é obtido por um login OIDC verdadeiro (código + PKCE) e gravado na
+  cópia por `python -m homemind.demo.web link`. Só esse comando local escolhe identidades; a
+  validação de tokens e o frontend não mudam.
+- A original (`app/.demo-data`, `make demo-reset`) é só lida e nunca alterada. A cópia tem o
+  seu marcador; `clean`/`link` recusam qualquer outro ficheiro.
+- Recriar: `make demo-web-reset` (nova cópia, mantém contas) · `make demo-web-clean` (apaga
+  containers, volumes do Authentik e a cópia) e depois `make demo-web-up`.
+- Os dados continuam **SIMULADOS**; as contas Authentik são só de desenvolvimento.

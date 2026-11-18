@@ -93,7 +93,7 @@ O recibo mostra **cada linha** com a proveniência dos kWh (`measured` / `estima
 
 **IMPLEMENTADO (app):** no recibo do morador (página de faturas da APP-06), «Porque pago isto?» abre a explicação, que só é pedida ao servidor nesse momento: comparação com a divisão igual, os meus consumos com a linha temporal e a proveniência, a conta comum por aparelho e o não atribuído (`components/billing/ReceiptExplanationView.tsx`; a app não faz contas).
 
-**PLANEADO:** política versionada por data (HOUSE-04: hoje mostra-se a regra da sala em vigor); contagem de votos por consumo; contestação (BILL-06).
+**PLANEADO:** política versionada por data (HOUSE-04: hoje mostra-se a regra da sala em vigor); contagem de votos por consumo. Contestação: ver BILL-06 abaixo (IMPLEMENTADO).
 
 ### Exemplos de aceitação (valores do PDF; fatura de 120 € = 24 € fixos + 600 kWh × 0,16 €)
 
@@ -122,7 +122,7 @@ O sumário executivo cita 21,20 €; o corpo do documento (§6.2 e §7.1) cita 4
 - Orçamento pessoal: limiares 50 / 80 / 100 % (omissão do PDF), notificação por limiar **uma só vez** por período (`last_threshold_notified`).
 - O gasto comparado inclui **todos os custos** (parte do termo fixo + resíduo + consumo individual), isto é, o valor que o morador vai pagar (D-31).
 - Previsão do fim do mês: projeção linear do gasto acumulado (P1). Algoritmos mais complexos ficam fora do MVP.
-- Plafond por quarto do senhorio (`included_kwh`): aviso antes de passar e quando passa; o excesso paga o próprio quarto (PDF §6.9, §15.3) — P1.
+- «Despesas incluídas» do senhorio (PDF §6.9, §15.3: até X kWh do quarto incluídos na renda, aviso antes de passar): **PLANEADO**, precisa de um campo próprio. **Não** é o `room.included_wh`, que é o plafond solidário de aquecimento (BILL-03, abaixo).
 
 ## Alertas (P1/P2)
 
@@ -146,6 +146,8 @@ Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `
 | `features/billing/allocation.py`: repartição + arredondamento + recibo por linhas | IMPLEMENTADO (puro, sem persistência) |
 | Votação da regra B (D-32) | IMPLEMENTADO no contrato (`confirmation_outcome`) e consumido pelo atribuidor |
 | Atribuidor persistente (`features/billing/attributor.py`, consumidor `billing.attributor`, migração `0101`): `energy.consumption_*` → atribuição direta ou `billing.confirmation_needed`; `notification.responded` decidido → atribuição por confirmação; prazo esgotado (tarefa a cada 60 s) → conta comum. Emite `billing.attribution_changed`; nada se apaga (`superseded`) | IMPLEMENTADO |
+| Completar o consumo enquanto energy não localiza nem estima custo (BILL-02 #90, `attributor.locate` / `with_cost_estimate`): localização `unknown` → divisão configurada da tomada (`device.room_id`; quarto → `room`, zona comum → `common`; sem divisão, tomada desconhecida ou `main_meter` → fica `unknown`); a localização dada por energy nunca é substituída e a versão localizada é a que billing guarda (recibos e explicação coerentes). Sem `cost_estimate` → energia × preço de referência da casa ou preço médio da última fatura fechada, só para decidir se se pergunta (não se grava); sem preço não se pergunta. Limitação: `device.room_id` não tem histórico, por isso reprocessar consumos antigos usa a configuração atual da tomada | IMPLEMENTADO (provisório até ENERGY-05 #83) |
+| Regra da sala por data (política versionada, HOUSE-04 #87) | PLANEADO: hoje nenhum endpoint muda `common_area_rule`; o atribuidor lê a regra atual |
 | Entrada da fatura (BILL-01): `BillIn` → pré-visualização → rascunho em `billing_bill` (migração `0100`), `billing.bill_created`, leitura por papel | IMPLEMENTADO (`features/billing/{bills,router}.py`) |
 | Fecho do mês (BILL-04, `features/billing/closing.py`, migração `0102`): finalizar (parcelas imutáveis, Σ = total ao cêntimo, `409` ao repetir), correções por revisão (a anterior fica `superseded`), resumo do senhorio por quarto e recibo do inquilino | IMPLEMENTADO |
 | Orçamento pessoal e avisos 50/80/100 % (ALERT-01, `features/billing/budgets.py`, migração `0103`): gasto com todos os custos (D-31), desconhecido sem preço, um aviso por limiar e ciclo (ao saltar vários avisa só o mais alto), reset explícito ao redefinir; reavaliado em cada atribuição, fecho de fatura e a cada 60 s. `alerts.threshold_crossed` → aviso pessoal (consumidor `notifications.budget_threshold`) | IMPLEMENTADO |
@@ -153,8 +155,10 @@ Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `
 | Pico por baseline (conta da sala do dia > 2× a média) | PLANEADO |
 | Lâmpada do orçamento (ALERT-06, `contracts.billing.budget_light`): `BudgetStatus.light` = verde < 80 %, âmbar (`amarelo` de `CORES`) a 80 %, vermelho a 100 %, com `label` em texto (não depende só da cor); sem orçamento ou gasto desconhecido → `null`, nunca verde por omissão. Só para a lâmpada do **próprio quarto** (nunca a de uma zona comum: o orçamento é pessoal) | IMPLEMENTADO (cor na API/app) |
 | Escrita da cor na lâmpada real (MCP `color_rgb`) | Não é automática: só via ação proposta com capability verificada, grant (MCP-04) e autorização humana; efeito físico não se afirma só com ACK | PLANEADO |
-| Quartos frios (ALERT-06, `features/billing/comfort.py`, migração `0120`): consumidor `billing.cold_rooms` de `sensor.reading_recorded` (só temperatura `ok` com quarto `bedroom`; `unknown`/`stale`/sem quarto/sala ignorados). Guarda só o agregado da noite (22:00–08:00, fuso da casa); noite fria = média < 18 °C; ≥ 3 noites frias nas últimas 7 completas → `alerts.cold_room` para o inquilino do quarto, uma vez por janela. Consumidor P3 `notifications.cold_room` → `comfort_alert` pessoal (nunca senhorio), sem valores de plafond (BILL-03 ainda por fazer) | IMPLEMENTADO |
-| Plafond por quarto (BILL-03), previsão (ALERT-02), contestação (BILL-06) | PLANEADO |
+| Quartos frios (ALERT-06, `features/billing/comfort.py`, migração `0120`): consumidor `billing.cold_rooms` de `sensor.reading_recorded` (só temperatura `ok` com quarto `bedroom`; `unknown`/`stale`/sem quarto/sala ignorados). Guarda só o agregado da noite (22:00–08:00, fuso da casa); noite fria = média < 18 °C; ≥ 3 noites frias nas últimas 7 completas → `alerts.cold_room` para o inquilino do quarto, uma vez por janela. Consumidor P3 `notifications.cold_room` → `comfort_alert` pessoal (nunca senhorio), sem valores de plafond (aviso «ainda tens X kWh do plafond»: PLANEADO) | IMPLEMENTADO |
+| Plafond solidário de aquecimento (BILL-03, `features/billing/allowance.py`, migração `0106`): ver «Plafond solidário» abaixo | IMPLEMENTADO |
+| Contestar e reemitir (BILL-06, `features/billing/contestations.py`, migração `0130`): o inquilino contesta o **próprio** recibo (opcionalmente um consumo atribuído a si; uma aberta por fatura); só o senhorio decide, sempre com justificação. Rejeitar não muda nada. Aceitar passa o consumo contestado para a conta comum (`manual`, auditado com o senhorio como autor; nunca pior do que a divisão igual), corrige opcionalmente os dados da fatura e **reemite sempre como nova revisão** (a anterior fica `superseded`), guardando o antes/depois da parcela. Correções diretas (`/revisions`) levam as contestações abertas para a nova revisão. O senhorio vê quarto, motivo e decisão, nunca o consumo nem presença. `billing.contestation_changed` → consumidor P3 `notifications.contestation` (aberta: aviso aos senhorios sem o motivo; decidida: aviso a quem contestou com justificação e antes/depois). Respostas tardias a «de quem é esta conta?» não mudam faturas fechadas (o atribuidor ignora-as após o prazo) | IMPLEMENTADO |
+| Previsão (ALERT-02) | PLANEADO |
 
 Validação da fatura (PROPOSTA de limiares, ajustáveis em `bills.py`): preço médio 0,01–1,00 €/kWh (apanha erros de unidades), período ≤ 62 dias e já terminado, tarifa declarada opcional que tem de fechar com `total − fixa` (folga de 1 %, mínimo 5 cêntimos). Foto/PDF lido por LLM fica para depois e passará pela mesma pré-visualização.
 
@@ -177,3 +181,25 @@ P1 (consumo), P3 (confirmações e entrega), P5 (casas, base de dados), P2 (pres
 ## Testes
 
 Puros, com relógio simulado e sem rede/hardware: fixtures, regra A/B/C, prazo de 24 h, saída a meio do mês, resíduo negativo, arredondamento, permissões.
+
+## Plafond solidário de aquecimento (BILL-03)
+
+**IMPLEMENTADO.** O aquecimento básico de cada quarto é pago por todos; só o excesso é individual (v5.1 §8). Premissas:
+
+| Premissa | Regra |
+|---|---|
+| Limite | `room.included_wh` por **mês** e por quarto, definido pelo senhorio ao criar o quarto. Aparece no `RoomView` e na página da casa, por isso é visível antes da adesão. |
+| Período da fatura | Proporcional por mês de calendário: (dias do período nesse mês ÷ dias do mês) × X, somado e arredondado para baixo ao Wh. Novembro inteiro = X; outubro + novembro = 2X. |
+| Prova de aquecimento | O aparelho tem de estar identificado (assinatura com vencedor) e registado no catálogo com a categoria `heating`. Tem de ser medido numa tomada do **próprio** quarto e estar atribuído ao seu morador. Um aparelho não identificado ou ambíguo, um aquecedor na sala ou um consumo noutro quarto **não** contam. A explicação do recibo di-lo, nunca em silêncio. |
+| Ordem | O plafond enche por ordem cronológica dos consumos (empates pelo id). |
+| Repartição | Os Wh cobertos saem da linha `room` do morador e entram numa linha `heating_allowance` («Plafond solidário de aquecimento (parte igual)»), dividida por igual por todos os moradores, com a mesma proveniência do consumo. O total da fatura fecha ao cêntimo como antes. |
+| Auditoria | No fecho guardam-se o limite de cada quarto (`billing_allowance`) e, por consumo, `heating`/`covered_wh` em `billing_allocation_item`. Faturas fechadas antes ficam como foram fechadas. |
+| Orçamento (ALERT-01) | O gasto do mês aplica o mesmo plafond, e a parte igual do plafond conta em `shared_cents`. |
+
+Exemplo do PDF (v5.1 §20, teste `test_exemplo_do_pdf_excesso_de_330_kwh`): fatura de 120 € (24 € fixos + 600 kWh × 0,16 €), 4 moradores, aquecedor da Ana com 360 kWh no quarto e plafond de 30 kWh. Resultado:
+- linha do quarto da Ana: 330 kWh = **52,80 €**;
+- linha `heating_allowance`: 7,5 kWh = 1,20 € para cada morador;
+- total da Ana: 69,60 €; total de cada um dos outros: 16,80 €.
+
+**PLANEADO:** o aviso privado «ainda tens X kWh do plafond» junto do alerta de quarto frio; e quem pode alterar `included_wh` depois de criado o quarto, e com que efeito (só nas faturas seguintes).
+

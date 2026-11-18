@@ -177,10 +177,16 @@ def test_real_energy_consumer_processes_simulated_demo_readings(store):
                 "SELECT json FROM billing_attribution WHERE status = 'active'"
             ).fetchall()
         )
-        assert len(active) == sum(item.status.value == "closed" for item in consumption)
-        assert not db.run_sync(
-            lambda conn: conn.execute("SELECT count(*) FROM billing_confirmation").fetchone()[0]
+        asked = db.run_sync(
+            lambda conn: conn.execute(
+                "SELECT count(*) FROM billing_confirmation WHERE status = 'pending'"
+            ).fetchone()[0]
         )
+        # BILL-02: sem custo de energy, billing estima-o pelo preço de referência; os consumos
+        # que valem a pena (≥ 0,50 €) ficam à espera da pergunta, os outros decidem-se já.
+        closed = {item.id for item in consumption if item.status.value == "closed"}
+        assert len(active) + asked == len(closed)
+        assert asked >= 1
     finally:
         db.close()
 

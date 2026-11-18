@@ -12,6 +12,7 @@ app/.mcp-tokens.json
 app/.mcp-auth/
 # data
 app/.demo-data/
+app/.demo-web/
 *.db
 *.sqlite
 *.sqlite3
