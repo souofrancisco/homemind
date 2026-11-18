@@ -11,6 +11,7 @@ from homemind.contracts.billing import Budget
 from homemind.contracts.common import cost_cents, replace, stable_id
 from homemind.contracts.energy import CostEstimate, LocationKind
 from homemind.features.billing import attributor, budgets
+from homemind.features.households.tests.conftest import NOW
 
 ANA, LANDLORD, OPERATOR = ({"x-test-sub": s} for s in ("sub-ana", "sub-senhorio", "sub-operador"))
 H = f"/api/households/{fx.HOUSEHOLD}"
@@ -232,3 +233,40 @@ def test_fatura_fechada_com_plafond_bate_com_o_recibo(app, client, now):
     assert any(line["kind"] == "heating_allowance" for line in recibo["breakdown"])
     s = client.get(ME, params={"period": "2026-11"}, headers=ANA).json()
     assert s["final"] is True and s["spent_cents"] == recibo["amount_cents"]
+
+
+def test_orcamento_a_80_propoe_a_lampada_ambar_so_a_ana(app, client):
+    """Ponta a ponta (ALERT-06): consumo → orçamento a 80 % → proposta (agente) de pôr a lâmpada
+    SIMULADA em âmbar, só à Ana; nada se executa sem a confirmação dela."""
+    _definir(client, 10)
+    c = replace(
+        fx.consumption(closed=True),
+        id=stable_id("consumption", "e2e-luz"),
+        energy_wh=50_000,  # 8 € de 10 € = 80 %
+        location=LocationKind.room,
+        room_id=fx.ROOM_ANA,
+        started_at=NOW - timedelta(hours=1),  # recente: a proposta só vale 10 min
+        ended_at=NOW - timedelta(minutes=5),
+        cost_estimate=CostEstimate(cents=800, price_millicents_per_kwh=fx.PRICE_MILLICENTS),
+    )
+    app.state.bus.publish_threadsafe(
+        de.EnergyConsumptionClosed(
+            ts=NOW - timedelta(minutes=5),
+            household_id=fx.HOUSEHOLD,
+            provenance=c.provenance,
+            data=c,
+        )
+    )
+    fim = time.monotonic() + 5
+    while time.monotonic() < fim:
+        if propostas := client.get(f"{H}/agent/actions", headers=ANA).json():
+            break
+        time.sleep(0.05)
+    else:
+        raise AssertionError("a proposta da lâmpada não chegou")
+    [p] = propostas
+    assert p["action"]["status"] == "proposed" and p["execution"] is None
+    assert p["action"]["command"]["color_rgb"] == {"r": 255, "g": 200, "b": 0}
+    assert "80 %" in p["action"]["rationale"] and p["origin"] == "simulated"
+    bruno = client.get(f"{H}/agent/actions", headers={"x-test-sub": "sub-bruno"}).json()
+    assert bruno == []

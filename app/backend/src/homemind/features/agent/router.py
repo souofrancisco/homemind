@@ -31,6 +31,11 @@ from homemind.features.agent import history
 from homemind.features.agent.actions_router import StateDep, reply_to_action_request
 from homemind.features.agent.actions_router import router as actions_router
 from homemind.features.agent.assistant import Assistant
+from homemind.features.agent.budget_light_consumer import (
+    BUDGET_LIGHT_CONSUMER,
+    BUDGET_LIGHT_EVENT_TYPES,
+)
+from homemind.features.agent.budget_light_consumer import make_handler as make_budget_handler
 from homemind.features.agent.config import get_agent_settings
 from homemind.features.agent.guardrails import is_action_request
 from homemind.features.agent.llm import Complete, LLMUnavailable, nvidia_complete
@@ -57,6 +62,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # override de `get_clock` nos testes também vale aqui). O consumidor só propõe; nunca executa.
     clock = app.dependency_overrides.get(get_clock, get_clock)()
     app.state.bus.subscribe(SAFETY_CONSUMER, make_safety_handler(app, clock), SAFETY_EVENT_TYPES)
+    # ALERT-06: orçamento a 80/100 % -> proposta de pôr a lâmpada âmbar/vermelha (só propõe).
+    app.state.bus.subscribe(
+        BUDGET_LIGHT_CONSUMER, make_budget_handler(app, clock), BUDGET_LIGHT_EVENT_TYPES
+    )
     yield
 
 
