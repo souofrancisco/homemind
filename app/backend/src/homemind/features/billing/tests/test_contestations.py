@@ -145,7 +145,7 @@ def test_aceitar_com_correcao_dos_dados_da_fatura(client, fatura):
     cid = _contestar(client, fatura).json()["id"]  # sem consumo: o total estava errado
     r = _decidir(client, cid, bill={**SIM, "total_cents": 12_400})
     assert r.status_code == 200, r.text
-    assert r.json()["after_cents"] == 4350  # +4 € de energia: 16,67 € do quarto + 20,83 € do resíduo + 6 €
+    assert r.json()["after_cents"] == 4350  # quarto 16,67 + resíduo 20,83 + fixa 6
     bad = _contestar(client, r.json()["revision_bill_id"]).json()["id"]
     r = _decidir(client, bad, bill={**SIM, "fixed_cents": 12_000})
     assert r.status_code == 422 and r.json()["error"]["code"] == "bill_inconsistent"
