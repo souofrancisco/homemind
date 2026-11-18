@@ -246,7 +246,7 @@ def test_recibo_explica_contestavel_e_senhorio_nao_ve_presenca(app, client, now,
         assert "presen" not in texto and "inferred" not in texto and "casa" not in texto
 
 
-def test_consumidor_guarda_so_o_necessario_e_apaga_o_antigo(app):
+def test_consumidor_guarda_so_o_necessario_e_apaga_o_antigo(app, regra_c):
     velho = fx.T0 - timedelta(days=60)
     _presenca(app, fx.ANA, OUT, since=velho)
     _presenca(app, fx.ANA, IN, since=velho + timedelta(days=1))
@@ -269,7 +269,23 @@ def test_consumidor_guarda_so_o_necessario_e_apaga_o_antigo(app):
     assert porta == [(velho + timedelta(days=1)).isoformat(), fx.T0.isoformat()]
 
 
-def test_subscrito_no_barramento(app):
+def test_revogar_o_opt_in_apaga_a_copia_do_morador_e_so_a_dele(app, regra_c):
+    _presenca(app, fx.ANA, IN)
+    _presenca(app, fx.BRUNO, OUT)
+    app.state.db.run_sync(
+        lambda c: c.execute(
+            "UPDATE membership SET presence_opt_in = 0 WHERE resident_id = ?", (str(fx.ANA),)
+        )
+    )
+    _porta(app, 0, ts=fx.T0)  # qualquer mensagem de presença da casa dispara a limpeza
+
+    def residentes(conn):
+        return {r[0] for r in conn.execute("SELECT resident_id FROM billing_presence_state")}
+
+    assert app.state.db.run_sync(residentes) == {str(fx.BRUNO)}
+
+
+def test_subscrito_no_barramento(app, regra_c):
     p = PersonPresence(
         resident_id=fx.ANA,
         state=IN,

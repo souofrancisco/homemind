@@ -15,7 +15,9 @@ Dividir só por um subconjunto de moradores (2 de 4 em casa) fica PLANEADO: exig
 novo no contrato `Attribution`.
 
 Billing guarda uma cópia mínima dos eventos públicos de presença (não importa a feature) e
-apaga o que tem mais de `RETENTION`.
+apaga o que tem mais de `RETENTION`. Quem deixa de ter `presence_opt_in` em vigor (revogou ou saiu
+da casa) perde a cópia na primeira mensagem de presença seguinte da casa (PRIV-03): a promessa «os
+teus dados de presença são apagados» vale também aqui, sem esperar pelos 40 dias.
 """
 
 import sqlite3
@@ -142,6 +144,7 @@ def handle(conn: sqlite3.Connection, stored: de.StoredEvent) -> list[de.DomainEv
             ),
         )
         _prune(conn, "billing_presence_state", "since", h, ev.ts, "resident_id")
+        _purge_unconsented(conn, h)
     elif isinstance(ev, de.PresenceOccupancyChanged):
         o = ev.data
         conn.execute(
@@ -150,7 +153,18 @@ def handle(conn: sqlite3.Connection, stored: de.StoredEvent) -> list[de.DomainEv
             (h, o.ts.isoformat(), o.people_inside, o.visitors, int(o.provenance.simulated)),
         )
         _prune(conn, "billing_occupancy", "ts", h, ev.ts)
+        _purge_unconsented(conn, h)
     return []
+
+
+def _purge_unconsented(conn: sqlite3.Connection, h: str) -> None:
+    """Apaga os estados de quem já não tem `presence_opt_in` em vigor como inquilino ativo."""
+    conn.execute(
+        "DELETE FROM billing_presence_state WHERE household_id = ? AND resident_id NOT IN"
+        " (SELECT resident_id FROM membership WHERE household_id = ? AND role = 'tenant'"
+        " AND status = 'active' AND presence_opt_in = 1)",
+        (h, h),
+    )
 
 
 def _prune(
