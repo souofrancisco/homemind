@@ -1,6 +1,6 @@
 # Módulos `agent` e `automations` — assistente de IA e automações
 
-**Dono: P3 (RafaelMat0s-Dev); execução física: P1.** **IMPLEMENTADO (backend parcial: leitura com dados SIMULADOS e ações propostas com confirmação, AGENT-03); o resto PLANEADO** (ver «Estado de implementação» no fim). Substitui o agente que vivia no Telegram: o assistente está **dentro da aplicação** (D-01).
+**Dono: P3 (RafaelMat0s-Dev); execução física: P1.** **IMPLEMENTADO (backend parcial: leitura com dados SIMULADOS, histórico da conversa por residente (#111), ações propostas com confirmação (AGENT-03) e propostas a partir de alertas de janela aberta (AGENT-03b)); o resto PLANEADO** (ver «Estado de implementação» no fim). Substitui o agente que vivia no Telegram: o assistente está **dentro da aplicação** (D-01).
 
 ## Responsabilidade
 
@@ -79,7 +79,7 @@ P4 (dados de consumo, recibos), P1 (ações), P2 (presença), P5 (papéis, UI).
 - Um senhorio recebe `403` ao pedir dados individuais ao assistente.
 - Sem `NVIDIA_API_KEY` o resto da aplicação funciona (comportamento atual) e o assistente indica que está indisponível.
 
-## Estado de implementação (branch `feat/110-agent-assistant`, refs #110 e #111)
+## Estado de implementação (na `main`, refs #110, #111 e #112)
 
 Tipos reais de `contracts/agent.py` e `contracts/common.py` (já não há `_provisional.py`). Leitura: sem eventos; o histórico (#111) e as ações propostas (AGENT-03, abaixo) têm tabelas; as ações têm o evento `agent.action_proposed` e rotas próprias.
 
@@ -153,7 +153,7 @@ Cada `POST …/agent/messages` grava a **troca** (a pergunta e a resposta) no hi
 2. **Só três ferramentas** em `AgentTool`; AGENT-01 pede também aparelhos, explicação da atribuição e notificações pendentes.
 3. **`receipt` exige `bill_id`:** hoje o `ReceiptProvider.latest_bill` resolve «o último recibo» (PROPOSTA a rever).
 4. **Interface dos *providers*:** os `Protocol` vivem em `features/agent/providers.py`; propor movê-los para `contracts/agent.py` e registá-los em `app.state`.
-5. **`AgentMessage` sem `resident_id`:** o histórico é por residente (a tabela guarda-o; o contrato não o expõe, o que é o desejado: só o próprio lê as suas). Falta a linha `GET …/agent/messages` em `contracts.md` (pedido à P5; fora desta feature).
+5. **`AgentMessage` sem `resident_id`:** o histórico é por residente (a tabela guarda-o; o contrato não o expõe, o que é o desejado: só o próprio lê as suas). A linha `GET …/agent/messages` já consta de `contracts.md` (estado IMPLEMENTADO; falta a revisão da P5).
 6. **`AgentResponse` sem `used_llm`/`degraded`:** a app não distingue resposta do LLM de recurso determinístico.
 7. **Definições do LLM** em `features/agent/config.py` (`features/engine/config.py` é REMOVE): decidir se ficam aqui ou passam para `core/config`.
 8. **OpenAPI:** o FastAPI anuncia 422 `HTTPValidationError` para corpos inválidos, mas `core/errors.py` responde 400 `invalid_request` (vale para todas as rotas).
