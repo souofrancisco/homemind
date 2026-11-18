@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # diários dos alertas ficam guardados. 0 = sem expurgo. Mínimo 62: o mês corrente e o
     # anterior têm de estar completos (totais de energia, fecho da fatura). PROPOSTA (P-08).
     retention_telemetry_days: int = 90
+    # PRIV-04: anonimizar um ex-morador N dias depois de o último contrato acabar (nome, conta,
+    # email do convite, conversa e notificações pessoais; os valores financeiros ficam).
+    # 0 = DESLIGADO (omissão) até a equipa/DPO fixar o prazo (P-08); se ligado, mínimo 30.
+    retention_anonymize_after_days: int = 0
     # Authentik (OIDC). Issuer = URL pública do provider (campo `iss` dos tokens);
     # jwks_url pode ser interno (ex.: http://authentik-server:9000/...) em Docker.
     oidc_issuer: str = "http://localhost:9000/application/o/homemind/"
@@ -127,6 +131,13 @@ class Settings(BaseSettings):
     def _retencao(cls, v: int) -> int:
         if v != 0 and v < 62:
             raise ValueError("RETENTION_TELEMETRY_DAYS é 0 (sem expurgo) ou pelo menos 62")
+        return v
+
+    @field_validator("retention_anonymize_after_days")
+    @classmethod
+    def _anonimizar(cls, v: int) -> int:
+        if v != 0 and v < 30:
+            raise ValueError("RETENTION_ANONYMIZE_AFTER_DAYS é 0 (desligado) ou pelo menos 30")
         return v
 
     @field_validator("presence_door_inside_sign")
