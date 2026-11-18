@@ -12,5 +12,6 @@ Só fluxos **comprovados**. Estado: **Browser** = percorrido com Playwright/Chro
 | **Orçamento** | valor mensal do morador | `billing/budgets.py` → notificações | «85 % utilizado»; aviso «Orçamento a 80 %» | Browser | Previsão mensal e tarifário não existem (#101) |
 | **Fatura e recibos** | senhorio: período, total, fixo, kWh | `billing/bills.py`, `closing.py`, `explanation.py` | 120 € → 4 recibos que somam 120,00 € (também após reset); recibo explicado; aviso «Recibo disponível» | Browser | Contestação (#93) só em testes |
 | **Reset e reprodução** | `make demo-reset` | `demo/cli.py`, `demo/web.py` | base de demo nova (cópia `.demo-web`), pedido «0 de 4 votos» regressa, contas mantidas | Browser | Nunca toca na base original `.demo-data` |
+| **Ocupação e visitas** | passagens na porta (clip SIMULADO) + estados dos moradores | `presence/occupancy.py`, `GET /api/presence/occupancy` | número de pessoas dentro e de visitas; `uncertain` se a contagem não bate | Testes | Não visto no browser nesta data; sem câmara real; senhorio 403 |
 
 **Não demonstrável hoje:** assistente de IA (sem UI), escritas físicas (lâmpada/tomada), presença/câmara real, push/offline.
