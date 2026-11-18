@@ -49,7 +49,7 @@ from homemind.contracts.energy import (
 )
 from homemind.contracts.household import HouseholdPolicy
 from homemind.contracts.notification import ConfirmationVerdict, RefType
-from homemind.features.billing import bills
+from homemind.features.billing import tariff
 from homemind.features.billing.attribution import SYSTEM, decide
 
 # Nome PERMANENTE (chave de idempotência em `processed_event`): renomear reprocessa tudo.
@@ -142,19 +142,12 @@ def with_cost_estimate(conn: sqlite3.Connection, c: ConsumptionEvent) -> Consump
 
 
 def reference_price(conn: sqlite3.Connection, household_id: UUID) -> int | None:
-    """Preço de referência da casa; senão o preço médio da última fatura fechada."""
-    row = conn.execute(
-        "SELECT energy_price_millicents_per_kwh AS p FROM household WHERE id = ?",
-        (str(household_id),),
-    ).fetchone()
-    if row and row["p"]:
-        return row["p"]
-    last = conn.execute(
-        "SELECT * FROM billing_bill WHERE household_id = ? AND status = 'finalized'"
-        " ORDER BY period_start DESC LIMIT 1",
-        (str(household_id),),
-    ).fetchone()
-    return bills.to_view(last).price_millicents_per_kwh if last else None
+    """Preço do tarifário de referência (ALERT-02); no bi-horário, o mais alto dos dois: na
+    dúvida pergunta-se, nunca se deixa de perguntar por subestimar o custo."""
+    rate = tariff.load(conn, household_id).tariff
+    if rate is None:
+        return None
+    return max(rate.price_millicents_per_kwh, rate.offpeak_price_millicents_per_kwh or 0)
 
 
 def _save_consumption(conn: sqlite3.Connection, c: ConsumptionEvent, ts: datetime):

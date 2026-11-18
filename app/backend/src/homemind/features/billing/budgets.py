@@ -6,8 +6,16 @@ Gasto do mês = TODOS os custos (D-31), o que o morador pagaria se o mês fechas
   o aquecimento básico de cada quarto é de todos, como no fecho) × preço;
 - `base`: parte do termo fixo + resíduo, estimada pelo último recibo fechado (por dia) e
   proporcional aos dias já passados; `None` se ainda não há recibo anterior.
-Preço: o de referência da casa; senão o preço médio da última fatura; sem nenhum → gasto
-desconhecido (`None`, nunca 0 €). Com a fatura do mês fechada, valem os valores reais.
+Preço: o tarifário de referência (`tariff.py`: simples ou bi-horário, valorizado à hora de
+cada consumo); sem nenhum → gasto desconhecido (`None`, nunca 0 €). Com a fatura do mês
+fechada, valem os valores reais.
+
+Previsão do fim do mês (ALERT-02, v5.1 M3 «extrapolação linear»): gasto variável até agora +
+o mesmo ritmo nos dias que faltam + a base do mês inteiro. A observação começa no primeiro
+consumo atribuído da casa no mês (antes disso não havia dados, não «zero»); com menos de
+`MIN_OBSERVED_DAYS` não há previsão. A incerteza é a variação do meu custo entre dias
+completos (desvio-padrão diário × √dias que faltam). Aproximação conhecida: o plafond
+solidário esgota-se a meio do mês e a extrapolação linear não o antecipa.
 
 Avisos: um por limiar e ciclo; ao saltar vários limiares de uma vez avisa-se só o mais alto
 (os de baixo contam como avisados). Redefinir o orçamento é um reset explícito (`generation`).
@@ -15,9 +23,11 @@ Avisos: um por limiar e ciclo; ao saltar vários limiares de uma vez avisa-se s�
 
 import calendar
 import json
+import math
 import sqlite3
-from dataclasses import dataclass
-from datetime import date, datetime
+from collections import defaultdict
+from dataclasses import dataclass, replace
+from datetime import date, datetime, time, timedelta
 from fractions import Fraction
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -29,13 +39,14 @@ from homemind.contracts.billing import (
     BillPeriod,
     BreakdownKind,
     Budget,
+    BudgetForecast,
     BudgetKind,
     BudgetStatus,
     BudgetThreshold,
     budget_light,
 )
-from homemind.contracts.common import Origin, Provenance, ValueKind, cost_cents, stable_id
-from homemind.features.billing import allowance, bills
+from homemind.contracts.common import Origin, Provenance, ValueKind, stable_id
+from homemind.features.billing import allowance, bills, tariff
 from homemind.features.billing.allocation import EnergyShare
 from homemind.features.billing.closing import (
     heating_appliances,
@@ -50,11 +61,19 @@ def month_period(period: str) -> BillPeriod:
     return BillPeriod(start=date(y, m, 1), end=date(y, m, calendar.monthrange(y, m)[1]))
 
 
+MIN_OBSERVED_DAYS = 3
+
+
+def household_tz(conn: sqlite3.Connection, household_id: UUID) -> ZoneInfo:
+    return ZoneInfo(
+        conn.execute(
+            "SELECT timezone FROM household WHERE id = ?", (str(household_id),)
+        ).fetchone()["timezone"]
+    )
+
+
 def local_today(conn: sqlite3.Connection, household_id: UUID, now: datetime) -> date:
-    tz = conn.execute(
-        "SELECT timezone FROM household WHERE id = ?", (str(household_id),)
-    ).fetchone()["timezone"]
-    return now.astimezone(ZoneInfo(tz)).date()
+    return now.astimezone(household_tz(conn, household_id)).date()
 
 
 def current_period(conn: sqlite3.Connection, household_id: UUID, now: datetime) -> str:
@@ -68,6 +87,7 @@ class Spend:
     base_cents: int | None
     final: bool
     simulated: bool
+    forecast: BudgetForecast | None = None
 
     @property
     def total_cents(self) -> int:
@@ -101,9 +121,10 @@ def month_spend(
     if resident_id not in tenants:
         return None
     last = _last_finalized(conn, household_id, month.start)
-    price = _reference_price(conn, household_id) or (last and last["price"])
-    if not price:
+    rate = tariff.load(conn, household_id).tariff
+    if rate is None:
         return None  # sem preço não há custo: desconhecido, nunca 0 €
+    tz = household_tz(conn, household_id)
     attributions, consumptions = period_inputs(conn, household_id, month)
     shares, simulated = [], False
     for a in attributions:
@@ -113,6 +134,18 @@ def month_spend(
         simulated = simulated or c.provenance.simulated
         target = a.target_resident_id if a.target_type is AttributionTarget.resident else None
         shares.append(EnergyShare(target, c.energy_wh, c.provenance, c.id))
+
+    def mine(s: EnergyShare) -> tuple[Fraction, Fraction]:
+        """(próprio, parte da conta comum) em milicêntimos; a conta comum divide-se por todos."""
+        c = consumptions[s.consumption_id]
+        value = tariff.value_millicents(rate, tz, s.energy_wh, c.started_at, c.ended_at)
+        if s.resident_id == resident_id:
+            return value, Fraction(0)
+        return Fraction(0), (value / len(tenants) if s.resident_id is None else Fraction(0))
+
+    daily: defaultdict[date, Fraction] = defaultdict(Fraction)  # antes do plafond: o ritmo
+    for s in shares:
+        daily[consumptions[s.consumption_id].started_at.astimezone(tz).date()] += sum(mine(s))
     # Plafond solidário (BILL-03) como no fecho: o aquecimento básico do quarto é de todos.
     shares, _ = allowance.apply(
         shares,
@@ -121,32 +154,72 @@ def month_spend(
         room_limits(conn, household_id, month),
         heating_appliances(conn, household_id),
     )
-    own_wh = sum(s.energy_wh for s in shares if s.resident_id == resident_id)
-    shared_wh = sum(
-        (Fraction(s.energy_wh, len(tenants)) for s in shares if s.resident_id is None),
-        Fraction(0),
-    )
-    base = None
+    own = sum((mine(s)[0] for s in shares), Fraction(0))
+    shared = sum((mine(s)[1] for s in shares), Fraction(0))
+    base, per_day = None, None
     if last is not None and resident_id in last["base_per_day"]:
         today = local_today(conn, household_id, now)
         elapsed = max(0, (min(today, month.end) - month.start).days + 1)
-        base = round(last["base_per_day"][resident_id] * elapsed)
+        per_day = last["base_per_day"][resident_id]
+        base = round(per_day * elapsed)
         simulated = simulated or last["simulated"]
-    return Spend(
-        confirmed_cents=cost_cents(own_wh, price),
-        shared_cents=round(shared_wh * price / 1_000_000),
+    spend = Spend(
+        confirmed_cents=tariff.cents(own),
+        shared_cents=tariff.cents(shared),
         base_cents=base,
         final=False,
         simulated=simulated,
     )
+    first = min((c.started_at for c in consumptions.values()), default=None)
+    if first is None:
+        return spend  # mês sem dados: nunca uma previsão
+    forecast = _forecast(month, tz, now, first, own + shared, daily, per_day, spend.total_cents)
+    return replace(spend, forecast=forecast)
 
 
-def _reference_price(conn: sqlite3.Connection, household_id: UUID) -> int | None:
-    row = conn.execute(
-        "SELECT energy_price_millicents_per_kwh AS p FROM household WHERE id = ?",
-        (str(household_id),),
-    ).fetchone()
-    return row["p"] if row else None
+def _forecast(
+    month: BillPeriod,
+    tz: ZoneInfo,
+    now: datetime,
+    first: datetime,
+    variable: Fraction,
+    daily: dict[date, Fraction],
+    base_per_day: Fraction | None,
+    spent_cents: int,
+) -> BudgetForecast | None:
+    """Extrapolação linear do gasto variável (milicêntimos) + a base do mês inteiro."""
+    start = datetime.combine(month.start, time(), tz)
+    end = datetime.combine(month.end + timedelta(days=1), time(), tz)
+    now = min(now, end)
+    since = max(first, start)
+    observed = Fraction((now - since) // timedelta(seconds=1), 86_400)
+    if observed < MIN_OBSERVED_DAYS:
+        return None  # poucos dados: não se apresenta como previsão
+    left = Fraction((end - now) // timedelta(seconds=1), 86_400)
+    pace = variable / observed  # milicêntimos por dia
+    expected = variable + pace * left
+    # dias completos observados (o primeiro e o de hoje são parciais)
+    today = now.astimezone(tz).date()
+    days = [
+        since.astimezone(tz).date() + timedelta(days=i)
+        for i in range(1, (today - since.astimezone(tz).date()).days)
+    ]
+    spread = 0.0
+    values = [daily.get(d, Fraction(0)) for d in days]
+    if len(values) >= 2 and sum(values) > 0:
+        mean = sum(values) / len(values)
+        var = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
+        spread = float(pace) * math.sqrt(var) / float(mean) * math.sqrt(left)
+    base = round(base_per_day * month.days) if base_per_day is not None else 0
+    cents = tariff.cents(expected) + base
+    low = max(spent_cents, math.floor((float(expected) - spread) / 1000) + base)
+    high = math.ceil((float(expected) + spread) / 1000) + base
+    return BudgetForecast(
+        cents=cents,
+        low_cents=min(low, cents),
+        high_cents=max(high, cents),
+        observed_days=int(observed),
+    )
 
 
 def _final_allocation(
@@ -182,7 +255,6 @@ def _last_finalized(conn: sqlite3.Connection, household_id: UUID, before: date) 
             a.fixed_share_cents + a.residual_share_cents, view.period.days
         )
     return {
-        "price": view.price_millicents_per_kwh,
         "base_per_day": per_day,
         "simulated": view.provenance.simulated,
     }
@@ -275,6 +347,7 @@ def status(
         base_cents=spend.base_cents if spend else None,
         pct=pct,
         light=budget_light(pct),
+        forecast=spend.forecast if spend else None,
         final=spend.final if spend else False,
         provenance=spend.provenance if spend else None,
         as_of=now,
@@ -325,6 +398,7 @@ def evaluate(
                     pct=threshold,
                     spent_cents=spend.total_cents,
                     limit_cents=budget.limit_cents,
+                    forecast_cents=spend.forecast.cents if spend.forecast else None,
                 ),
             )
         )

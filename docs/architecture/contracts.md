@@ -169,7 +169,8 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | `GET` | `/api/households/{id}/bills/{bill_id}/receipt` | T | **IMPLEMENTADO**: `BillAllocation` própria (recibo por linhas) |
 | `GET` | `/api/households/{id}/bills/{bill_id}/receipt/explanation` | T | **IMPLEMENTADO (BILL-05):** `ReceiptExplanation` (evidência guardada no fecho, `billing_allocation_item`) |
 | `POST` | `/api/allocations/{id}/contest` | T | |
-| `GET` `PUT` | `/api/households/{id}/budgets/me?period` | T | **IMPLEMENTADO (ALERT-01):** `BudgetIn` → `BudgetStatus` |
+| `GET` `PUT` | `/api/households/{id}/budgets/me?period` | T | **IMPLEMENTADO (ALERT-01):** `BudgetIn` → `BudgetStatus` (com `forecast: BudgetForecast \| null`, ALERT-02) |
+| `GET` `PUT` | `/api/households/{id}/tariff` | L (definir), L e T (ver) | **IMPLEMENTADO (ALERT-02):** `TariffIn` → `TariffStatus` (simples ou bi-horário; só estimativas) |
 | `GET` `PUT` | `/api/households/{id}/room-allowances` | L | Plafond por quarto |
 
 ### Notificações (P3)
