@@ -1,6 +1,6 @@
 # Módulo `presence` — câmara na porta e presença
 
-**Dono: P2 (1Mii).** **IMPLEMENTADO** (PRES-03 #107, PRES-04 #108, PRES-05 #109 ocupação e visitas anónimas): telemóveis com opt-in, pistas Wi-Fi, resposta a «estás em casa?» e fusão em casa/fora/incerto. **Não há check-in manual «cheguei/saí»**: a presença regista-se só pela câmara (porta) e pelo telemóvel no Wi-Fi (decisão do dono). **PLANEADO**: câmara na porta (PRES-01/02; a fusão já consome `presence.door_crossed`, hoje só com fixtures), ocupação (PRES-05). Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
+**Dono: P2 (1Mii).** **IMPLEMENTADO** (PRES-03 #107, PRES-04 #108, PRES-05 #109 ocupação e visitas anónimas): telemóveis com opt-in, pistas Wi-Fi, resposta a «estás em casa?» e fusão em casa/fora/incerto. **Não há check-in manual «cheguei/saí»**: a presença regista-se só pela câmara (porta) e pelo telemóvel no Wi-Fi (decisão do dono). **PLANEADO**: câmara na porta (PRES-01/02; a fusão já consome `presence.door_crossed`, hoje só com fixtures). Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
 
 ## Responsabilidade
 
