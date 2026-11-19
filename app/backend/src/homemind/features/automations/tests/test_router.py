@@ -65,6 +65,7 @@ def events(app, *types):
 
 ROUTES = [
     ("get", URL, None),
+    ("get", f"{URL}/plugs", None),
     ("post", URL, body()),
     ("post", f"{URL}/{RANDOM}/vote", {"approve": True}),
     ("patch", f"{URL}/{RANDOM}", {"status": "disabled"}),
@@ -257,3 +258,52 @@ def test_reativar_reemite_automation_proposed_com_a_regra_suspensa(client, app):
         "proposed",
         "disabled",
     ]
+
+
+# --- tomadas válidas (a UI só oferece o que o servidor aceita) -----------------------------
+
+
+def _live_plug(app):
+    """A tomada viva da demo web (outro id que a do cenário offline), só no catálogo SIMULADO."""
+    from homemind.contracts.common import stable_id
+    from homemind.contracts.devices import Device, DeviceKind, DeviceRole, DeviceSource, PowerUnit
+    from homemind.features.appliances import repo as appliance_repo
+
+    plug = Device(
+        id=stable_id("demo-web-device", "extensao-sala"), household_id=A, room_id=fx.ROOM_SALA,
+        name="Tomada da extensão da sala (SIMULADA)", kind=DeviceKind.plug,
+        role=DeviceRole.room_meter, source=DeviceSource.fake, power_unit=PowerUnit.W,
+        online=True, last_seen_at=fx.T0,
+    )  # fmt: skip
+    app.state.db.run_sync(lambda c: appliance_repo.register_device(c, plug))
+    return plug.id
+
+
+def test_tomadas_listadas_sao_exatamente_as_que_o_servidor_aceita(client, app):
+    live = _live_plug(app)
+    r = client.get(f"{URL}/plugs", headers=as_(ANA))
+    assert r.status_code == 200
+    plugs = r.json()
+    assert {p["id"] for p in plugs} == {str(DEMO_PLUG), str(live)}
+    assert all(set(p) == {"id", "name", "simulated"} and p["simulated"] for p in plugs)
+    assert LAMP not in {p["id"] for p in plugs}
+    for p in plugs:  # cada uma é aceite como gatilho e como alvo (nunca 400 invalid_target)
+        assert client.post(URL, json=body(p["id"]), headers=as_(ANA)).status_code == 201
+
+
+def test_sem_tomada_viva_so_ha_a_do_diretorio_e_outra_casa_nao_tem_nenhuma(client):
+    r = client.get(f"{URL}/plugs", headers=as_(ANA))
+    assert [p["id"] for p in r.json()] == [str(DEMO_PLUG)]
+    eva = f"/api/households/{HOUSE_B}/automations/plugs"
+    assert client.get(eva, headers=as_(EVA)).json() == []
+
+
+def test_tomadas_de_outra_casa_e_nao_membro(client):
+    other = f"/api/households/{HOUSE_B}/automations/plugs"
+    assert err(client.get(other, headers=as_(ANA)))[0] == 404
+    assert err(client.get(f"{URL}/plugs", headers=as_(NOBODY)))[0] in (403, 404)
+
+
+def test_tomada_viva_da_demo_web_e_aceite_como_alvo(client, app):
+    live = _live_plug(app)
+    assert client.post(URL, json=body(live), headers=as_(ANA)).status_code == 201

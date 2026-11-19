@@ -17,6 +17,7 @@ import Dashboard from "./DashboardPage";
 import AppliancesContent from "./AppliancesPage";
 import EnergyContent from "./EnergyPage";
 import BudgetContent from "./BudgetPage";
+import HouseRulesContent from "./HouseRulesPage";
 import NotificationsContent from "./NotificationsPage";
 import AssistantPage from "./AssistantPage";
 import { getCameraStatus, listMcpTools, type CameraStatus, type McpTool } from "../services/diagnostics/api";
@@ -77,6 +78,7 @@ const screenLabels: Record<SectionId, string> = {
   notifications: "Notificações",
   assistant: "Assistente",
   budget: "Orçamento",
+  houseRules: "Regras da casa",
   diagnostics: "Diagnóstico",
   settings: "Definições",
 };
@@ -363,6 +365,12 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
     <Stack gap="xl">
       <PageHeading title={screenLabels.budget} description="O teu objetivo do mês e quanto já gastaste. Cálculos feitos no servidor." />
       <BudgetContent />
+    </Stack>
+  );
+  if (section === "houseRules") return (
+    <Stack gap="xl">
+      <PageHeading title={screenLabels.houseRules} description="Regras que desligam uma tomada, propostas e votadas pelos moradores." />
+      <HouseRulesContent />
     </Stack>
   );
   if (section === "notifications") return (

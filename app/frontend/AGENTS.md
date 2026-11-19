@@ -1,6 +1,6 @@
 # Frontend — Conta Certa
 
-Regras gerais em [`../../CLAUDE.md`](../../CLAUDE.md). A aplicação React/Mantine/Capacitor é a interface da Conta Certa para moradores, senhorios e operadores. O frontend implementado inclui casa, consumo, aparelhos, contas e recibos, orçamento, notificações, assistente e diagnóstico.
+Regras gerais em [`../../CLAUDE.md`](../../CLAUDE.md). A aplicação React/Mantine/Capacitor é a interface da Conta Certa para moradores, senhorios e operadores. O frontend implementado inclui casa, consumo, aparelhos, contas e recibos, orçamento, notificações, assistente e diagnóstico, e «Regras da casa» (`/regras`, só moradores: propor, votar, suspender e reativar regras que desligam uma tomada, SAFE-04; `pages/HouseRulesPage.tsx`, `components/houseRules/`, `hooks/useHouseAutomations.ts`, `services/automations/`).
 
 ## Estrutura
 

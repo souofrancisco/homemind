@@ -12,6 +12,9 @@ const when = new Intl.DateTimeFormat("pt-PT", { dateStyle: "medium", timeStyle: 
 const statusLabel: Record<NotificationView["status"], string> = {
   unread: "Por ler", read: "Lida", actioned: "Respondida", expired: "Expirada", dismissed: "Dispensada",
 };
+// Aviso de regra da casa (SAFE-04): fica `expired` quando a votação fecha (aprovada, rejeitada
+// ou por prazo), por isso não é «prazo de confirmação de aparelho».
+const isRule = (n: NotificationView) => n.kind === "automation_proposal";
 const severityColor = { info: "blue", warning: "orange", critical: "red" } as const;
 const verdictLabel: Record<NonNullable<NotificationView["voting"]>["verdict"], string> = {
   pending: "Votação em curso — ainda não há decisão",
@@ -43,7 +46,7 @@ function Card1({ n, householdId, members, onChange }: {
         <Group justify="space-between" align="flex-start" wrap="wrap">
           <Title order={3} size="h4">{n.title}</Title>
           <Group gap="xs">
-            <Badge color={severityColor[n.severity]} variant="light">{statusLabel[n.status]}</Badge>
+            <Badge color={severityColor[n.severity]} variant="light">{isRule(n) && n.status === "expired" ? "Votação encerrada" : statusLabel[n.status]}</Badge>
             {n.kind === "presence_check" && <Badge color="indigo" variant="light">Presença</Badge>}
             <Badge color={n.origin === "simulated" ? "orange" : "teal"} variant="light">{n.origin === "simulated" ? "SIMULADO" : "REAL"}</Badge>
           </Group>
@@ -76,9 +79,11 @@ function Card1({ n, householdId, members, onChange }: {
         )}
         {!canAct && n.status === "expired" && (
           <Text size="sm" c="dimmed">
-            {n.kind === "confirmation_request"
-              ? "O prazo terminou; sem resposta, a utilização divide-se por todos."
-              : "O prazo terminou sem resposta; nada foi executado."}
+            {isRule(n)
+              ? "A votação desta regra já terminou. O resultado está em «Regras da casa»."
+              : n.kind === "confirmation_request"
+                ? "O prazo terminou; sem resposta, a utilização divide-se por todos."
+                : "O prazo terminou sem resposta; nada foi executado."}
           </Text>
         )}
         <Text size="xs" c="dimmed">{n.scope === "personal" ? "Pessoal" : "Da casa"} · {when.format(new Date(n.created_at))}{n.expires_at && n.status !== "expired" ? ` · responder até ${when.format(new Date(n.expires_at))}` : ""}</Text>

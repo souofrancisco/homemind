@@ -34,6 +34,7 @@ from homemind.features.automations import service
 from homemind.features.automations.engine import AutomationEngine
 from homemind.features.automations.runner import AutomationRunner
 from homemind.features.automations.service import (
+    AutomationPlugView,
     AutomationProposeIn,
     AutomationStatusIn,
     AutomationView,
@@ -132,6 +133,44 @@ async def _run(db: Database, state: State, fn) -> AutomationView:
     return await _finish(state, result)
 
 
+async def _known_plugs(db: Database, state: State, household_id: UUID) -> list[AutomationPlugView]:
+    """Tomadas que o servidor aceita como gatilho/alvo (a mesma fonte da validação de `propose`).
+    Casa de demonstração: as do diretório simulado e as tomadas SIMULADAS do catálogo da casa (a
+    tomada viva da demo web tem outro id que a do cenário offline). Casa real: só as reais."""
+    row = await db.run(
+        lambda c: c.execute(
+            "SELECT source_kind FROM household WHERE id = ?", (str(household_id),)
+        ).fetchone()
+    )
+    source_kind = row["source_kind"]
+    devices = select_directory(state, household_id, source_kind).actuators(household_id)
+    if source_kind != "demo":  # uma casa real nunca usa dispositivos simulados
+        devices = [d for d in devices if not d.simulated]
+    plugs = {d.id: (d.name, d.simulated) for d in devices if d.kind is DeviceKind.plug}
+    if source_kind == "demo":
+        rows = await db.run(
+            lambda c: c.execute(
+                "SELECT id, name FROM device WHERE household_id = ? AND kind = 'plug'"
+                " AND source = 'fake'",
+                (str(household_id),),
+            ).fetchall()
+        )
+        for r in rows:
+            plugs.setdefault(UUID(r["id"]), (r["name"], True))
+    return [
+        AutomationPlugView(id=i, name=n, simulated=sim)
+        for i, (n, sim) in sorted(plugs.items(), key=lambda kv: (kv[1][0], str(kv[0])))
+    ]
+
+
+@router.get("/households/{household_id}/automations/plugs")
+async def list_automation_plugs(
+    access: ReadAccess, db: DbDep, state: StateDep
+) -> list[AutomationPlugView]:
+    """As tomadas que a casa pode usar numa regra (o que o servidor aceitaria em `POST`)."""
+    return await _known_plugs(db, state, access.household_id)
+
+
 @router.get("/households/{household_id}/automations")
 async def list_automations(
     access: ReadAccess,
@@ -157,17 +196,9 @@ async def propose_automation(
     """Propõe uma regra: fica `proposed`, por votar, e nada é executado. O alvo tem de ser uma
     tomada conhecida da casa (a lâmpada nunca)."""
     household_id = access.household_id
-    row = await db.run(
-        lambda c: c.execute(
-            "SELECT source_kind FROM household WHERE id = ?", (str(household_id),)
-        ).fetchone()
-    )
-    source_kind = row["source_kind"]
-    devices = select_directory(state, household_id, source_kind).actuators(household_id)
-    if source_kind != "demo":  # uma casa real nunca usa dispositivos simulados
-        devices = [d for d in devices if not d.simulated]
-    plugs = {d.id: d.name for d in devices if d.kind is DeviceKind.plug}
-    origin = Origin.simulated if source_kind == "demo" else Origin.real
+    known = await _known_plugs(db, state, household_id)
+    plugs = {p.id: p.name for p in known}
+    origin = Origin.simulated if any(p.simulated for p in known) else Origin.real
     now = clock()
     try:
         return await _run(

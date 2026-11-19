@@ -117,6 +117,14 @@ class AutomationVoteIn(ContractModel):
     approve: bool
 
 
+class AutomationPlugView(ContractModel):
+    """Tomada que o servidor aceita como gatilho ou alvo de uma regra. Só id interno e nome."""
+
+    id: UUID
+    name: Annotated[str, Field(max_length=500)]
+    simulated: bool
+
+
 class AutomationView(ContractModel):
     """Vista de uma regra da casa para a app. Só contagens: nunca quem votou o quê."""
 
