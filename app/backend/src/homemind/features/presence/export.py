@@ -3,9 +3,10 @@ portabilidade, sem afirmar conformidade RGPD: ver docs/modules/presence.md).
 
 Só o que é do morador autenticado, na casa pedida: o consentimento, os telemóveis (sem hash nem
 endereço), o estado atual, as pistas, as mudanças de estado, os pedidos «estás em casa?» e os
-agregados diários. Fica de fora tudo o que é de outros (colegas, outras casas) e as passagens
-anónimas da porta (não são dados deste morador). O senhorio e o operador nunca chegam aqui
-(`Resource.presence` é `own` só para inquilinos).
+agregados diários, o consentimento por fonte e o registo de consentimentos. Fica de fora tudo o
+que é de outros (colegas, outras casas) e as passagens anónimas da porta (não são dados deste
+morador). O senhorio e o operador nunca chegam aqui (`Resource.presence` é `own` só para
+inquilinos).
 """
 
 import json
@@ -15,13 +16,15 @@ from uuid import UUID
 
 from homemind.contracts.common import ContractModel, Origin, UtcDatetime
 from homemind.contracts.presence import (
+    ConsentSource,
     PersonPresence,
+    PresenceConsentLogView,
     PresenceDeviceView,
     PresenceSource,
     PresenceState,
     UncertainReason,
 )
-from homemind.features.presence import repo
+from homemind.features.presence import consent, repo
 
 
 class ExportedCue(ContractModel):
@@ -65,6 +68,12 @@ class ExportRetention(ContractModel):
     proposal: bool
 
 
+class ExportedSourceConsent(ContractModel):
+    source: ConsentSource
+    enabled: bool
+    updated_at: UtcDatetime | None
+
+
 class PresenceExport(ContractModel):
     generated_at: UtcDatetime
     household_id: UUID
@@ -75,6 +84,8 @@ class PresenceExport(ContractModel):
     changes: list[ExportedChange]
     confirmations: list[ExportedConfirmation]
     daily: list[ExportedDay]
+    source_consents: list[ExportedSourceConsent]
+    consent_history: list[PresenceConsentLogView]
     retention: ExportRetention
 
 
@@ -130,5 +141,14 @@ def export_own(
         changes=changes,
         confirmations=confirmations,
         daily=daily,
+        source_consents=[
+            ExportedSourceConsent(
+                source=r["source"], enabled=bool(r["enabled"]), updated_at=r["updated_at"]
+            )
+            for r in consent.list_states(conn, hid, rid)
+        ],
+        consent_history=[
+            PresenceConsentLogView(**dict(r)) for r in consent.list_log(conn, hid, rid)
+        ],
         retention=ExportRetention(raw_days=raw_days or None, proposal=True),
     )

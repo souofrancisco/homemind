@@ -244,3 +244,92 @@ class CameraStatus(ContractModel):
         if not self.camera_ok and self.fps:
             raise ValueError("câmara em falha não tem fps")
         return self
+
+
+# --- consentimento por fonte (PRIV-03 #51) ------------------------------------------------------
+
+
+class ConsentSource(StrEnum):
+    """Fontes INDIVIDUAIS com opt-in próprio, desligado por omissão (decisão D-37). A porta e a
+    câmara ficam de fora: só contam pessoas, sem identificar, e não precisam de consentimento
+    individual."""
+
+    wifi = "wifi"
+    appliance = "appliance"
+    manual = "manual"
+
+
+class ConsentSubject(StrEnum):
+    """O que o registo de consentimentos descreve: o opt-in global ou uma fonte."""
+
+    presence_opt_in = "presence_opt_in"
+    wifi = "wifi"
+    appliance = "appliance"
+    manual = "manual"
+
+
+class ConsentAction(StrEnum):
+    granted = "granted"
+    revoked = "revoked"
+
+
+class ConsentReason(StrEnum):
+    """`resident`: escolha do próprio; as outras duas são efeito do opt-in global ou da saída."""
+
+    resident = "resident"
+    opt_in_revoked = "opt_in_revoked"
+    left_household = "left_household"
+
+
+class PresenceSourceConsentView(ContractModel):
+    """Uma fonte, o seu estado e o texto que o morador lê antes de decidir (a versão do texto
+    é a que fica no registo). Só do próprio morador."""
+
+    source: ConsentSource
+    enabled: bool
+    updated_at: UtcDatetime | None
+    title: str
+    collects: str
+    who_sees: str
+    how_to_revoke: str
+
+
+class PresenceConsentLogView(ContractModel):
+    """Uma linha do registo (só de acrescentar) dos consentimentos do próprio."""
+
+    at: UtcDatetime
+    subject: ConsentSubject
+    action: ConsentAction
+    text_version: str
+    reason: ConsentReason | None
+
+
+class PresenceConsentsView(ContractModel):
+    presence_opt_in: bool
+    text_version: str
+    sources: list[PresenceSourceConsentView]
+    history: list[PresenceConsentLogView]
+
+
+class PresenceConsentIn(ContractModel):
+    """Ativar uma fonte: `text_version` é a versão do texto que o morador viu; se já não for a
+    atual o servidor recusa (409) para o consentimento valer para o texto que está em vigor."""
+
+    text_version: Annotated[str, Field(min_length=1, max_length=40)]
+
+
+class PresenceSourceRevocationView(ContractModel):
+    """Resultado de desligar uma fonte: só contagens do que foi apagado (nunca conteúdo)."""
+
+    source: ConsentSource
+    enabled: Literal[False] = False
+    erased_cues: Annotated[int, Field(ge=0)]
+    erased_other: Annotated[int, Field(ge=0)]
+
+
+class PresenceSourceRevoked(ContractModel):
+    """Dado do evento `presence.source_revoked`: quem desligou que fonte. Serve para os módulos
+    com cópia derivada (faturação) a descartarem. Sem nenhuma pista dentro."""
+
+    resident_id: UUID
+    source: ConsentSource

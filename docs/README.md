@@ -35,6 +35,12 @@ Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home).
 | [requirements.md](product/requirements.md) | Requisitos com origem (PDF, DECISÃO, PROPOSTA), prioridade e âmbito do MVP |
 | [app-01-ux.md](product/app-01-ux.md) | Pesquisa UX A/B/C, matriz, decisão, rotas, papéis e checklist de validação da APP-01 |
 
+### Privacidade (`privacy/`)
+
+| Documento | Conteúdo |
+|---|---|
+| [inventario-dados-pessoais.md](privacy/inventario-dados-pessoais.md) | Inventário de dados pessoais, direitos do morador e política de backups (PROPOSTA; sem afirmar conformidade) |
+
 ### Arquitetura (`architecture/`)
 
 | Documento | Conteúdo | Estado |

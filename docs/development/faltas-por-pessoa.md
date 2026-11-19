@@ -48,13 +48,13 @@ Feito: opt-in de Wi-Fi e revogação, retenção, eliminação e exportação de
 
 | O que falta | Tipo |
 |---|---|
-| Consentimento **por fonte** e o seu **registo** (hoje só há um `presence_opt_in`) e a UI | código |
-| **Política e restauro de backups** (um backup antigo mantém os dados) | decisão + código |
+| ✔ Consentimento **por fonte** (Wi-Fi, aparelho, manual), registo só de acrescentar e UI em Definições (D-37, decidido por P2 sem revisão) | código |
+| **Política e restauro de backups** (um backup antigo mantém os dados): só **PROPOSTA** em [privacy/inventario-dados-pessoais.md](../privacy/inventario-dados-pessoais.md); por decidir e nunca testada | decisão + código |
 | Prazos de retenção (hoje PROPOSTA, 30 dias por omissão na presença) | decisão (DPO, P-08) |
 | **Gate jurídico** (P-24): nenhuma afirmação de conformidade RGPD; bloqueia o piloto com pessoas e sensores reais | externo |
-| Validar no browser e no kit | validação |
+| Validar no kit (hardware real: Wi-Fi, aparelho, telemóvel); no browser a demo SIMULADA foi validada em 2026-11-19 | validação |
 
-Nota: o **#217** apaga a cópia de presença da faturação (`billing_presence_state`) de quem revoga ou sai, na primeira mensagem de presença seguinte da casa; sem tráfego, a linha fica até à seguinte; sem UI de revogação.
+Nota: o **#217** apaga a cópia de presença da faturação (`billing_presence_state`) de quem revoga ou sai, na primeira mensagem de presença seguinte da casa; sem tráfego, a linha fica até à seguinte. Ao desligar uma fonte (D-37) a cópia desse morador apaga-se logo (`presence.source_revoked`); a UI de revogação existe em Definições.
 
 ### [#115](https://github.com/souofrancisco/homemind/issues/115) · SAFE-02 · Casa vazia/AWAY e segurança MCP com confirmação (fase 3)
 | O que falta | Tipo |

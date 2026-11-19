@@ -21,9 +21,13 @@ from pydantic import Field
 from homemind.contracts.common import ContractModel, Origin, ShortText
 from homemind.contracts.presence import (
     CameraStatus,
+    ConsentSource,
     HouseOccupancy,
     PersonPresence,
+    PresenceConsentIn,
+    PresenceConsentsView,
     PresenceDeviceView,
+    PresenceSourceRevocationView,
 )
 from homemind.core.access import (
     HouseholdAccess,
@@ -35,6 +39,7 @@ from homemind.core.access import (
 )
 from homemind.core.config import get_settings
 from homemind.core.events import EventBus
+from homemind.features.presence import consent
 from homemind.features.presence.camera import CameraProbe, origin_of, resolve_kind
 from homemind.features.presence.door import ContadorPorta, Soleira, parse_retangulo
 from homemind.features.presence.export import PresenceExport, export_own
@@ -264,6 +269,14 @@ def _http(e: DeviceError) -> HTTPException:
         "invalid_address": (400, "Endereço de rede inválido"),
         "device_limit": (409, "Número máximo de telemóveis atingido"),
         "device_already_registered": (409, "Telemóvel já registado"),
+        "presence_opt_in_required": (
+            409,
+            "Ativa primeiro a partilha da tua presença para poderes ligar uma fonte",
+        ),
+        "text_version_outdated": (
+            409,
+            "O texto do consentimento mudou: lê a versão atual e confirma outra vez",
+        ),
     }
     status, message = table.get(e.code, (400, "Pedido inválido"))
     return HTTPException(status, {"code": e.code, "message": message})
@@ -283,6 +296,39 @@ async def export_my_data(access: Read, service: Service) -> PresenceExport:
     return await service.db.run(
         lambda c: export_own(c, access.household_id, access.resident_id, now, days)
     )
+
+
+@router.get("/consents")
+async def get_consents(access: Read, service: Service) -> PresenceConsentsView:
+    """O MEU consentimento por fonte (Wi-Fi, aparelho a ligar, resposta manual), o texto de cada
+    uma e o meu registo. Desligado por omissão. Só o próprio; senhorio e operador recebem 403."""
+    now = service.clock()
+    return await service.db.run(
+        lambda c: consent.build_view(c, access.household_id, access.resident_id, now)
+    )
+
+
+@router.post("/consents/{source}")
+async def grant_consent(
+    source: ConsentSource, body: PresenceConsentIn, access: Write, service: Service
+) -> PresenceConsentsView:
+    """Liga UMA fonte com a versão do texto que o morador viu (idempotente)."""
+    try:
+        await service.grant_source(
+            access.household_id, access.resident_id, source, body.text_version
+        )
+    except DeviceError as e:
+        raise _http(e) from e
+    return await get_consents(access, service)
+
+
+@router.delete("/consents/{source}")
+async def revoke_consent(
+    source: ConsentSource, access: Write, service: Service
+) -> PresenceSourceRevocationView:
+    """Desliga UMA fonte e apaga só os dados dessa fonte (idempotente). Devolve contagens."""
+    cues, other = await service.revoke_source(access.household_id, access.resident_id, source)
+    return PresenceSourceRevocationView(source=source, erased_cues=cues, erased_other=other)
 
 
 @router.get("/occupancy")

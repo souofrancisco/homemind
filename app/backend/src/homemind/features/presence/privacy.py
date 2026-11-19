@@ -11,8 +11,9 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from homemind.contracts.domain_events import PresenceCueRecorded
-from homemind.contracts.presence import PresenceEvent, PresenceSource, PresenceState
+from homemind.contracts.presence import ConsentSource, PresenceEvent, PresenceSource, PresenceState
 from homemind.core.events import append_event
+from homemind.features.presence import consent
 
 
 def individual_cue_allowed(
@@ -38,6 +39,10 @@ def individual_cue_allowed(
     elif cue.source is PresenceSource.manual:
         if actor_resident_id != cue.resident_id:
             return False
+        if not consent.has_source_consent(
+            conn, cue.household_id, cue.resident_id, ConsentSource.manual
+        ):
+            return False  # opt-in da fonte «manual» (PRIV-03 #51)
     else:
         return False
 

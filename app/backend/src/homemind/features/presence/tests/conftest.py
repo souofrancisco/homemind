@@ -33,12 +33,29 @@ def set_presence_opt_in(db: Database, resident, value: int) -> None:
     )
 
 
+def grant_sources(conn, resident, sources=("wifi", "appliance", "manual")) -> None:
+    """Liga fontes SEM passar pela API (em produção estão desligadas por omissão, D-37)."""
+    for hid, rid in conn.execute(
+        "SELECT household_id, resident_id FROM membership WHERE resident_id = ?"
+        " AND role = 'tenant'",
+        (str(resident),),
+    ).fetchall():
+        for src in sources:
+            conn.execute(
+                "INSERT OR REPLACE INTO presence_source_consent (household_id, resident_id,"
+                " source, enabled, text_version, updated_at) VALUES (?,?,?,1,'teste',?)",
+                (hid, rid, src, NOW.isoformat()),
+            )
+
+
 def seed_with_opt_in(conn) -> None:
-    """Casas de teste; o Bruno (inquilino nas duas) já aceitou a presença (2.º consentimento)."""
+    """Casas de teste; o Bruno (inquilino nas duas) já aceitou a presença (2.º consentimento) e
+    as três fontes (3.º consentimento, por fonte)."""
     seed_two_houses(conn)
     conn.execute(
         "UPDATE membership SET presence_opt_in = 1 WHERE resident_id = ?", (str(fx.BRUNO),)
     )
+    grant_sources(conn, fx.BRUNO)
 
 
 def as_(sub: str) -> dict[str, str]:

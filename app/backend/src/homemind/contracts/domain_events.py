@@ -63,6 +63,7 @@ from homemind.contracts.presence import (
     PersonPresence,
     PresenceConfirmationRequest,
     PresenceEvent,
+    PresenceSourceRevoked,
 )
 from homemind.contracts.safety import AwayState, SafetyAlert, SecurityAction, SecurityPanelState
 from homemind.contracts.sensors import SensorReading
@@ -269,6 +270,14 @@ class PresenceConfirmationNeeded(EventBase):
     data: PresenceConfirmationRequest
 
 
+class PresenceSourceRevokedEvent(EventBase):
+    """O morador desligou uma fonte de presença (PRIV-03 #51). Só metadados (quem e que fonte):
+    quem tem cópias derivadas (faturação) descarta-as. Imutável, como um registo."""
+
+    type: Literal["presence.source_revoked"] = "presence.source_revoked"
+    data: PresenceSourceRevoked
+
+
 class PresenceOccupancyChanged(EventBase):
     type: Literal["presence.occupancy_changed"] = "presence.occupancy_changed"
     data: HouseOccupancy
@@ -421,6 +430,7 @@ DomainEvent = Annotated[
     | PresenceCueRecorded
     | PresenceConfirmationNeeded
     | PresenceOccupancyChanged
+    | PresenceSourceRevokedEvent
     | SensorReadingRecorded
     | SafetyAlertRaised
     | SafetyAwayChanged

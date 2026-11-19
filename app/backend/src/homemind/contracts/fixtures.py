@@ -693,6 +693,11 @@ def event_samples() -> list[domain_events.EventBase]:
         e.PresenceCueRecorded(**d, provenance=SIM_INFERRED, data=appliance_cue()),
         e.PresenceConfirmationNeeded(**d, provenance=SIM_INFERRED, data=presence_confirmation()),
         e.PresenceOccupancyChanged(**d, provenance=SIM_INFERRED, data=occupancy()),
+        e.PresenceSourceRevokedEvent(
+            **d,
+            provenance=SIM_INFERRED,
+            data=pr.PresenceSourceRevoked(resident_id=BRUNO, source=pr.ConsentSource.wifi),
+        ),
         e.SensorReadingRecorded(**d, provenance=SIM_MEASURED, data=window_open()),
         e.SafetyAlertRaised(**d, provenance=SIM_INFERRED, data=window_alert()),
         e.SafetyAwayChanged(**d, provenance=SIM_INFERRED, data=away_state()),

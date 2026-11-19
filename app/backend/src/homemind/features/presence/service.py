@@ -30,10 +30,13 @@ from homemind.contracts.domain_events import (
     PresenceConfirmationNeeded,
     PresenceCueRecorded,
     PresenceOccupancyChanged,
+    PresenceSourceRevokedEvent,
     StoredEvent,
 )
 from homemind.contracts.notification import RefType
 from homemind.contracts.presence import (
+    ConsentReason,
+    ConsentSource,
     HouseOccupancy,
     OccupancyState,
     PersonPresence,
@@ -41,12 +44,14 @@ from homemind.contracts.presence import (
     PresenceDevice,
     PresenceEvent,
     PresenceSource,
+    PresenceSourceRevoked,
     PresenceState,
     UncertainReason,
 )
 from homemind.core.db import Database
 from homemind.core.events import EventBus, EventStoreError, append_event
-from homemind.features.presence import repo
+from homemind.features.presence import consent, repo
+from homemind.features.presence.consent_texts import TEXT_VERSION
 from homemind.features.presence.fusion import CUE_WINDOW, FusionParams, Signals, fuse
 from homemind.features.presence.occupancy import WINDOW, Residents, compute_occupancy
 from homemind.features.presence.wifi import WifiScanner, match_key, normalize_mac
@@ -113,7 +118,9 @@ def on_notification_responded(conn: sqlite3.Connection, stored: StoredEvent) -> 
         or state is None
         or req["household_id"] != str(ev.household_id)
         or req["resident_id"] != str(resp.resident_id)
-        or not repo.has_presence_opt_in(conn, ev.household_id, resp.resident_id, resp.responded_at)
+        or not consent.collection_allowed(
+            conn, ev.household_id, resp.resident_id, ConsentSource.manual, resp.responded_at
+        )
     ):
         return []
     if not repo.mark_confirmation_answered(conn, ref.id, resp.responded_at):
@@ -206,6 +213,72 @@ class PresenceService:
             lambda c: repo.revoke_device(c, household_id, resident_id, device_id, now)
         )
 
+    # --- consentimento por fonte (PRIV-03 #51) -----------------------------------------------
+
+    async def consents(self, household_id: UUID, resident_id: UUID) -> list[sqlite3.Row]:
+        """Linhas de `presence_source_consent` do próprio (sem linha = desligada)."""
+        return await self.db.run(lambda c: consent.list_states(c, household_id, resident_id))
+
+    async def grant_source(
+        self, household_id: UUID, resident_id: UUID, source: ConsentSource, text_version: str
+    ) -> None:
+        """Liga uma fonte. Exige o opt-in global e a versão atual do texto. Idempotente."""
+        if text_version != TEXT_VERSION:
+            raise DeviceError("text_version_outdated")
+        now = self.clock()
+
+        def tx(conn: sqlite3.Connection) -> None:
+            if not repo.has_presence_opt_in(conn, household_id, resident_id, now):
+                raise DeviceError("presence_opt_in_required")
+            consent.grant(conn, household_id, resident_id, source, now)
+
+        await self.db.run(tx)
+
+    async def revoke_source(
+        self, household_id: UUID, resident_id: UUID, source: ConsentSource
+    ) -> tuple[int, int]:
+        """Desliga UMA fonte e apaga só os dados dela, numa transação; recalcula o estado com o
+        que sobra (sem pistas, o estado deixa de existir: nunca fica um «fora» ou «em casa» que
+        vinha da fonte revogada). Publica `presence.source_revoked` (a faturação descarta a sua
+        cópia) e o novo estado. Idempotente: repetir não muda nada nem regista outra revogação."""
+        now = self.clock()
+
+        def tx(conn: sqlite3.Connection) -> tuple[tuple[int, int], list[DomainEvent]]:
+            changed = consent.revoke_flag(
+                conn, household_id, resident_id, source, now, ConsentReason.resident
+            )
+            counts = consent.erase_source_data(conn, household_id, resident_id, source, now)
+            if not (changed or counts[0] or counts[1]):
+                return counts, []
+            prov = Provenance(origin=Origin.real, kind=ValueKind.measured)
+            events: list[DomainEvent] = [
+                PresenceSourceRevokedEvent(
+                    ts=now,
+                    household_id=household_id,
+                    provenance=prov,
+                    data=PresenceSourceRevoked(resident_id=resident_id, source=source),
+                )
+            ]
+            new, _ = self.compute(conn, household_id, resident_id, now)
+            if new is None:
+                conn.execute(
+                    "DELETE FROM presence_state WHERE household_id = ? AND resident_id = ?",
+                    (str(household_id), str(resident_id)),
+                )
+            elif repo.has_presence_opt_in(conn, household_id, resident_id, now):
+                repo.upsert_state(conn, household_id, new, now)
+                events.append(
+                    PresenceChanged(
+                        ts=now, household_id=household_id, provenance=new.provenance, data=new
+                    )
+                )
+            return counts, [append_event(conn, e).event for e in events]
+
+        counts, events = await self.db.run(tx)
+        for ev in events:
+            await self.bus.publish(ev)
+        return counts
+
     # --- fusão (PRES-04) --------------------------------------------------------------------
 
     def wifi_ok(self, now: datetime) -> bool:
@@ -217,7 +290,8 @@ class PresenceService:
 
     def _signals(self, conn: sqlite3.Connection, hid: UUID, rid: UUID, now: datetime) -> Signals:
         return Signals(
-            wifi_expected=repo.count_active_devices(conn, hid, rid) > 0,
+            wifi_expected=repo.count_active_devices(conn, hid, rid) > 0
+            and consent.has_source_consent(conn, hid, rid, ConsentSource.wifi),
             wifi_ok=self.wifi_ok(now),
             sole_candidate=repo.others_in(conn, hid, rid) == 0,
         )
@@ -275,6 +349,7 @@ class PresenceService:
         last = repo.last_confirmation_at(conn, hid, rid)
         if (
             ask
+            and consent.has_source_consent(conn, hid, rid, ConsentSource.manual)
             and new.reason is not None
             and (last is None or now - last >= self.fusion.confirmation_cooldown)
         ):
@@ -319,8 +394,8 @@ class PresenceService:
         if owner is None or ev.ts - d.started_at > self.appliance_fresh:
             return []
         cue_id = stable_id("appliance-cue", str(d.id))
-        if repo.cue_exists(conn, cue_id) or not repo.has_presence_opt_in(
-            conn, ev.household_id, owner, ev.ts
+        if repo.cue_exists(conn, cue_id) or not consent.collection_allowed(
+            conn, ev.household_id, owner, ConsentSource.appliance, ev.ts
         ):
             return []
         prov = Provenance(origin=d.provenance.origin, kind=ValueKind.inferred)
@@ -457,9 +532,12 @@ class PresenceService:
                 ident = (d.household_id, d.resident_id)
                 if d.match_key not in keys or ident in seen:
                     continue
-                # DOIS consentimentos: o do telemóvel (`wifi_opt_in`, já filtrado) e o da pessoa
-                # (`Membership.presence_opt_in`). Sem qualquer um, descarta-se sem rasto.
-                if not repo.has_presence_opt_in(conn, d.household_id, d.resident_id, now):
+                # TRÊS consentimentos: o do telemóvel (`wifi_opt_in`, já filtrado), o da fonte
+                # Wi-Fi e o da pessoa (`Membership.presence_opt_in`). Sem qualquer um,
+                # descarta-se sem rasto. A decisão e a gravação são da mesma transação.
+                if not consent.collection_allowed(
+                    conn, d.household_id, d.resident_id, ConsentSource.wifi, now
+                ):
                     continue
                 seen.add(ident)
                 last = self._last_cue.get(ident)

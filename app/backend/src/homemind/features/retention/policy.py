@@ -56,6 +56,7 @@ EVENT_CATEGORY: dict[str, Category] = {
     "presence.occupancy_changed": Category.presence,
     "presence.confirmation_needed": Category.presence,
     # operacional
+    "presence.source_revoked": Category.operational,  # registo de consentimento: só metadados
     "notification.created": Category.operational,
     "alerts.alert_raised": Category.operational,
     "alerts.cold_room": Category.operational,
