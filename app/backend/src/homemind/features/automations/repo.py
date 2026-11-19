@@ -85,10 +85,14 @@ def due_rows(conn: sqlite3.Connection, household_id: UUID, now: datetime) -> lis
 
 
 def count_open_by(conn: sqlite3.Connection, household_id: UUID, resident_id: UUID) -> int:
-    """Votações abertas das regras propostas por este morador (o prazo já foi resolvido)."""
+    """Votações abertas abertas por este morador (o prazo já foi resolvido): a proposta que fez
+    e as reativações que pediu. O abridor da ronda em curso é o autor da última
+    `reactivation_opened` (rondas > 1) ou o proponente (ronda 1)."""
     return conn.execute(
-        "SELECT count(*) FROM automation_rule WHERE household_id = ? AND created_by_resident_id = ?"
-        " AND vote_open = 1",
+        "SELECT count(*) FROM automation_rule r WHERE r.household_id = ? AND r.vote_open = 1"
+        " AND (CASE WHEN r.vote_round > 1 THEN (SELECT l.by_resident_id FROM automation_log l"
+        " WHERE l.rule_id = r.id AND l.kind = 'reactivation_opened' ORDER BY l.seq DESC LIMIT 1)"
+        " ELSE r.created_by_resident_id END) = ?",
         (str(household_id), str(resident_id)),
     ).fetchone()[0]
 

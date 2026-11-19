@@ -120,3 +120,33 @@ def test_so_os_inquilinos_veem_o_senhorio_e_o_operador_nunca(seeded):
         assert len(visible_to(seeded, tenant)) == 1
     for other in (fx.LANDLORD, fx.OPERATOR):
         assert visible_to(seeded, other) == []
+
+
+def test_texto_do_gatilho_em_portugues_correto():
+    from homemind.contracts.agent import AutomationTrigger, TriggerKind
+    from homemind.features.notifications.compose import compose_automation_proposal
+
+    base = fx.automation()
+    power = replace(
+        base,
+        trigger=AutomationTrigger(
+            kind=TriggerKind.power_above,
+            device_id=base.actions[0].target_device_id,
+            threshold_w=1500,
+            duration_s=300,
+        ),
+    )
+    presence = replace(base, trigger=AutomationTrigger(kind=TriggerKind.presence_changed))
+    bodies = [
+        compose_automation_proposal(
+            rule=r,
+            source_event_id=fx.automation().id,
+            origin=Origin.real,
+            correlation_id=fx.automation().id,
+            now=NOW,
+        ).body
+        for r in (power, presence)
+    ]
+    assert "desligar uma tomada quando a potência passar de 1500 W durante 300 s." in bodies[0]
+    assert "desligar uma tomada quando mudar quem está em casa." in bodies[1]
+    assert not any(" ao a " in b or " ao mudar" in b for b in bodies)
