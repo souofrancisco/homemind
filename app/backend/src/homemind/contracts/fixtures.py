@@ -370,6 +370,27 @@ def away_state() -> safety.AwayState:
     )
 
 
+def security_panel() -> safety.SecurityPanelState:
+    return safety.SecurityPanelState(
+        id=stable_id("safety", "panel-demo"),
+        household_id=HOUSEHOLD,
+        status=safety.SecurityPanelStatus.disarmed,
+        since=T0,
+        provenance=SIM_INFERRED,
+    )
+
+
+def security_action() -> safety.SecurityAction:
+    return safety.SecurityAction(
+        id=stable_id("safety", "security-action-demo"),
+        household_id=HOUSEHOLD,
+        kind=safety.SecurityActionKind.arm,
+        proposed_at=T0,
+        expires_at=T0 + timedelta(minutes=10),
+        provenance=SIM_INFERRED,
+    )
+
+
 def smoke_alert() -> safety.SafetyAlert:
     return safety.SafetyAlert(
         id=stable_id("safety", "fumo-cozinha"),
@@ -675,6 +696,8 @@ def event_samples() -> list[domain_events.EventBase]:
         e.SensorReadingRecorded(**d, provenance=SIM_MEASURED, data=window_open()),
         e.SafetyAlertRaised(**d, provenance=SIM_INFERRED, data=window_alert()),
         e.SafetyAwayChanged(**d, provenance=SIM_INFERRED, data=away_state()),
+        e.SafetySecurityChanged(**d, provenance=SIM_INFERRED, data=security_panel()),
+        e.SafetySecurityAction(**d, provenance=SIM_INFERRED, data=security_action()),
         e.BillingConfirmationNeeded(**d, provenance=SIM_INFERRED, data=confirmation_request()),
         e.BillingAttributionChanged(**d, provenance=attrib.provenance, data=attrib),
         e.BillingBillCreated(**d, provenance=SIM_MEASURED, data=e.BillRef(bill_id=bill.id)),

@@ -96,3 +96,68 @@ class AwayState(ContractModel):
         if self.arm_proposed and not self.provenance.simulated:
             raise ValueError("armar é só uma proposta SIMULADA (SAFE-02)")
         return self
+
+
+class SecurityPanelStatus(StrEnum):
+    armed = "armed"
+    disarmed = "disarmed"
+    unknown = "unknown"  # sem leitura fiável: nunca se assume armado nem desarmado
+
+
+class SecurityPanelState(ContractModel):
+    """Estado do painel de segurança SIMULADO (SAFE-02, PROPOSTA). Só existe fonte simulada:
+    não há leitura real do alarme (MCP-04/SAFE-04 PLANEADOS, D-07/P-01). Anónimo."""
+
+    id: UUID
+    household_id: UUID
+    status: SecurityPanelStatus
+    since: UtcDatetime
+    provenance: Provenance
+
+    @model_validator(mode="after")
+    def _simulated_only(self) -> Self:
+        if not self.provenance.simulated:
+            raise ValueError("o painel de segurança só tem fonte SIMULADA (sem leitura real)")
+        return self
+
+
+class SecurityActionKind(StrEnum):
+    arm = "arm"
+    disarm = "disarm"
+
+
+class SecurityActionStatus(StrEnum):
+    proposed = "proposed"  # à espera de confirmação humana explícita
+    confirmed = "confirmed"  # confirmada: só o painel SIMULADO muda de estado
+    cancelled = "cancelled"
+
+
+class SecurityAction(ContractModel):
+    """Proposta de armar/desarmar (SAFE-02, PROPOSTA, SIMULADA): o mesmo `id` em `proposed` e
+    depois `confirmed`/`cancelled`. Nunca é execução física: `executed` é sempre falso e a
+    proveniência sempre simulada. `decided_by` é interno (auditoria), nunca vai para a API.
+    Uma proposta não confirmada caduca em `expires_at` (calculado na leitura, sem evento)."""
+
+    id: UUID
+    household_id: UUID
+    kind: SecurityActionKind
+    status: SecurityActionStatus = SecurityActionStatus.proposed
+    proposed_at: UtcDatetime
+    expires_at: UtcDatetime
+    decided_at: UtcDatetime | None = None
+    decided_by: UUID | None = None
+    executed: Literal[False] = False
+    provenance: Provenance
+
+    @model_validator(mode="after")
+    def _coherent(self) -> Self:
+        if not self.provenance.simulated:
+            raise ValueError("armar/desarmar é só SIMULADO (sem MCP nem escrita física)")
+        if self.expires_at <= self.proposed_at:
+            raise ValueError("expires_at anterior a proposed_at")
+        decided = self.status is not SecurityActionStatus.proposed
+        if decided != (self.decided_at is not None and self.decided_by is not None):
+            raise ValueError("decided_at/decided_by exatamente nas propostas decididas")
+        if self.decided_at is not None and self.decided_at < self.proposed_at:
+            raise ValueError("decided_at anterior a proposed_at")
+        return self

@@ -61,6 +61,8 @@ EVENT_CATEGORY: dict[str, Category] = {
     "alerts.cold_room": Category.operational,
     "safety.alert_raised": Category.operational,
     "safety.away_changed": Category.operational,
+    "safety.security_changed": Category.operational,
+    "safety.security_action": Category.operational,
     "agent.action_proposed": Category.operational,
     "automation.proposed": Category.operational,
     "automation.executed": Category.operational,

@@ -64,7 +64,7 @@ from homemind.contracts.presence import (
     PresenceConfirmationRequest,
     PresenceEvent,
 )
-from homemind.contracts.safety import AwayState, SafetyAlert
+from homemind.contracts.safety import AwayState, SafetyAlert, SecurityAction, SecurityPanelState
 from homemind.contracts.sensors import SensorReading
 
 
@@ -296,6 +296,21 @@ class SafetyAwayChanged(EventBase):
     data: AwayState
 
 
+class SafetySecurityChanged(EventBase):
+    """Leitura do painel de segurança SIMULADO (SAFE-02, PROPOSTA). Sem pessoas."""
+
+    type: Literal["safety.security_changed"] = "safety.security_changed"
+    data: SecurityPanelState
+
+
+class SafetySecurityAction(EventBase):
+    """Proposta de armar/desarmar SIMULADA e as suas decisões: o mesmo `data.id` em
+    `proposed` e depois `confirmed`/`cancelled` (SAFE-02, PROPOSTA). Nunca execução física."""
+
+    type: Literal["safety.security_action"] = "safety.security_action"
+    data: SecurityAction
+
+
 # --- faturação ------------------------------------------------------------------------------
 
 
@@ -409,6 +424,8 @@ DomainEvent = Annotated[
     | SensorReadingRecorded
     | SafetyAlertRaised
     | SafetyAwayChanged
+    | SafetySecurityChanged
+    | SafetySecurityAction
     | BillingConfirmationNeeded
     | BillingAttributionChanged
     | BillingBillCreated
