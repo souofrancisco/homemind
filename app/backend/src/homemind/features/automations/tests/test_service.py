@@ -433,6 +433,25 @@ def test_limite_de_tres_propostas_abertas_por_proponente(db):
     assert propose(db, at=later).error is None
 
 
+def test_reativar_conta_para_o_limite_de_tres_votacoes_abertas(db):
+    rule = active_rule(db)
+    suspend(db, rule, fx.DIOGO)
+    for _ in range(service.MAX_OPEN_PER_PROPOSER):
+        assert propose(db, who=fx.DIOGO).error is None
+    r = reactivate(db, rule, fx.DIOGO)
+    assert r.error == service.TOO_MANY_OPEN and r.view is None
+    assert reactivate(db, rule, fx.ANA).error is None  # o limite é por pessoa
+
+
+def test_reativar_com_menos_de_tres_abertas_abre_a_votacao_e_ocupa_um_lugar(db):
+    rule = active_rule(db)
+    suspend(db, rule, fx.DIOGO)
+    for _ in range(service.MAX_OPEN_PER_PROPOSER - 1):
+        assert propose(db, who=fx.DIOGO).error is None
+    assert reactivate(db, rule, fx.DIOGO).error is None
+    assert propose(db, who=fx.DIOGO).error == service.TOO_MANY_OPEN  # a reativação ocupa lugar
+
+
 def test_reativar_reemite_automation_proposed_com_id_por_ronda(db):
     rule = active_rule(db)
     suspend(db, rule, fx.DIOGO)
