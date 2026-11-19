@@ -54,7 +54,7 @@ Feito: opt-in de Wi-Fi e revogação, retenção, eliminação e exportação de
 | **Gate jurídico** (P-24): nenhuma afirmação de conformidade RGPD; bloqueia o piloto com pessoas e sensores reais | externo |
 | Validar no browser e no kit | validação |
 
-Nota: o **#217** (apagar a cópia de presença na faturação de quem revoga) está aberto, empilhado sobre o #211 já integrado. Convém retargetá-lo para a `main` ou integrá-lo; **ainda não foi revisto**.
+Nota: o **#217** apaga a cópia de presença da faturação (`billing_presence_state`) de quem revoga ou sai, na primeira mensagem de presença seguinte da casa; sem tráfego, a linha fica até à seguinte; sem UI de revogação.
 
 ### [#115](https://github.com/souofrancisco/homemind/issues/115) · SAFE-02 · Casa vazia/AWAY e segurança MCP com confirmação (fase 3)
 | O que falta | Tipo |

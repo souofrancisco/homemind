@@ -246,7 +246,7 @@ Exemplo do PDF (v5.1 §20, teste `test_exemplo_do_pdf_excesso_de_330_kwh`): fatu
 | Telemetria em bruto | `energy.reading_recorded`, `sensor.reading_recorded` | `RETENTION_TELEMETRY_DAYS` (omissão **90**, mínimo 62 para o mês corrente e o anterior; `0` desliga). Não se apaga um evento que um consumidor ainda está a tentar processar | IMPLEMENTADO; prazo PROPOSTA |
 | Agregados diários dos alertas | `alerts_device_day`, `alerts_room_night` | o mesmo prazo | IMPLEMENTADO |
 | Presença | `presence.*` | PRESENCE_RETENTION_DAYS (omissão **30**, PROPOSTA): brutos passam a agregados diários sem horários; ver [presence.md](presence.md) | IMPLEMENTADO (PRIV-03 #51); prazo PROPOSTA |
-| Cópia da presença na faturação (regra C) | `billing_presence_state`, `billing_occupancy` (migração `0111`) | apagada pelo próprio consumidor `billing.presence` ao fim de **40 dias** (fica só o último estado ainda em vigor) | IMPLEMENTADO (BILL-07) |
+| Cópia da presença na faturação (regra C) | `billing_presence_state`, `billing_occupancy` (migração `0111`) | apagada pelo próprio consumidor `billing.presence` ao fim de **40 dias** (fica só o último estado ainda em vigor); o estado de quem deixa de ter `presence_opt_in` (revogou ou saiu) é apagado na primeira mensagem de presença seguinte da casa (PRIV-03, #217); `billing_occupancy` é só contagem da porta, sem identidade | IMPLEMENTADO (BILL-07) |
 | Operacional | notificações, alertas, automações, agente | sem expurgo (o histórico do assistente já tem 50 mensagens/30 dias, P-25) | PLANEADO |
 
 O expurgo (`features/retention/purge.py`) corre 1 min após o arranque e de 6 em 6 h, em lotes de 5000 por transação; no log só ficam contagens.
