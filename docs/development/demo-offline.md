@@ -190,7 +190,9 @@ com base de 40 W e publicação a cada 5 segundos. No fim de cada sessão a toma
 leitura em falta e volta à base: o motor fecha então o consumo de imediato (recuperação
 definitiva) em vez de esperar os 10 minutos da pausa de termóstato, e o pedido «De quem é
 esta conta?» aparece cerca de 4 minutos depois do arranque. O limiar da pergunta da casa demo é
-2 cêntimos: a sessão do aquecedor atinge-o e a chaleira curta fica abaixo. O cálculo de
+2 cêntimos: a sessão do aquecedor atinge-o e a chaleira curta fica abaixo. Os quartos da cópia web
+ficam **sem plafond solidário** (`included_wh = 0`): cada um paga só o seu quarto; o cenário oficial
+offline mantém os 30 kWh do exemplo do PDF. O cálculo de
 custos existente não é alterado.
 
 `DEMO_LIVE` é ativada por omissão em `PROFILE=demo`; definir `DEMO_LIVE=false` desliga-a.

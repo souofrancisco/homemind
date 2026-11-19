@@ -127,6 +127,12 @@ def _seed_live_catalog(conn: sqlite3.Connection, at: datetime) -> None:
     # A sessão curta gera poucos cêntimos; o limiar da casa de demonstração torna
     # visível a confirmação sem alterar as regras nem o cálculo de custos.
     conn.execute("UPDATE household SET ask_threshold_cents=2 WHERE id=?", (str(fx.HOUSEHOLD),))
+    # Na demo web cada um paga só o seu quarto: sem plafond solidário (0 = sem plafond). O cenário
+    # oficial offline mantém os 30 kWh do exemplo do PDF; o plafond é opção do senhorio por quarto.
+    conn.execute(
+        "UPDATE room SET included_wh = 0 WHERE household_id=? AND kind='bedroom'",
+        (str(fx.HOUSEHOLD),),
+    )
     kitchen_id = stable_id("demo-web-room", "cozinha")
     insert_room(
         conn,
