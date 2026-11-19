@@ -60,7 +60,7 @@ _ERRORS = {
     service.VOTE_ALREADY_OPEN: (409, "Já há uma votação aberta para reativar esta regra"),
     service.TOO_MANY_OPEN: (
         409,
-        "Já tens propostas abertas a mais. Espera que sejam decididas antes de propor outra",
+        "Já tens 3 votações abertas. Espera que sejam decididas antes de propor ou reativar outra",
     ),
     service.CONFLICT: (409, "A regra mudou entretanto; tenta de novo"),
 }

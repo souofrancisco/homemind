@@ -238,6 +238,17 @@ def test_a_quarta_proposta_aberta_e_recusada(client):
     create(client, BRUNO)  # o limite é por proponente
 
 
+def test_reativar_com_tres_votacoes_abertas_e_recusado_com_409(client):
+    aid = active(client)
+    client.patch(f"{URL}/{aid}", json={"status": "disabled"}, headers=as_(DIOGO))
+    for _ in range(3):
+        create(client, DIOGO)
+    r = client.post(f"{URL}/{aid}/reactivate", headers=as_(DIOGO))
+    assert err(r) == (409, "too_many_open")
+    assert "reativar" in r.json()["error"]["message"]
+    assert client.post(f"{URL}/{aid}/reactivate", headers=as_(ANA)).status_code == 200
+
+
 def test_reativar_reemite_automation_proposed_com_a_regra_suspensa(client, app):
     aid = active(client)
     client.patch(f"{URL}/{aid}", json={"status": "disabled"}, headers=as_(DIOGO))
