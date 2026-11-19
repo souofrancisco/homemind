@@ -2,17 +2,14 @@ import { Alert, Badge, Button, Group, Loader, Stack, Text, Title } from "@mantin
 import { IconAlertCircle, IconLock } from "@tabler/icons-react";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { useHouseAutomations } from "../hooks/useHouseAutomations";
-import { usePolling } from "../hooks/usePolling";
 import ProposeRuleForm, { type PlugOption } from "../components/houseRules/ProposeRuleForm";
 import RuleCard from "../components/houseRules/RuleCard";
-import { getEnergyOverview } from "../services/energy/api";
 
 export default function HouseRulesContent() {
   const session = useHouseholdSession();
   const householdId = session.membership?.household_id;
   const isTenant = session.membership?.role === "tenant";
   const auto = useHouseAutomations(isTenant ? householdId : undefined);
-  const energy = usePolling(isTenant ? householdId : undefined, getEnergyOverview, 60000);
 
   if (!isTenant) return <Alert icon={<IconLock />} color="gray" title="Só para moradores">As regras da casa são votadas e geridas apenas pelos moradores.</Alert>;
   if (auto.loading) return <Group role="status"><Loader size="sm" /><Text>A carregar regras…</Text></Group>;
@@ -22,16 +19,15 @@ export default function HouseRulesContent() {
     </Alert>
   );
 
-  // Nomes das tomadas vêm das regras existentes (o servidor devolve o nome do alvo); as restantes são «Tomada N».
+  // As tomadas do formulário são as que o servidor aceita (GET .../automations/plugs).
   const names = new Map<string, string>();
   auto.rules.forEach((r) => r.actions.forEach((a) => names.set(a.target_device_id, r.device_name)));
-  const meters = energy.data?.meters ?? [];
-  const plugs: PlugOption[] = meters.map((m, i) => ({
-    value: m.device_id,
-    label: `${names.get(m.device_id) ?? `Tomada ${i + 1}`}${m.provenance.origin === "simulated" ? " (SIMULADO)" : ""}`,
+  const plugs: PlugOption[] = auto.plugs.map((p) => ({
+    value: p.id,
+    label: `${p.name}${p.simulated && !/simulad/i.test(p.name) ? " (SIMULADO)" : ""}`,
   }));
-  const tapName = (id: string | null | undefined) => (id ? plugs.find((p) => p.value === id)?.label.replace(" (SIMULADO)", "") ?? names.get(id) ?? "uma tomada" : "uma tomada");
-  const simulated = auto.rules.some((r) => r.origin === "simulated") || meters.some((m) => m.provenance.origin === "simulated");
+  const tapName = (id: string | null | undefined) => (id ? plugs.find((p) => p.value === id)?.label.replace(/ \(SIMULAD[OA]\)/, "") ?? names.get(id) ?? "uma tomada" : "uma tomada");
+  const simulated = auto.rules.some((r) => r.origin === "simulated") || auto.plugs.some((p) => p.simulated);
 
   const pending = auto.rules.filter((r) => r.vote_open);
   const active = auto.rules.filter((r) => r.status === "active" && !r.vote_open);

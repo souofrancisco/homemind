@@ -1,11 +1,11 @@
 import { notifications } from "@mantine/notifications";
 import { useCallback, useEffect, useState } from "react";
 import {
-  listAutomations, proposeAutomation, reactivateAutomation, suspendAutomation, voteAutomation,
-  type AutomationProposeIn, type AutomationView,
+  listAutomationPlugs, listAutomations, proposeAutomation, reactivateAutomation, suspendAutomation, voteAutomation,
+  type AutomationPlugView, type AutomationProposeIn, type AutomationView,
 } from "../services/automations/api";
 
-type State = { key: string; rules: AutomationView[] | null };
+type State = { key: string; rules: AutomationView[] | null; plugs: AutomationPlugView[] };
 
 /** Regras da casa (SAFE-04). Só atualiza a lista com o que o servidor devolve; um erro
  *  (incl. 409 de voto repetido ou limite de propostas) não altera nada e a lista é relida. */
@@ -17,9 +17,10 @@ export function useHouseAutomations(householdId: string | undefined) {
   useEffect(() => {
     if (!householdId) return;
     let active = true;
-    listAutomations(householdId)
-      .then((rules) => active && setState({ key: householdId, rules }))
-      .catch(() => active && setState({ key: householdId, rules: null }));
+    // As tomadas vêm do servidor (as que ele aceita numa regra); sem elas o formulário fica vazio.
+    Promise.all([listAutomations(householdId), listAutomationPlugs(householdId).catch(() => [])])
+      .then(([rules, plugs]) => active && setState({ key: householdId, rules, plugs }))
+      .catch(() => active && setState({ key: householdId, rules: null, plugs: [] }));
     return () => { active = false; };
   }, [householdId, tick]);
 
@@ -39,6 +40,7 @@ export function useHouseAutomations(householdId: string | undefined) {
   return {
     loading: !cur,
     rules: cur?.rules ?? null,
+    plugs: cur?.plugs ?? [],
     busy,
     reload,
     vote: (id: string, approve: boolean) =>
