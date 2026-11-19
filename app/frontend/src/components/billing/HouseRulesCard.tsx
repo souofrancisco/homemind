@@ -63,7 +63,7 @@ export default function HouseRulesCard({ householdId, canEdit }: { householdId: 
           <PolicyText p={data.current.policy} />
         </Stack>
         {data.upcoming?.effective_from && (
-          <Alert variant="light" color="blue" icon={<IconCalendarEvent />} title={`Muda a ${fmtDay(data.upcoming.effective_from)}`}>
+          <Alert variant="light" color="gray" icon={<IconCalendarEvent />} title={`Muda a ${fmtDay(data.upcoming.effective_from)}`}>
             <Stack gap="xs">
               <PolicyText p={data.upcoming.policy} />
               <Text size="xs" c="dimmed">Aprovada pela maioria dos moradores. Para a desfazer, propõe outra regra.</Text>
@@ -79,7 +79,7 @@ export default function HouseRulesCard({ householdId, canEdit }: { householdId: 
               </Text>
               {canEdit && (
                 <Group gap="xs">
-                  {proposal.my_vote !== true && <Button size="xs" color="green" loading={busy} onClick={() => run(voteHouseRules(householdId, true))}>Aprovar</Button>}
+                  {proposal.my_vote !== true && <Button className="conta-keep-color" size="xs" color="green" loading={busy} onClick={() => run(voteHouseRules(householdId, true))}>Aprovar</Button>}
                   {proposal.my_vote !== false && !proposal.proposed_by_me && <Button size="xs" variant="light" color="red" loading={busy} onClick={() => run(voteHouseRules(householdId, false))}>Rejeitar</Button>}
                   {proposal.proposed_by_me && <Button size="xs" variant="subtle" color="red" loading={busy} onClick={() => run(withdrawHouseRules(householdId))}>Retirar proposta</Button>}
                   {proposal.my_vote != null && <Badge variant="outline">{proposal.my_vote ? "Aprovaste" : "Rejeitaste"}</Badge>}

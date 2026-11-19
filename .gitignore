@@ -13,6 +13,8 @@ app/.mcp-auth/
 # data
 app/.demo-data/
 app/.demo-web/
+# registos dos servidores locais da demo
+app/*-demo.log
 *.db
 *.sqlite
 *.sqlite3

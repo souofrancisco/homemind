@@ -1,6 +1,8 @@
-import { Alert, Badge, Button, Card, Group, Stack, Text, Title } from "@mantine/core";
+import { Alert, Button, Card, Group, Stack, Text, Title } from "@mantine/core";
 import { IconBulb, IconPlug } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
+import { useHouseholdSession } from "../../app/providers/HouseholdProvider";
+import OriginBadge from "../common/OriginBadge";
 import {
   confirmAction, listProposedActions, rejectAction, sendAgentMessage, type AgentActionView,
 } from "../../services/agent/api";
@@ -28,6 +30,7 @@ export function outcomeOf(view: AgentActionView): Outcome {
 }
 
 export default function ManualControls({ householdId }: { householdId: string }) {
+  const session = useHouseholdSession();
   const [pending, setPending] = useState<AgentActionView[]>([]);
   const [results, setResults] = useState<Array<{ id: string; device: string; origin: AgentActionView["origin"]; outcome: Outcome }>>([]);
   const [info, setInfo] = useState("");
@@ -62,8 +65,8 @@ export default function ManualControls({ householdId }: { householdId: string })
       <Stack gap="sm">
         <Title id="manual-controls-title" order={3} size="h4">Controlos manuais</Title>
         <Text size="sm" c="dimmed">
-          Pede ao servidor para desligar um dispositivo autorizado. Nada muda até confirmares, e só aparece
-          «confirmado» depois de o servidor reler o estado. Um resultado incerto fica incerto e não se repete.
+          Pede para desligar um dispositivo autorizado. Nada muda até confirmares, e só aparece
+          «confirmado» depois de a casa confirmar o estado. Um resultado incerto fica incerto e não se repete.
         </Text>
         <Group gap="xs" role="group" aria-label="Pedir para desligar um dispositivo">
           {REQUESTS.map(({ label, text, icon: Icon }) => (
@@ -81,7 +84,7 @@ export default function ManualControls({ householdId }: { householdId: string })
           <Alert key={v.action.id} variant="light" color="yellow" title={`Confirmar: desligar «${v.device_name}»?`}>
             <Stack gap="xs">
               <Group gap="xs">
-                <Badge color={v.origin === "simulated" ? "orange" : "teal"} variant="light">{v.origin === "simulated" ? "SIMULADO" : "REAL"}</Badge>
+                <OriginBadge origin={v.origin} demo={session.house?.source_kind === "demo"} />
                 <Text size="sm">{v.action.rationale}</Text>
               </Group>
               {v.origin === "simulated" && <Text size="xs" c="dimmed">Nenhum aparelho real muda.</Text>}
@@ -97,7 +100,7 @@ export default function ManualControls({ householdId }: { householdId: string })
             <Alert key={r.id} mb="xs" variant="light" color={r.outcome.tone} title={`${r.device}: ${r.outcome.title}`} withCloseButton
               closeButtonLabel="Fechar aviso" onClose={() => setResults((all) => all.filter((x) => x.id !== r.id))}>
               {r.outcome.message}
-              <Text size="xs" c="dimmed" mt={4}>{r.origin === "simulated" ? "SIMULADO" : "REAL"}</Text>
+              <OriginBadge origin={r.origin} demo={session.house?.source_kind === "demo"} />
             </Alert>
           ))}
         </div>
