@@ -234,8 +234,8 @@ AUTOMATION_VOTE_WINDOW = timedelta(hours=24)
 def _trigger_text(rule: AutomationRule) -> str:
     t = rule.trigger
     if t.kind is TriggerKind.power_above:
-        return f"a potência passar de {t.threshold_w:g} W durante {t.duration_s} s"
-    return "mudar quem está em casa"
+        return f"quando a potência passar de {t.threshold_w:g} W durante {t.duration_s} s"
+    return "quando mudar quem está em casa"
 
 
 def compose_automation_proposal(
@@ -261,7 +261,7 @@ def compose_automation_proposal(
         if reactivation
         else "Nova regra da casa para votar",
         body=_tag(
-            f"Foi proposta {what} «{rule.name}»: desligar uma tomada ao {_trigger_text(rule)}. "
+            f"Foi proposta {what} «{rule.name}»: desligar uma tomada {_trigger_text(rule)}. "
             "Só passa a valer se a maioria dos moradores votar a favor em 24 h; "
             "até lá nada é executado.",
             origin,

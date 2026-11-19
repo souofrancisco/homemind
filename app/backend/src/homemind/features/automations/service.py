@@ -452,7 +452,8 @@ def reactivate(
     conn: sqlite3.Connection, household_id: UUID, resident_id: UUID, rule_id: UUID, now: datetime
 ) -> Result:
     """Abre uma nova ronda de votos numa regra `disabled`; a regra só volta a `active` pela
-    maioria. Não emite evento (o estado só muda quando a votação decide)."""
+    maioria. Não emite evento (o estado só muda quando a votação decide). Conta para o limite de
+    `MAX_OPEN_PER_PROPOSER` votações abertas de quem reativa (como `propose`)."""
     events = resolve_expired(conn, household_id, now)
     row = repo.get_row(conn, household_id, rule_id)
     if row is None:
@@ -464,6 +465,8 @@ def reactivate(
     eligible = repo.active_tenants(conn, household_id, now)
     if resident_id not in eligible:
         return Result(error=NOT_ELIGIBLE, events=events)
+    if repo.count_open_by(conn, household_id, resident_id) >= MAX_OPEN_PER_PROPOSER:
+        return Result(error=TOO_MANY_OPEN, events=events)  # reativar conta como propor
     if not repo.open_round(conn, row, now=now, deadline=now + VOTE_WINDOW, eligible=eligible):
         raise ConflictError(CONFLICT)
     repo.log(conn, rule_id, now, "reactivation_opened", by=resident_id)
