@@ -16,7 +16,7 @@ export default function ProposeRuleForm({ plugs, busy, simulated, onSubmit }: Pr
   const [target, setTarget] = useState<string | null>(null);
 
   const power = kind === "power_above";
-  const valid = name.trim() !== "" && target != null && (!power || (meter != null && Number(watts) > 0 && minutes !== "" && Number(minutes) >= 0));
+  const valid = name.trim() !== "" && target != null && (!power || (meter != null && Number(watts) > 0 && Number(watts) <= 100000 && minutes !== "" && Number(minutes) >= 0));
   const submit = async () => {
     const trigger = power
       ? { kind, device_id: meter, threshold_w: Number(watts), duration_s: Math.round(Number(minutes) * 60) }
@@ -42,7 +42,7 @@ export default function ProposeRuleForm({ plugs, busy, simulated, onSubmit }: Pr
             {power && (
               <>
                 <Select label="Tomada a vigiar" data={plugs} value={meter} onChange={setMeter} placeholder="Escolhe uma tomada" />
-                <NumberInput label="Potência acima de (W)" min={1} allowDecimal={false} value={watts} onChange={setWatts} />
+                <NumberInput label="Potência acima de (W)" min={1} max={100000} allowDecimal={false} value={watts} onChange={setWatts} />
                 <NumberInput label="Durante (minutos)" min={0} max={1440} allowDecimal={false} value={minutes} onChange={setMinutes} />
               </>
             )}
