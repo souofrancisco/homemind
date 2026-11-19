@@ -58,7 +58,7 @@ from homemind.contracts.presence import (
     PresenceConfirmationRequest,
     PresenceEvent,
 )
-from homemind.contracts.safety import SafetyAlert
+from homemind.contracts.safety import AwayState, SafetyAlert
 from homemind.contracts.sensors import SensorReading
 
 
@@ -255,6 +255,13 @@ class SafetyAlertRaised(EventBase):
     data: SafetyAlert
 
 
+class SafetyAwayChanged(EventBase):
+    """Só quando o estado AWAY muda (SAFE-02, PROPOSTA, SIMULADO). Sem rotas nem pessoas."""
+
+    type: Literal["safety.away_changed"] = "safety.away_changed"
+    data: AwayState
+
+
 # --- faturação ------------------------------------------------------------------------------
 
 
@@ -357,6 +364,7 @@ DomainEvent = Annotated[
     | PresenceOccupancyChanged
     | SensorReadingRecorded
     | SafetyAlertRaised
+    | SafetyAwayChanged
     | BillingConfirmationNeeded
     | BillingAttributionChanged
     | BillingBillCreated

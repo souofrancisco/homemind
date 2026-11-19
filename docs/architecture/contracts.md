@@ -54,6 +54,7 @@ Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), 
 | `PresenceEvent(source=appliance)`, `PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`, `PresenceDevice`/`PresenceDeviceView`, `CameraStatus` (**PROPOSTA**, D-31) | P2 | P3 (pedido), app (DTOs), P2 | PLANEADA (P2) | modelos + fixtures | Tolerância; retenção (P-20) |
 | `SensorReading` (contacto, fumo, temperatura, humidade; `unknown` sem valor) (**PROPOSTA**, D-31) | P1 (MCP-03) | P2 (SAFE) | PLANEADA (P1) | modelos | Capacidades reais do kit (MCP-03) |
 | `SafetyAlert` (janela aberta + aquecimento, fumo) (**PROPOSTA**, D-31) | P2 | P3 (→ `Notification` e, AGENT-03b, `ProposedAction`: consumidores **IMPLEMENTADOS**) | PLANEADA (P2) | modelos | Autorização do senhorio para fumo |
+| `AwayState` (estado AWAY simulado, SAFE-02 #115) (**PROPOSTA**, a rever por P5 e P3) | P2 | P3 (notificação/ação: **PLANEADO**, fora desta PR) | **IMPLEMENTADA** (SIMULADA) | modelos | Acordo de P5/P3; armamento real exige MCP-04 |
 | `Attribution` (+`supersede`) | P4 | P3, agente | PLANEADA: índice único parcial `(consumption_event_id) WHERE status='active'` | modelos + cenário | — |
 | `ElectricityBill`, `BillAllocation` (+`validate_allocations`) | P4 | UI, agente, P3 | PLANEADA (P4) | fixtures A/B/C exatas | Entrada da fatura (manual vs LLM) |
 | `Budget`, `BudgetThreshold`, `Contestation` | P4 | P3 | PLANEADA (P4) | modelos | P-10 (individual vs fixa) |
@@ -90,6 +91,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `presence.occupancy_changed` (PROPOSTA, **IMPLEMENTADO**, PRES-06) | P2 | `HouseOccupancy` (anónimo; só quando o estado muda; `likely_empty` = porta fiável a 0) | P2, P3, SAFE-02 (futuro) | idem |
 | `sensor.reading_recorded` (PROPOSTA) | P1 | `SensorReading` | P2 | idem |
 | `safety.alert_raised` (PROPOSTA) | P2 | `SafetyAlert` (o mesmo `id` volta com `status=resolved`) | P3 (`notifications.safety_alert`, **IMPLEMENTADO**); P3 (`agent.safety_suggestion`, **IMPLEMENTADO**, AGENT-03b: só propõe, uma `ProposedAction` por inquilino ativo; alerta resolvido → propostas pendentes `rejected`; em runtime real só dispara quando a `safety` tiver o resolvedor de aquecedores, ENERGY-03 #81; hoje só na demo SIMULADA e nos testes) | idem |
+| `safety.away_changed` (PROPOSTA, SAFE-02) | P2 | `AwayState` (`away`/`home`/`unknown`; só quando muda; `arm_proposed` só em `away`, `executed` sempre falso, proveniência sempre simulada) | Sem consumidores (notificação e alerta de entrada **PLANEADOS**); o senhorio nunca o vê | idem |
 | `billing.confirmation_needed` | P4 | `ConfirmationRequest` | P3 (consumidor `notifications.confirmation_needed`, **IMPLEMENTADO**) | idem |
 | `billing.attribution_changed` | P4 | `Attribution` | P3 (`notifications.attribution_changed`, **IMPLEMENTADO**), P4 | idem |
 | `billing.bill_created` / `bill_finalized` | P4 | `BillRef` | P3, UI | idem |
