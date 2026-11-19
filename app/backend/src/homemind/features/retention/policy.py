@@ -60,9 +60,14 @@ EVENT_CATEGORY: dict[str, Category] = {
     "alerts.alert_raised": Category.operational,
     "alerts.cold_room": Category.operational,
     "safety.alert_raised": Category.operational,
+    "safety.away_changed": Category.operational,
     "agent.action_proposed": Category.operational,
     "automation.proposed": Category.operational,
     "automation.executed": Category.operational,
+    # votação e suspensão das regras da casa (SAFE-04): só contagens e ids, sem custo; ficam
+    # como operacionais (auditoria de quem manda desligar tomadas), sem expurgo por agora
+    "automation.vote_decided": Category.operational,
+    "automation.status_changed": Category.operational,
 }
 
 PURGEABLE_EVENT_TYPES = tuple(

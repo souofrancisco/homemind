@@ -20,7 +20,13 @@ from uuid import UUID
 
 from pydantic import Field, TypeAdapter, model_validator
 
-from homemind.contracts.agent import ActionExecutionResult, AutomationRule, ProposedAction
+from homemind.contracts.agent import (
+    ActionExecutionResult,
+    AutomationRule,
+    AutomationStatus,
+    ProposedAction,
+    RuleVerdict,
+)
 from homemind.contracts.billing import (
     Attribution,
     BudgetThreshold,
@@ -58,7 +64,7 @@ from homemind.contracts.presence import (
     PresenceConfirmationRequest,
     PresenceEvent,
 )
-from homemind.contracts.safety import SafetyAlert
+from homemind.contracts.safety import AwayState, SafetyAlert
 from homemind.contracts.sensors import SensorReading
 
 
@@ -168,6 +174,34 @@ class AutomationExecutedData(ContractModel):
     result: ActionExecutionResult
 
 
+class AutomationVoteDecidedData(ContractModel):
+    """A votação de uma regra fechou (SAFE-04): só o veredicto e as contagens, nunca quem votou
+    o quê. `rejected` com `expired=False` = maioria impossível; com `expired=True` = prazo."""
+
+    rule_id: UUID
+    verdict: Literal[RuleVerdict.approved, RuleVerdict.rejected]
+    votes_for: Annotated[int, Field(strict=True, ge=0)]
+    votes_against: Annotated[int, Field(strict=True, ge=0)]
+    eligible: Annotated[int, Field(strict=True, ge=1)]
+    expired: bool = False
+
+
+class AutomationStatusChangedData(ContractModel):
+    """Mudança de estado de uma regra depois de proposta (ex.: `active -> disabled` quando um
+    morador a suspende). `resident_id` é quem agiu; `None` = o sistema (ex.: prazo)."""
+
+    rule_id: UUID
+    from_status: AutomationStatus
+    to_status: AutomationStatus
+    resident_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def _changed(self) -> Self:
+        if self.from_status is self.to_status:
+            raise ValueError("o estado tem de mudar")
+        return self
+
+
 # --- energia --------------------------------------------------------------------------------
 
 
@@ -253,6 +287,13 @@ class SafetyAlertRaised(EventBase):
 
     type: Literal["safety.alert_raised"] = "safety.alert_raised"
     data: SafetyAlert
+
+
+class SafetyAwayChanged(EventBase):
+    """Só quando o estado AWAY muda (SAFE-02, PROPOSTA, SIMULADO). Sem rotas nem pessoas."""
+
+    type: Literal["safety.away_changed"] = "safety.away_changed"
+    data: AwayState
 
 
 # --- faturação ------------------------------------------------------------------------------
@@ -344,6 +385,16 @@ class AutomationExecuted(EventBase):
     data: AutomationExecutedData
 
 
+class AutomationVoteDecided(EventBase):
+    type: Literal["automation.vote_decided"] = "automation.vote_decided"
+    data: AutomationVoteDecidedData
+
+
+class AutomationStatusChanged(EventBase):
+    type: Literal["automation.status_changed"] = "automation.status_changed"
+    data: AutomationStatusChangedData
+
+
 DomainEvent = Annotated[
     EnergyReadingRecorded
     | EnergyStepDetected
@@ -357,6 +408,7 @@ DomainEvent = Annotated[
     | PresenceOccupancyChanged
     | SensorReadingRecorded
     | SafetyAlertRaised
+    | SafetyAwayChanged
     | BillingConfirmationNeeded
     | BillingAttributionChanged
     | BillingBillCreated
@@ -371,7 +423,9 @@ DomainEvent = Annotated[
     | AlertsColdRoom
     | AgentActionProposed
     | AutomationProposed
-    | AutomationExecuted,
+    | AutomationExecuted
+    | AutomationVoteDecided
+    | AutomationStatusChanged,
     Field(discriminator="type"),
 ]
 

@@ -1,4 +1,6 @@
-"""Alertas de conforto e segurança (SAFE-01, SAFE-03). Dono: P2; entrega: P3.
+"""Alertas de conforto e segurança (SAFE-01, SAFE-03) e AWAY simulado (SAFE-02). Dono: P2.
+
+Entrega: P3.
 
 safety deteta (sensores + consumos) e emite `SafetyAlert`; nunca escreve no MCP. Uma ação
 sugerida (`suggested_command`) é só uma sugestão: P3 transforma-a numa `ProposedAction`, que
@@ -9,7 +11,7 @@ exige confirmação humana, e P1 executa com grant e releitura. Fumo nunca suger
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Self
+from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import model_validator
@@ -65,4 +67,32 @@ class SafetyAlert(ContractModel):
             cmd = self.suggested_command
             if cmd is not None and (cmd.capability is not DeviceCapability.power or cmd.power):
                 raise ValueError("a única sugestão é desligar a tomada")
+        return self
+
+
+class AwayStatus(StrEnum):
+    away = "away"  # casa vazia (candidato); só uma proposta de armar, nunca execução
+    home = "home"  # há alguém: saiu de AWAY
+    unknown = "unknown"  # sem sinal fiável (`uncertain`); nunca é AWAY
+
+
+class AwayState(ContractModel):
+    """Estado AWAY da casa (SAFE-02, PROPOSTA, SIMULADO). Derivado de `HouseOccupancy`; anónimo
+    (sem pessoas nem horários por pessoa) e nunca visível ao senhorio. `arm_proposed` é só o
+    registo de que armar seria proposto: `executed` é sempre falso (sem MCP nem escrita física)."""
+
+    id: UUID
+    household_id: UUID
+    status: AwayStatus
+    since: UtcDatetime  # `ts` do evento de ocupação que causou a mudança
+    arm_proposed: bool = False
+    executed: Literal[False] = False
+    provenance: Provenance
+
+    @model_validator(mode="after")
+    def _coherent(self) -> Self:
+        if self.arm_proposed != (self.status is AwayStatus.away):
+            raise ValueError("a proposta de armar existe exatamente em AWAY")
+        if self.arm_proposed and not self.provenance.simulated:
+            raise ValueError("armar é só uma proposta SIMULADA (SAFE-02)")
         return self
