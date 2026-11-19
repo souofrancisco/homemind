@@ -60,6 +60,7 @@ sequenceDiagram
 - O assistente atual usa `features/agent/llm.py` e ferramentas tipadas próprias. O cliente NVIDIA e a rota de propostas de regras do motor foram removidos em BASE-04; automações futuras precisam de contrato próprio.
 - **Âmbito do MCP:** só lâmpada (`power`, `brightness`, `color_rgb`) e tomada (`power`). Gatilhos por sensores de contacto/clima exigem **leitura** de dispositivos hoje fora da seleção do `McpHome` — **PROPOSTA** de extensão só de leitura (P-01). **Cenários** do Connected Home (`post_new_scenario`), alarme e segurança **continuam proibidos** até decisão explícita da equipa.
 - A votação da casa (PDF §12: 👍/👎) passa a ser aprovação na aplicação (**PROPOSTA**, P2).
+- **SAFE-04 (#117), PROPOSTA D-35:** o **contrato** já está em `contracts/agent.py` (**IMPLEMENTADO** só como modelos e testes): `AutomationRule.actions` só pode «desligar a tomada» (`power=False`), `AutomationVote` e `rule_approval_outcome` (maioria absoluta = mais de metade; 24 h; sem maioria = rejeitada, `proposed→draft`), e os eventos `automation.vote_decided` e `automation.status_changed` (+ `automation.proposed`/`automation.executed` já existentes). **PLANEADO:** persistência, rotas, motor de execução, suspensão por qualquer morador e UI.
 - Prioridade: P2. Nada disto bloqueia o MVP.
 
 ## Ficheiros existentes reutilizáveis
