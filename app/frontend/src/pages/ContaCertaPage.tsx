@@ -13,6 +13,7 @@ import BillsContent from "./BillsPage";
 import RoomAllowanceLine from "../components/billing/RoomAllowanceLine";
 import { listRoomAllowances, type RoomAllowanceView } from "../services/billing/allowances";
 import HouseRulesCard from "../components/billing/HouseRulesCard";
+import SecurityPanelCard from "../components/security/SecurityPanelCard";
 import OriginBadge from "../components/common/OriginBadge";
 import Dashboard from "./DashboardPage";
 import AppliancesContent from "./AppliancesPage";
@@ -218,6 +219,7 @@ function HouseContent() {
           </Group>
         </Card>
       )}
+      {role === "tenant" && <SecurityPanelCard householdId={session.house.id} />}
       {role === "operator" && <section aria-labelledby="appliances-title"><Title id="appliances-title" order={3} size="h4" mb="sm">Aparelhos</Title><NoData value={{ title: "Diagnóstico de dispositivos", detail: "O operador consulta o estado técnico autorizado na área Diagnóstico.", dependency: "Não são apresentados aparelhos pessoais." }} /></section>}
       {(role === "tenant" || role === "landlord") && (
         <HouseRulesCard householdId={session.house.id} canEdit={role === "tenant"} />

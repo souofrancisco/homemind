@@ -43,6 +43,7 @@ class Resource(StrEnum):
     notification = "notification"
     agent = "agent"
     automation = "automation"
+    security = "security"  # painel de segurança SIMULADO (SAFE-02)
     simulation = "simulation"
 
 
@@ -83,6 +84,8 @@ PERMISSIONS: dict[Resource, dict[Operation, dict[MembershipRole, Grant]]] = {
     Resource.agent: {R: {TT: OWN}, W: {TT: OWN}},
     # regras da casa votadas (SAFE-04): só moradores; nem senhorio nem operador as veem
     Resource.automation: {R: {TT: HH}, W: {TT: HH}},
+    # painel de segurança simulado (SAFE-02): só moradores; nem senhorio nem operador o veem
+    Resource.security: {R: {TT: HH}, W: {TT: HH}},
     Resource.simulation: {W: {OP: DIAG}},
 }
 
