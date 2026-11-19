@@ -119,3 +119,13 @@
 [data-md-color-scheme="slate"] .estado--ok { color: #7fdc9e; }
 [data-md-color-scheme="slate"] .estado--plan { color: #f0b35a; }
 [data-md-color-scheme="slate"] .estado--prop { color: #b8a9f0; }
+
+/* Botões no modo escuro: a cor primária do tema é escura demais para texto/contorno sobre o fundo */
+[data-md-color-scheme="slate"] .md-typeset .md-button {
+  color: var(--md-typeset-a-color);
+  border-color: var(--md-typeset-a-color);
+}
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary {
+  color: #0b2b2e;
+  background-color: var(--md-typeset-a-color);
+}
