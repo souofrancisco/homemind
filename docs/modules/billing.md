@@ -210,7 +210,7 @@ Puros, com relógio simulado e sem rede/hardware: fixtures, regra A/B/C, prazo d
 
 ## Plafond solidário de aquecimento (BILL-03)
 
-**IMPLEMENTADO.** O aquecimento básico de cada quarto é pago por todos; só o excesso é individual (v5.1 §8). Premissas:
+**IMPLEMENTADO.** **É uma opção do senhorio, por quarto** (`room.included_wh`; **0 = sem plafond**, e então cada um paga o seu quarto, que é a regra 1: «o teu quarto é teu»). Quando o senhorio define um plafond, o aquecimento básico desse quarto é pago por todos e só o excesso é individual (v5.1 §8). Os 30 kWh que aparecem na demo vêm dos dados de demonstração, não são um valor obrigatório. Premissas:
 
 | Premissa | Regra |
 |---|---|

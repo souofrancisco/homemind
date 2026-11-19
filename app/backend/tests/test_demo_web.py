@@ -57,6 +57,18 @@ def test_copia_web_ancorada_no_relógio_e_com_catálogo_real(roots):
         )
 
 
+def test_copia_web_sem_plafond_cada_um_paga_o_seu_quarto(roots):
+    web.prepare()
+    with closing(sqlite3.connect(web.web_path())) as c:
+        quartos = c.execute("SELECT included_wh FROM room WHERE kind = 'bedroom'").fetchall()
+        assert quartos and all(wh == 0 for (wh,) in quartos)  # 0 = sem plafond solidário
+    # A original (cenário oficial offline, exemplo do PDF) mantém o plafond de 30 kWh.
+    with closing(sqlite3.connect(roots[0] / FILE_NAME)) as c:
+        assert {
+            wh for (wh,) in c.execute("SELECT included_wh FROM room WHERE kind = 'bedroom'")
+        } == {30000}
+
+
 def test_link_recusa_desconhecido_vazio_e_duplicado(roots):
     web.prepare()
     for user, sub in (("eva", "x"), ("ana", ""), ("ana", "a" * 300)):
