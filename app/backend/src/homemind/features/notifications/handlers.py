@@ -50,6 +50,12 @@ RULES_PROPOSAL_EVENT_TYPES = ("billing.rules_proposal_changed",)
 AGENT_ACTION_CONSUMER = "notifications.agent_action"
 AGENT_ACTION_EVENT_TYPES = ("agent.action_proposed",)
 
+AUTOMATION_PROPOSAL_CONSUMER = "notifications.automation_proposal"
+AUTOMATION_PROPOSAL_EVENT_TYPES = ("automation.proposed",)
+
+AUTOMATION_DECIDED_CONSUMER = "notifications.automation_decided"
+AUTOMATION_DECIDED_EVENT_TYPES = ("automation.vote_decided",)
+
 IDENTIFICATION_CONSUMER = "notifications.appliance_identification"
 IDENTIFICATION_EVENT_TYPES = ("energy.identification_needed",)
 
@@ -288,6 +294,37 @@ def make_agent_action_handler(clock: Callable[[], datetime]) -> Handler:
     return handler
 
 
+def make_automation_proposal_handler(clock: Callable[[], datetime]) -> Handler:
+    """`automation.proposed` (SAFE-04) -> «Nova regra da casa para votar» aos inquilinos."""
+
+    def handler(conn: sqlite3.Connection, stored: StoredEvent) -> list[de.DomainEvent]:
+        ev = stored.event
+        if not isinstance(ev, de.AutomationProposed):
+            return []
+        out = _service(conn, clock).on_automation_proposed(
+            ev.data,
+            source_event_id=ev.id,
+            correlation_id=ev.correlation_id,
+            provenance=ev.provenance,
+        )
+        return list(out.events)
+
+    return handler
+
+
+def make_automation_decided_handler(clock: Callable[[], datetime]) -> Handler:
+    """`automation.vote_decided` (SAFE-04) -> fecha os avisos de votação da regra."""
+
+    def handler(conn: sqlite3.Connection, stored: StoredEvent) -> list[de.DomainEvent]:
+        ev = stored.event
+        if not isinstance(ev, de.AutomationVoteDecided):
+            return []
+        _service(conn, clock).on_automation_decided(ev.household_id, ev.data.rule_id)
+        return []
+
+    return handler
+
+
 # Todos os consumidores da feature: (nome, fábrica, tipos).
 CONSUMERS: tuple[tuple[str, Callable[[Callable[[], datetime]], Handler], tuple[str, ...]], ...] = (
     (CONFIRMATION_CONSUMER, make_confirmation_handler, CONFIRMATION_EVENT_TYPES),
@@ -302,4 +339,14 @@ CONSUMERS: tuple[tuple[str, Callable[[Callable[[], datetime]], Handler], tuple[s
     (RULES_PROPOSAL_CONSUMER, make_rules_proposal_handler, RULES_PROPOSAL_EVENT_TYPES),
     (IDENTIFICATION_CONSUMER, make_identification_handler, IDENTIFICATION_EVENT_TYPES),
     (AGENT_ACTION_CONSUMER, make_agent_action_handler, AGENT_ACTION_EVENT_TYPES),
+    (
+        AUTOMATION_PROPOSAL_CONSUMER,
+        make_automation_proposal_handler,
+        AUTOMATION_PROPOSAL_EVENT_TYPES,
+    ),
+    (
+        AUTOMATION_DECIDED_CONSUMER,
+        make_automation_decided_handler,
+        AUTOMATION_DECIDED_EVENT_TYPES,
+    ),
 )

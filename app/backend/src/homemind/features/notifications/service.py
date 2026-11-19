@@ -12,7 +12,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from homemind.contracts import domain_events as de
-from homemind.contracts.agent import ProposedAction
+from homemind.contracts.agent import AutomationRule, AutomationStatus, ProposedAction
 from homemind.contracts.billing import (
     Attribution,
     AttributionStatus,
@@ -44,6 +44,7 @@ from homemind.features.notifications.compose import (
     compose_anomaly_alert,
     compose_appliance_identification,
     compose_attribution_info,
+    compose_automation_proposal,
     compose_budget_alert,
     compose_cold_room,
     compose_confirmation,
@@ -283,6 +284,36 @@ class NotificationService:
             now=now,
         )
         return self._create(n, provenance, dedupe=False)
+
+    def on_automation_proposed(
+        self,
+        rule: AutomationRule,
+        *,
+        source_event_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
+    ) -> Outcome:
+        """`automation.proposed` (SAFE-04) -> aviso da casa, só a inquilinos (o senhorio nunca o
+        vê: `automation_proposal` não está na allow-list). Regra `proposed` (proposta) ou
+        `disabled` (reativação); outro estado não tem nada por votar. Sem botões: vota-se na
+        rota das automações. Id derivado do evento de origem (uma por ronda; reentrega não
+        duplica)."""
+        if rule.status not in (AutomationStatus.proposed, AutomationStatus.disabled):
+            return Outcome(None)
+        n = compose_automation_proposal(
+            rule=rule,
+            source_event_id=source_event_id,
+            origin=provenance.origin,
+            correlation_id=correlation_id,
+            now=self._clock(),
+        )
+        return self._create(n, provenance, dedupe=False)
+
+    def on_automation_decided(self, household_id: UUID, rule_id: UUID) -> Outcome:
+        """`automation.vote_decided`: a votação fechou (aprovada, rejeitada ou por prazo); os
+        avisos abertos da regra passam a `expired` (sem evento). Idempotente."""
+        self._expire_open(household_id, NotificationRef(type=RefType.automation, id=rule_id))
+        return Outcome(None)
 
     def on_cold_room(
         self,
