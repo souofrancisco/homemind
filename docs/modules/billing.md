@@ -124,6 +124,8 @@ O sumário executivo cita 21,20 €; o corpo do documento (§6.2 e §7.1) cita 4
 
 ## Orçamentos (P0 → P1)
 
+**IMPLEMENTADO — integração com o assistente:** `features/billing/agent_providers.py` fornece consumo, orçamento, recibo e custo por aparelho. `top_appliances` reutiliza `budgets.month_spend`, `closing.period_inputs`, `tariff.value_millicents`, `allowance.apply` e, em mês fechado, a evidência/alocação finalizada; as linhas reconciliam ao total do morador. `consumption_change` compara dois totais mensais e as variações por aparelho sem inferir causas. Leituras síncronas e só de leitura, sob o lock SQLite partilhado. O registo é feito em `app.state.agent_providers`. O protocolo `ApplianceProvider` é aditivo **PROPOSTO à P5** em `contracts/agent_providers.py`.
+
 - Orçamento pessoal: limiares 50 / 80 / 100 % (omissão do PDF), notificação por limiar **uma só vez** por período (`last_threshold_notified`).
 - O gasto comparado inclui **todos os custos** (parte do termo fixo + resíduo + consumo individual), isto é, o valor que o morador vai pagar (D-31).
 - Previsão do fim do mês (ALERT-02): projeção linear do gasto acumulado, com intervalo de incerteza; ver «Previsão e tarifário» abaixo. Algoritmos mais complexos ficam fora do MVP.
