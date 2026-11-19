@@ -20,7 +20,7 @@ executado.
 | `get_home_rooms` | sem parâmetros |
 | `get_home_scenarios` | sem parâmetros |
 | `get_home_security_alarm_history` | `size` e `page` obrigatórios; `startDate` e `endDate` inteiros opcionais |
-| `get_home_security_status` | sem parâmetros |
+| `get_home_security_status` | sem parâmetros. **Só leitura, permitida (SAFE-02 #115, decisão do utilizador, a rever por P1/P5/equipa: D-07/P-01).** Resposta real 2026-11-19: `{"status": "DISARMED", "isAlarmed": false}`; `ARMED` assumido |
 | `get_home_status_brief` | sem parâmetros |
 | `get_scenario` | `scenarioId` obrigatório |
 | `patch_home_security_status` | `body` obrigatório; altera estado de segurança e não é permitido pela política atual da Conta Certa |
@@ -171,7 +171,7 @@ Inventário por `get_home_devices` (só leitura; sem IDs, nomes nem MACs). O kit
 | **Contacto** (`contactSensor`) | `sensorState` (`normal`/`alarm`), `tamperState`, `batteryStatus` (`low`/`medium`/`high`) | **REAL**, confirmado fisicamente | `SensorReading` `contact` (IMPLEMENTADO) | **IMPLEMENTADO** (`FakeKit`, MCP-05) |
 | **Clima** (`temperatureSensor`) | `temperatureValue` (min −50, max 60), `humidityValue` (0–100), `batteryLevel` (0–100) | **REAL** | `SensorReading` `temperature` + `humidity` (IMPLEMENTADO) | **IMPLEMENTADO** (`FakeKit`, MCP-05) |
 | **Fumo** (`smokeSensor`) | só `batteryStatus` (sem estado de alarme) | REAL (só bateria) | **Fora de âmbito** (decisão do utilizador: o detetor de fumo não é usado) | — |
-| **Gateway** (`gateway`) | `alarmState`, `tamperState`, `networkMode` (`ethernet`/`wifi`/`cellular`), `chargeState`, `batteryLevel`, `factoryReset` | REAL | Só leitura: `features/safety/panel_reader.py` (SAFE-02 #115; ainda sem ligação ao `McpHome`). Captura real 2026-11-19: `alarmState = "normal"` = estado de disparo, **não** armamento (lê-se `unknown`). **`factoryReset` nunca se escreve** | — |
+| **Gateway** (`gateway`) | `alarmState`, `tamperState`, `networkMode` (`ethernet`/`wifi`/`cellular`), `chargeState`, `batteryLevel`, `factoryReset` | REAL | Só leitura: `features/safety/panel_reader.py` (SAFE-02 #115; ligado ao `McpHome` por um ouvinte). Captura real 2026-11-19: `alarmState = "normal"` = estado de disparo, **não** armamento (lê-se `unknown`). **`factoryReset` nunca se escreve** | — |
 | Câmara, tomada, lâmpada | ver secções anteriores | REAL | `McpHome` (já implementado) | FakeHome |
 
 Todos os dispositivos de segurança (`categories` contém `security`: contacto, fumo e gateway) ficam **fora** do caminho de controlo do `McpHome` (`_find_devices` ignora-os); só se leem, sem escritas.
@@ -211,7 +211,7 @@ Todos os dispositivos de segurança (`categories` contém `security`: contacto, 
 
 ### Por confirmar
 
-Latência real abrir/fechar do contacto (teste cronometrado); período de reporte (batimento) do contacto e do clima: os limiares de `stale` do adaptador (2 h para os três) são **provisórios** e foram escolhidos para não marcar como `stale` um sensor saudável e parado; se o alarme de fumo aparece no `alarmState` do gateway (fora de âmbito); **que valor tem `alarmState` (ou `get_home_security_status`) com o alarme armado/desarmado** (a leitura real só viu `normal`; ver `~/homemind-testes-manuais/seguranca-leitura-mcp/`).
+Latência real abrir/fechar do contacto (teste cronometrado); período de reporte (batimento) do contacto e do clima: os limiares de `stale` do adaptador (2 h para os três) são **provisórios** e foram escolhidos para não marcar como `stale` um sensor saudável e parado; se o alarme de fumo aparece no `alarmState` do gateway (fora de âmbito); **que valor tem `get_home_security_status` com o alarme armado** (a leitura real só viu `DISARMED`; `alarmState` do gateway = `normal`; ver `~/homemind-testes-manuais/seguranca-leitura-mcp/`).
 
 ## Simulador do kit (MCP-05) — **IMPLEMENTADO**, tudo **SIMULADO**
 

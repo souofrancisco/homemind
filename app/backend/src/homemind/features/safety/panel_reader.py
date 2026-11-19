@@ -1,16 +1,20 @@
-"""Leitura SÓ DE LEITURA do estado do alarme a partir de `get_home_devices` (SAFE-02, #115).
+"""Leitura SÓ DE LEITURA do estado do alarme a partir do MCP (SAFE-02, #115).
 
-Nada aqui chama o MCP nem importa conectores: recebe uma lista de dispositivos tal como vem de
-`get_home_devices` e devolve um `SecurityPanelState` REAL. Falha sempre para `unknown`: dispositivo
-ausente, capability não suportada, valor não reconhecido, formato malformado, leitura velha ou
-valores contraditórios. Nunca se infere `armed`/`disarmed`.
+Nada aqui chama o MCP nem importa conectores: recebe as respostas já lidas e devolve um
+`SecurityPanelState` REAL. Falha sempre para `unknown`: dispositivo ou ferramenta ausente,
+capability não suportada, valor não reconhecido, resposta malformada, leitura velha ou fontes
+contraditórias. Nunca se infere `armed`/`disarmed`.
 
-FORMATO ASSUMIDO, POR CONFIRMAR: o alarme é lido da capability `alarmState` do dispositivo
-`gateway` (categoria `security`), com os valores `armed`/`disarmed`. A leitura real de 2026-11-19
-(só leitura) mostrou `alarmState = "normal"` no gateway com o alarme em repouso: é o estado de
-disparo (como `sensorState` `normal`/`alarm`), não o de armamento, e por isso é `unknown`. O estado
-armado/desarmado deverá vir de `get_home_security_status`, fora da whitelist (D-07/P-01): PLANEADO.
-Sem escrita: `patch_home_security_status` nunca é chamada.
+Fontes (por ordem de fiabilidade):
+- `get_home_security_status`: leitura REAL de 2026-11-19 devolveu `{"status": "DISARMED",
+  "isAlarmed": false}`. `DISARMED` observado (o estado físico do alarme nesse momento não foi
+  confirmado por uma pessoa); `ARMED` é um FORMATO ASSUMIDO, por confirmar com o alarme armado.
+  Qualquer outro `status` (ex.: variantes «armed home/away») = `unknown`.
+- `get_home_devices`, capability `alarmState` do `gateway`: FORMATO ASSUMIDO (`armed`/`disarmed`).
+  A leitura real mostrou `alarmState = "normal"`, o estado de disparo e não o de armamento, logo
+  `unknown`. Fonte secundária.
+Duas fontes frescas que discordem => `unknown`. Sem escrita: `patch_home_security_status` nunca
+é chamada (D-07/P-01: leitura permitida por decisão do utilizador, a rever pela equipa).
 """
 
 from __future__ import annotations
@@ -30,6 +34,26 @@ ALARM_CAPABILITY = "alarmState"
 _ASSUMED_VALUES = {"armed": SecurityPanelStatus.armed, "disarmed": SecurityPanelStatus.disarmed}
 # O polling é de 5 s; sem leitura nova durante este tempo o estado deixa de ser devolvido.
 STALE_AFTER = timedelta(seconds=90)
+
+# `get_home_security_status`: `DISARMED` observado; `ARMED` ASSUMIDO, por confirmar.
+_STATUS_VALUES = {"ARMED": SecurityPanelStatus.armed, "DISARMED": SecurityPanelStatus.disarmed}
+
+
+def panel_status_from_security_status(payload: Any) -> SecurityPanelStatus:
+    """Resposta de `get_home_security_status`. `isAlarmed` tem de ser booleano; um alarme
+    disparado com o painel «desarmado» é contraditório e fica `unknown`."""
+    try:
+        if not isinstance(payload, dict):
+            return SecurityPanelStatus.unknown
+        value, alarmed = payload.get("status"), payload.get("isAlarmed")
+        if not isinstance(value, str) or not isinstance(alarmed, bool):
+            return SecurityPanelStatus.unknown
+        status = _STATUS_VALUES.get(value, SecurityPanelStatus.unknown)
+        if alarmed and status is SecurityPanelStatus.disarmed:
+            return SecurityPanelStatus.unknown
+        return status
+    except Exception:  # noqa: BLE001
+        return SecurityPanelStatus.unknown
 
 
 def _status_of(device: Any) -> SecurityPanelStatus:
@@ -80,10 +104,10 @@ def panel_state(
 
 
 class SecurityPanelCache:
-    """Última leitura REAL do painel da casa configurada. Alimentada por quem entregar a lista de
-    dispositivos (`ingest`/`unavailable`); HOJE NINGUÉM a alimenta em produção: o `McpHome` (P1)
-    descarta a lista fora do `sensores.ingest` e ligá-lo exige acordo da P1; só em memória: nada se
-    persiste nem se publica. Lida pelo router, que nunca chama o MCP."""
+    """Última leitura REAL do painel da casa configurada. Alimentada pelo polling do `McpHome`
+    (`ingest` com a lista de `get_home_devices`, `ingest_status` com `get_home_security_status`,
+    `unavailable` em falha); só em memória: nada se persiste nem se publica. Lida pelo router,
+    que nunca chama o MCP."""
 
     def __init__(
         self, household_id: UUID, clock: Callable[[], datetime] = lambda: datetime.now(UTC)
@@ -91,28 +115,43 @@ class SecurityPanelCache:
         self.household_id = household_id
         self._clock = clock
         self._lock = threading.Lock()
-        self._status = SecurityPanelStatus.unknown
-        self._since: datetime | None = None
-        self._seen: datetime | None = None
+        # fonte -> (estado, desde quando se mantém, quando foi lido)
+        self._src: dict[str, tuple[SecurityPanelStatus, datetime, datetime]] = {}
+
+    def _put(self, source: str, status: SecurityPanelStatus) -> SecurityPanelStatus:
+        now = self._clock()
+        with self._lock:
+            prev = self._src.get(source)
+            since = prev[1] if prev and prev[0] == status else now
+            self._src[source] = (status, since, now)
+        return status
 
     def ingest(self, devices: Any) -> SecurityPanelStatus:
-        status, now = panel_status_from_devices(devices), self._clock()
-        with self._lock:
-            if status != self._status or self._since is None:
-                self._since = now
-            self._status, self._seen = status, now
-        return status
+        return self._put("devices", panel_status_from_devices(devices))
+
+    def ingest_status(self, payload: Any) -> SecurityPanelStatus:
+        return self._put("status", panel_status_from_security_status(payload))
 
     def unavailable(self) -> None:
         with self._lock:
-            self._status, self._since, self._seen = SecurityPanelStatus.unknown, None, None
+            self._src.clear()
+
+    def unavailable_status(self) -> None:
+        with self._lock:
+            self._src.pop("status", None)
 
     def read(self, household_id: UUID, now: datetime) -> SecurityPanelState | None:
-        """`None` se a leitura não é desta casa; `unknown` se não há leitura ou é velha."""
+        """`None` se a leitura não é desta casa; `unknown` se não há leitura fresca e conhecida
+        ou se as fontes discordam."""
         if household_id != self.household_id:
             return None
         with self._lock:
-            fresh = self._seen is not None and now - self._seen <= STALE_AFTER
-            status = self._status if fresh else SecurityPanelStatus.unknown
-            since = (self._since if fresh and self._since else None) or now
-        return panel_state(household_id, status, since)
+            known = [
+                (st, since)
+                for st, since, seen in self._src.values()
+                if now - seen <= STALE_AFTER and st is not SecurityPanelStatus.unknown
+            ]
+        values = {st for st, _ in known}
+        if len(values) != 1:
+            return panel_state(household_id, SecurityPanelStatus.unknown, now)
+        return panel_state(household_id, values.pop(), max(since for _, since in known))

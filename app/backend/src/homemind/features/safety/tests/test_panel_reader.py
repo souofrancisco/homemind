@@ -122,3 +122,73 @@ def test_cache_is_house_scoped_stale_and_cleared_on_failure():
     assert cache.read(HOUSE, NOW).status is S.unknown
     cache.ingest("lixo")  # resposta malformada nunca deixa o estado anterior
     assert cache.read(HOUSE, NOW).status is S.unknown
+
+
+# --- get_home_security_status (leitura real 2026-11-19: DISARMED; ARMED é assumido) ----------
+
+STATUS_REAL = json.loads(
+    (Path(__file__).parent / "fixtures" / "mcp_security_status_real_2026-11-19.json").read_text()
+)
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        (STATUS_REAL, S.disarmed),  # REAL
+        ({"status": "ARMED", "isAlarmed": False}, S.armed),  # formato assumido
+        ({"status": "ARMED", "isAlarmed": True}, S.armed),  # disparado e armado
+        ({"status": "DISARMED", "isAlarmed": True}, S.unknown),  # contradição
+        ({"status": "disarmed", "isAlarmed": False}, S.unknown),  # sem normalização
+        ({"status": "ARMED_HOME", "isAlarmed": False}, S.unknown),
+        ({"status": "PENDING", "isAlarmed": False}, S.unknown),
+        ({"status": "DISARMED"}, S.unknown),
+        ({"status": "DISARMED", "isAlarmed": "false"}, S.unknown),
+        ({"status": None, "isAlarmed": False}, S.unknown),
+        ({"status": ["DISARMED"], "isAlarmed": False}, S.unknown),
+        ({}, S.unknown),
+        ([], S.unknown),
+        ("DISARMED", S.unknown),
+        (None, S.unknown),
+    ],
+)
+def test_security_status_parser_fails_safe(payload, expected):
+    from homemind.features.safety.panel_reader import panel_status_from_security_status
+
+    assert panel_status_from_security_status(payload) is expected
+
+
+def test_cache_combines_sources_and_fails_safe():
+    clock = Clock()
+    cache = SecurityPanelCache(HOUSE, clock)
+    cache.ingest(REAL["devices"])  # gateway `normal`: sem leitura de armamento
+    assert cache.read(HOUSE, NOW).status is S.unknown
+    cache.ingest_status(STATUS_REAL)  # `unknown` da fonte secundária não vetam a primária
+    got = cache.read(HOUSE, NOW)
+    assert got.status is S.disarmed and got.provenance.origin is Origin.real
+    cache.ingest([gateway("armed")])  # fontes frescas a discordar
+    assert cache.read(HOUSE, NOW).status is S.unknown
+    cache.ingest([gateway("disarmed")])
+    assert cache.read(HOUSE, NOW).status is S.disarmed
+    cache.unavailable_status()  # ferramenta falhou: só a fonte secundária (assumida) resta
+    assert cache.read(HOUSE, NOW).status is S.disarmed
+    cache.unavailable()
+    assert cache.read(HOUSE, NOW).status is S.unknown
+    cache.ingest_status({"status": "ARMED", "isAlarmed": False})
+    assert cache.read(HOUSE, NOW + STALE_AFTER + timedelta(seconds=1)).status is S.unknown
+
+
+def test_attach_panel_reader_needs_home_and_configured_household(monkeypatch):
+    from types import SimpleNamespace
+
+    from homemind.core.config import Settings
+    from homemind.features.safety import router
+
+    monkeypatch.setattr(router, "get_settings", lambda: Settings(energy_household_id=HOUSE))
+    assert router._attach_panel_reader(SimpleNamespace(home=None)) is None  # sem MCP (demo)
+    home = SimpleNamespace(seguranca=None)
+    reader = router._attach_panel_reader(SimpleNamespace(home=home))
+    assert reader is home.seguranca and reader.household_id == HOUSE
+    monkeypatch.setattr(router, "get_settings", lambda: Settings(energy_household_id=None))
+    assert (
+        router._attach_panel_reader(SimpleNamespace(home=SimpleNamespace(seguranca=None))) is None
+    )

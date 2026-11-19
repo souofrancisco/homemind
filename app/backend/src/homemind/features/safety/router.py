@@ -27,10 +27,25 @@ from homemind.core.access import (
     Resource,
     require_access,
 )
+from homemind.core.config import get_settings
 from homemind.features.safety import security
+from homemind.features.safety.panel_reader import SecurityPanelCache
 from homemind.features.safety.service import SafetyService
 
 log = logging.getLogger(__name__)
+
+
+def _attach_panel_reader(state: State) -> SecurityPanelCache | None:
+    """Leitura REAL do alarme (só leitura): com o kit MCP e a casa configurada
+    (`ENERGY_HOUSEHOLD_ID`) entrega-se ao `McpHome` (publicado por `features/energy`, que arranca
+    antes) um ouvinte para o que ele já lê. Sem `McpHome` ou sem casa não há leitura (`unknown`)."""
+    home = getattr(state, "home", None)
+    household_id = get_settings().energy_household_id
+    if home is None or household_id is None or not hasattr(home, "seguranca"):
+        return None
+    reader = SecurityPanelCache(household_id)
+    home.seguranca = reader
+    return reader
 
 
 @asynccontextmanager
@@ -39,6 +54,7 @@ async def lifespan(app: FastAPI):
     service = SafetyService()
     service.attach(app.state.bus)
     app.state.safety = service
+    app.state.security_panel = _attach_panel_reader(app.state)
     log.info("safety: consumidor subscrito (janela+aquecedor aguarda ENERGY-03)")
     yield
 
