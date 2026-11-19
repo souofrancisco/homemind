@@ -529,40 +529,34 @@ def test_home_contract_conformance(tmp_path, criar):
     assert casa.lampada.ligada is True and casa.tomada.ligada is True
 
 
-# ---- Integração: motor real sobre McpHome (servidor MCP falso) --------------------------------
+# ---- Integração: McpHome (servidor MCP falso) --------------------------------------------------
 
 
-def test_engine_over_mcp_home_gesture_outage_and_recovery(tmp_path):
-    from homemind.contracts.eventos import ObjetoLevantado
-    from homemind.features.engine.engine import Engine, Estado, Tempos
-    from homemind.features.engine.eventlog import EventLog
-    from homemind.features.engine.rules import RulesStore
-
+def test_mcp_home_state_outage_and_recovery(tmp_path):
     async def cenario():
         home, mcp, _ = make(tmp_path)
-        regras = RulesStore(tmp_path / "rules.json")
-        regras.carregar()
-        engine = Engine(home, regras, EventLog(tmp_path / "e.jsonl", "mcp"), Tempos())
         await home._refrescar()
-        await engine.iniciar()
-        await engine.processar(ObjetoLevantado(classe="livro", hora=datetime.now(UTC)))
-        assert engine.estado == Estado.ATIVO
-        casa = engine.home_state().casa
+        casa = await home.estado()
+        assert casa.mcp_ok is True
+        assert await home.definir_lampada(True, "branco_quente", 40) is True
+        assert await home.definir_tomada(True) is True
+        casa = await home.estado()
         assert (casa.lampada.ligada, casa.lampada.brilho) == (True, 40)
         assert casa.tomada.ligada is True
 
         mcp.down = True  # MCP em baixo
-        res = await engine.desligar_tudo()
-        assert res.success is False and res.code == "mcp_unavailable"
-        assert res.devices.lampada == "unknown" and res.devices.tomada == "unknown"
         await home._refrescar()
-        assert engine.home_state().mcp_ok is False
+        casa = await home.estado()
+        assert casa.mcp_ok is False
 
         mcp.down = False  # recuperação
         await home._refrescar()
-        assert engine.home_state().mcp_ok is True
-        res = await engine.desligar_tudo()
-        assert res.success is True and res.code is None
+        casa = await home.estado()
+        assert casa.mcp_ok is True
+        assert await home.definir_lampada(False) is True
+        assert await home.definir_tomada(False) is True
+        casa = await home.estado()
+        assert casa.lampada.ligada is False and casa.tomada.ligada is False
         await home.parar()
 
     run(cenario())

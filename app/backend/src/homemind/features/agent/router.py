@@ -40,6 +40,7 @@ from homemind.features.agent.config import get_agent_settings
 from homemind.features.agent.guardrails import is_action_request
 from homemind.features.agent.llm import Complete, LLMUnavailable, nvidia_complete
 from homemind.features.agent.providers import (
+    ApplianceProvider,
     BudgetProvider,
     ConsumptionProvider,
     ProviderSet,
@@ -93,7 +94,7 @@ CompleteDep = Annotated[Complete | None, Depends(get_complete)]
 
 def _providers(
     registered: ProviderSet, household_id: UUID, source_kind: str
-) -> tuple[ConsumptionProvider, BudgetProvider, ReceiptProvider]:
+) -> tuple[ConsumptionProvider, BudgetProvider, ReceiptProvider, ApplianceProvider]:
     """Real registado primeiro; SIMULADO só na casa de demonstração; senão sem dados (D8)."""
     return resolve(registered, household_id, source_kind)
 
@@ -138,7 +139,9 @@ async def send_message(
             "SELECT source_kind, timezone FROM household WHERE id = ?", (str(access.household_id),)
         ).fetchone()
     )
-    consumption, budget, receipt = _providers(registered, access.household_id, row["source_kind"])
+    consumption, budget, receipt, appliances = _providers(
+        registered, access.household_id, row["source_kind"]
+    )
     ctx = ToolContext(
         household_id=access.household_id,
         resident_id=access.resident_id,
@@ -147,8 +150,17 @@ async def send_message(
         period=now.astimezone(ZoneInfo(row["timezone"])).strftime("%Y-%m"),
     )
     settings = get_agent_settings()
+    if settings.agent_llm_scope == "demo" and row["source_kind"] != "demo":
+        complete = None
     assistant = Assistant(
-        ToolRegistry(consumption, budget, receipt),
+        ToolRegistry(
+            consumption,
+            budget,
+            receipt,
+            appliances,
+            registered.attribution,
+            registered.confirmations,
+        ),
         complete,
         max_steps=settings.agent_max_steps,
         timeout_s=settings.agent_llm_timeout_s,
@@ -162,8 +174,10 @@ async def send_message(
         household_id=access.household_id,
         text=reply.text,
         tool_result_ids=list(reply.tool_result_ids),
+        tool_results=list(reply.tool_results),
         proposed_actions=[],
         created_at=now,
+        interpreter="llm" if reply.used_llm else "rules",
     )
 
 

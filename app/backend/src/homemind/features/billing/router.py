@@ -9,6 +9,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -16,6 +17,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 
+from homemind.contracts.agent_providers import ProviderSet
 from homemind.contracts.billing import (
     BillAllocation,
     BillIn,
@@ -68,6 +70,7 @@ from homemind.features.billing import (
     rules,
     tariff,
 )
+from homemind.features.billing.agent_providers import BillingAgentProviders
 
 log = logging.getLogger(__name__)
 EXPIRY_INTERVAL_S = 60.0
@@ -94,6 +97,18 @@ async def run_expiry(db: Database, bus: EventBus, now: datetime) -> int:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     clock = app.dependency_overrides.get(get_clock, get_clock)()
+    providers = BillingAgentProviders(app.state.db, clock)
+    existing = getattr(app.state, "agent_providers", None)
+    if not isinstance(existing, ProviderSet):
+        existing = ProviderSet()
+    app.state.agent_providers = replace(
+        existing,
+        consumption=providers,
+        budget=providers,
+        receipt=providers,
+        appliances=providers,
+        attribution=providers,
+    )
     app.state.bus.subscribe(attributor.CONSUMER, attributor.handle, attributor.EVENT_TYPES)
     app.state.bus.subscribe(budgets.CONSUMER, budgets.handle, budgets.EVENT_TYPES)
     app.state.bus.subscribe(peaks.CONSUMER, peaks.handle, peaks.EVENT_TYPES)

@@ -15,8 +15,9 @@ from homemind.contracts.appliance_catalog import (
     DeviceLocation,
     MeterContextSegment,
 )
-from homemind.contracts.common import new_id
+from homemind.contracts.common import new_id, stable_id
 from homemind.contracts.devices import (
+    Appliance,
     ApplianceOwnership,
     ApplianceScope,
     ApplianceSignature,
@@ -483,6 +484,39 @@ def register_device(conn: sqlite3.Connection, device: Device) -> DeviceView:
         )
     row = conn.execute("SELECT * FROM device WHERE id = ?", (device_id,)).fetchone()
     return _device_view(row)
+
+
+def register_appliance(conn: sqlite3.Connection, appliance: Appliance, at: datetime) -> None:
+    """Regista catálogo inicial SIMULADO com identificadores estáveis da demo."""
+    when = timestamp(at)
+    conn.execute(
+        "INSERT INTO appliance (id,household_id,name,category,typical_watts,"
+        "registered_by_resident_id,status,created_at) VALUES (?,?,?,?,?,?,'active',?)",
+        (
+            str(appliance.id),
+            str(appliance.household_id),
+            appliance.name,
+            appliance.category.value,
+            appliance.typical_watts,
+            str(appliance.registered_by_resident_id),
+            when,
+        ),
+    )
+    ownership = appliance.ownership
+    conn.execute(
+        "INSERT INTO appliance_state (id,appliance_id,household_id,scope,owner_resident_id,"
+        "home_room_id,valid_from,changed_by_resident_id) VALUES (?,?,?,?,?,?,?,?)",
+        (
+            str(stable_id("demo-appliance-state", str(appliance.id))),
+            str(appliance.id),
+            str(appliance.household_id),
+            ownership.scope.value,
+            str(ownership.owner_resident_id) if ownership.owner_resident_id else None,
+            str(ownership.home_room_id) if ownership.home_room_id else None,
+            when,
+            str(appliance.registered_by_resident_id),
+        ),
+    )
 
 
 def _device_view(row: sqlite3.Row) -> DeviceView:

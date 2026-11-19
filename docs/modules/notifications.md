@@ -12,7 +12,7 @@ Ser o **único canal de comunicação com o utilizador**: avisos, perguntas inte
 
 | Tipo | Origem | Âmbito | Interativa | Exemplo (PT-PT) |
 |---|---|---|---|---|
-| `confirmation_request` | `billing.confirmation_needed` | Casa (moradores autorizados) | Sim | «O aquecedor do Bruno está ligado na sala. De quem é esta conta?» [É minha] [É de todos] [Não sei] [É de outra pessoa → escolher] |
+| `confirmation_request` | `billing.confirmation_needed` | Casa (moradores autorizados) | Sim | «O aquecedor está ligado numa zona comum, cerca de 0,64 € estimados. Parece ser do Bruno (aparelho identificado a 87 %); confirma.» [É minha] [É de todos] [Não sei] [É de outra pessoa → escolher] (dica **PROPOSTA**, P-18) |
 | `budget_alert` | `alerts.threshold_crossed` | Pessoal | Não | «Já gastaste 20 € dos teus 25 € (80 %). Ao ritmo atual chegas aos 31 €.» |
 | `peak_alert` | `alerts.alert_raised` | Casa | Opcional | «Pico na sala: 2 kW há 40 min.» |
 | `forgotten_appliance` | `alerts.alert_raised` | Pessoal (dono) | Sim | «Saíste há 1 h e o aquecedor continua ligado. Desligo?» [Desliga] [Deixa estar] |
@@ -42,6 +42,7 @@ Rotas por casa (o papel e o `resident_id` vêm de `core/access`): `GET …/notif
 - **Confirmações = votação (D-32):** cada inquilino elegível vota uma vez (`409 already_responded` ao repetir); a notificação fica aberta até `confirmation_outcome` decidir e fecha (`actioned`) com o voto decisivo em `response` e todos em `responses`. Persistência: *compare-and-set* sobre o n.º de votos lido (perdeu → reler e reaplicar). Cada voto aceite emite `notification.responded` com `outcome`. A app mostra `NotificationView.voting` (votos, necessários, atribuições por alvo, o meu voto; nunca quem votou).
 - **Restantes tipos:** a primeira resposta válida fixa o estado; repetir devolve `409 already_responded`. Registo: autor, hora, ação.
 - **Quem responde:** inquilinos ativos da casa (confirmações); o **senhorio nunca** vê nem responde a pedidos de confirmação de consumo.
+- **Dica de dono provável (APP-03 #96, P-18): PROPOSTA a aprovar pela P5.** `ConfirmationRequest` pode trazer `likely_owner_resident_id` e `match_confidence`; só se mostra a dica com ambos e com o nome devolvido por `ResidentDirectory.resident_name` para um inquilino ativo. Texto sempre inferencial («Parece…; confirma»), confiança arredondada em percentagem; se o nome do aparelho já contém o dono, só indica a confiança. Sem nome de morador, omite a dica. A dica não pré-seleciona resposta nem altera D-32. Não inclui presença, horas de casa/fora ou nomes de outras pessoas; o senhorio continua fora dos destinatários.
 - **Audiência (allow-list):** o senhorio só vê os tipos de uma lista permitida (hoje só `info`, `_SENHORIO_PODE_VER` em `service.py`), quer a notificação seja da casa quer lhe esteja endereçada a título pessoal; qualquer outro tipo (incluindo `confirmation_request`, `security_alert` e tipos novos) fica escondido (404) até ser acrescentado de propósito. O operador não tem permissões de notificações.
 - **Expiração:** `expires_at` por tipo (omissão 24 h para confirmações); ao expirar, o produtor aplica o fallback.
 - **Deduplicação:** uma notificação por `(kind, ref_type, ref_id, destinatário)` aberta de cada vez. Um `billing.confirmation_needed` repetido para o mesmo consumo, enquanto o primeiro pedido ainda está aberto, devolve a notificação existente **sem prolongar o prazo**: a P4 não deve contar com a reemissão para estender a expiração.
@@ -55,13 +56,13 @@ Rotas por casa (o papel e o `resident_id` vêm de `core/access`): `GET …/notif
 | Canal | Estado |
 |---|---|
 | Centro de notificações na aplicação (lista + contador) | P0; API **IMPLEMENTADA**, UI PLANEADA |
-| Tempo real por WebSocket (`/api/ws`: mensagens `notification`, `notification_update`) | P0, **PLANEADO** (o único `/api/ws` é o do ObjectOS, sem hook; a reconexão recupera por `GET`) |
+| Tempo real por WebSocket (caminho ainda por acordar) | P0, **PLANEADO**; não existe rota WebSocket ativa |
 | Histórico com filtros | P1 |
 | Push em Android/iOS via Capacitor | P2 (**PROPOSTA**; exige serviço de push; sem acesso a dados pessoais no texto) |
 
 ## Ficheiros existentes reutilizáveis
 
-`features/engine/router.py` (gestor de ligações WS, fila de 200 mensagens por cliente, auth na 1.ª mensagem), `frontend/src/app/providers/HomeProvider.tsx`, `components/events/*`, `services/api/client.ts`, `core/errors.py`.
+O protocolo e o transporte WebSocket ainda não estão implementados. O backend atual mantém REST, autenticação das rotas, `core/errors.py` e entrega persistente das notificações.
 
 ## Ficheiros (backend IMPLEMENTADO; frontend PLANEADO)
 
@@ -94,6 +95,7 @@ Refs #95 (APP-02), #96 (APP-03) e #112 (AGENT-03); não as fecham (faltam UI e W
 | Lista | `GET …/notifications` (filtros `status`, `scope`, `limit` 1..100), só `NotificationView`; o senhorio só recebe os tipos da allow-list (hoje `info`) |
 | Leitura | `POST …/read`: recibo por residente; o estado partilhado só muda nas pessoais |
 | Resposta / voto | `POST …/respond` (corpo `NotificationRespondIn`: `action_id` e, com `other`, `target_resident_id`). Confirmações: um voto por inquilino (409 `already_responded` ao repetir ou depois de fechada), fecha segundo `confirmation_outcome` (D-32); alvo inválido 400 `invalid_request`; 409 `notification_expired`. Outros tipos: a primeira resposta vence. `notification.responded` **por voto**, com `outcome`, gravado na mesma transação; se o CAS perde, relê e reaplica a regra |
+| Provider do assistente (**IMPLEMENTADO**) | `features/notifications/agent_providers.py`: leitura SQLite sob o lock comum, `query_only`, sem transação de escrita; devolve apenas `confirmation_request` aberto, não expirado e ainda respondível pelo próprio residente (`responder_ids` e votos). Conta todos e inclui até três resumos com aparelho, custo estimado e prazo; sem votos de terceiros. Compõe `ProviderSet` por `dataclasses.replace`, preservando os providers de billing em qualquer ordem de arranque |
 | Preferências | `GET|PUT …/notification-preferences` (por casa; `security_alert` não se desliga: 400) |
 | Varrimento de expiração | `sweeper.py`: a cada 60 s (`NOTIFICATIONS_EXPIRY_SWEEP_S`, 0 desliga) o lifespan chama `expire_due`; só grava o estado `expired` (a leitura já o deduzia do tempo), sem evento; a tarefa é cancelada no `finally` |
 | Consumidores | Nomes permanentes (chave de `processed_event`), subscritos no lifespan (`handlers.CONSUMERS`); todos idempotentes (ids derivados e `processed_event`). Ver a tabela seguinte |
@@ -117,7 +119,7 @@ Todos: membership terminada ou papel que não seja inquilino -> nada; origem sim
 
 | Adiado (**PLANEADO**) | Porquê |
 |---|---|
-| WebSocket | só existe o `/api/ws` do ObjectOS, sem hook para notificações |
+| WebSocket | não existe rota WebSocket ativa; transporte em tempo real continua PLANEADO |
 | Aparelho esquecido e «não bate certo» (`alerts.alert_raised`) | sem produtor (ALERT-04, fase 2); o consumidor `notifications.peak_alert` já subscreve o tipo e ignora estes `kind`, por isso um produtor novo precisa de outro consumidor (nome novo) |
 | Botões nos alertas de conforto | **Mudou:** a proposta de desligar a tomada chega como notificação `agent_action` (sem botões) e confirma-se na rota do agente; a execução real depende do executor da P1 (hoje só SIMULADO na casa demo) |
 | `notify_landlord` do fumo | sem decisão de audiência; o senhorio continua sem ver `security_alert` |
@@ -132,7 +134,7 @@ Estado: **PROPOSTA** (o contrato da `main` não mudou): pedidos da P3 à P4/P5 s
 1. **Estado de leitura partilhado.** `Notification.status` tem `read` e as notificações de casa são partilhadas: se um morador abre, passa a «lida» para todos. Proposta: recibo de leitura por residente (fora da entidade); `status=read` só nas pessoais. **P3 já aplica:** recibo por residente (`notification_read`); `read` partilhado só nas pessoais.
 2. **Expiração sem sinal.** Nada avisa a P4 de que um pedido caducou (o fallback depende disso). Proposta: evento `notification.expired {notification_id, ref}` emitido pelo varrimento da P3.
 3. **Retry da resposta.** Com D-32, `respond` devolve `409 already_responded` a qualquer repetição do mesmo residente (um voto por pessoa), mesmo com a mesma ação (reenvio de rede). Pergunta que fica: o reenvio idêntico devia devolver `200` com a vista atual em vez de `409`? Não duplica votos nem cobranças (o evento só sai ao gravar o voto).
-4. **`ConfirmationRequest` curto.** Só tem `appliance_name`: faltam divisão/localização, evidência e confiança, e origem (APP-03 pede evidência). «O aquecedor do Bruno» expõe o dono de um aparelho (P-18). Proposta: campos opcionais (`room_name`, `evidence`, `confidence`, `origin`) e regra sobre nomes de terceiros.
+4. **`ConfirmationRequest` curto.** APP-03 #96 propõe os campos mínimos de dica (`likely_owner_resident_id`, `match_confidence`) e respetiva regra de exposição, ainda **PROPOSTA a aprovar pela P5** (P-18). Continuam por decidir divisão/localização, evidência e origem; não se adicionam aqui.
 5. **Proveniência dos eventos.** `EventBase.provenance` é obrigatória mas `NotificationCreatedData`/`NotificationRespondedData` não têm proveniência e `Notification` só tem `origin`. Proposta: `(n.origin, measured)`, escrita no contrato. **P3 já aplica:** `notification.created` herda a proveniência do evento de origem e `notification.responded` usa `(n.origin, measured)`.
 6. **`responder_ids` é um snapshot.** Quem deixa a casa (`ends_on`) continua a poder responder. Proposta: `respond` revalida a membership ativa (via `core/access`) além do snapshot; documentar que o senhorio é filtrado por P3 (nada no contrato o garante). **P3 já aplica:** quem não é membro ativo na data (fuso da casa) recebe 404 e deixa de ver a notificação, mesmo estando em `responder_ids`; o senhorio é filtrado dos `responder_ids` à criação.
 7. **`BudgetThreshold` incompleto.** Só tem `budget_id`, `pct`, `spent_cents`, `forecast_cents`. P3 não pode ler `Budget` (uma feature não importa outra), logo não sabe a quem avisar nem o limite. Proposta: `resident_id`, `limit_cents` e `period`.

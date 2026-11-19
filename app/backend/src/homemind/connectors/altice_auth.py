@@ -288,7 +288,8 @@ async def _listener(
                 else:
                     status, message = "400 Bad Request", "Callback sem código de autorização."
             body = (
-                "<!doctype html><meta charset='utf-8'><title>ObjectOS</title>" f"<p>{message}</p>"
+                "<!doctype html><meta charset='utf-8'><title>Conta Certa</title>"
+                f"<p>{message}</p>"
             ).encode()
             writer.write(
                 f"HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\n"
@@ -508,7 +509,7 @@ async def doctor() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Sessão MCP Altice do ObjectOS")
+    parser = argparse.ArgumentParser(description="Sessão MCP Altice da Conta Certa")
     parser.add_argument("command", choices=("login", "doctor"))
     command = parser.parse_args().command
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")

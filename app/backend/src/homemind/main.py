@@ -23,7 +23,7 @@ if not _log.handlers:
     _log.setLevel(logging.INFO)
 
 # O lifespan do core é o da app: arranca antes e termina depois dos lifespans dos routers.
-app = FastAPI(title="ObjectOS API", lifespan=core_lifespan)
+app = FastAPI(title="Conta Certa API", lifespan=core_lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in get_settings().cors_origins.split(",") if o.strip()],

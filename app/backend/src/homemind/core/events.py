@@ -211,12 +211,22 @@ class EventBus:
         stored = self.db.run_sync(lambda c: append_event(c, event))
         if self._loop is not None:
             try:
-                self._loop.call_soon_threadsafe(self._wake)
+                self._loop.call_soon_threadsafe(self._wake_local)
             except RuntimeError:  # loop já fechado (shutdown): o evento está gravado
                 pass
         return stored
 
     def _wake(self) -> None:
+        loop = self._loop
+        if loop is None:
+            return
+        try:
+            loop.call_soon_threadsafe(self._wake_local)
+        except RuntimeError:  # loop já fechado; o evento persiste e será lido no próximo arranque
+            pass
+
+    def _wake_local(self) -> None:
+        """Acorda os consumidores no loop dono do barramento."""
         for sub in self._subs.values():
             sub.wake.set()
 

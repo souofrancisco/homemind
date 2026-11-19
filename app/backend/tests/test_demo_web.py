@@ -3,6 +3,7 @@
 import hashlib
 import sqlite3
 from contextlib import closing
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -34,6 +35,38 @@ def test_prepare_copia_sem_tocar_na_original(roots):
     assert _subs(copy / web.WEB_FILE)["Ana"] == "sub-real-ana"
     assert _subs(demo / FILE_NAME)["Ana"] == "sub-ana"  # original e `demo-reset` intactos
     DemoStore(demo)._guard(existing=True)
+
+
+def test_copia_web_ancorada_no_relógio_e_com_catálogo_real(roots):
+    web.prepare()
+    with closing(sqlite3.connect(web.web_path())) as c:
+        recent = c.execute(
+            "SELECT max(ts) FROM domain_event WHERE type='energy.reading_recorded'"
+        ).fetchone()[0]
+        assert datetime.now(UTC) - datetime.fromisoformat(recent) < timedelta(minutes=30)
+        device = c.execute(
+            "SELECT role,room_id,name FROM device WHERE name LIKE '%SIMULADA%'"
+        ).fetchone()
+        assert device[0] == "room_meter" and "SIMULADA" in device[2]
+        assert c.execute("SELECT count(*) FROM appliance").fetchone()[0] == 2
+        assert (
+            c.execute(
+                "SELECT count(*) FROM appliance_signature WHERE origin='simulated'"
+            ).fetchone()[0]
+            == 2
+        )
+
+
+def test_copia_web_sem_plafond_cada_um_paga_o_seu_quarto(roots):
+    web.prepare()
+    with closing(sqlite3.connect(web.web_path())) as c:
+        quartos = c.execute("SELECT included_wh FROM room WHERE kind = 'bedroom'").fetchall()
+        assert quartos and all(wh == 0 for (wh,) in quartos)  # 0 = sem plafond solidário
+    # A original (cenário oficial offline, exemplo do PDF) mantém o plafond de 30 kWh.
+    with closing(sqlite3.connect(roots[0] / FILE_NAME)) as c:
+        assert {
+            wh for (wh,) in c.execute("SELECT included_wh FROM room WHERE kind = 'bedroom'")
+        } == {30000}
 
 
 def test_link_recusa_desconhecido_vazio_e_duplicado(roots):

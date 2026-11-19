@@ -222,9 +222,8 @@ await resolve_access(db, user.sub, household_id, resource, op, clock()).
 Revalidar em cada ação e na publicação de cada recurso protegido,
 porque a membership pode ter sido revogada. Não reutilizar um grant
 anterior à revogação como sessão autorizada indefinidamente.
-O WS legado ObjectOS ainda não usa este modelo: integrar quando o
-módulo WS de Conta Certa existir (HOUSE-05/APP/PRIV). **Não afirmar que
-todo o WS existente está protegido por estas guardas.**
+Não há WebSocket ativo no backend. Quando o módulo WS de Conta Certa for
+implementado (HOUSE-05/APP/PRIV), deve usar este modelo e revalidar o acesso.
 
 ## Limites intencionais
 

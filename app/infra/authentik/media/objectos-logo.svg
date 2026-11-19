@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 48" role="img" aria-label="ObjectOS">
-  <style>
-    text { font: 700 34px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; letter-spacing: -0.5px; fill: #212529; }
-    .os { fill: #4c6ef5; }
-    @media (prefers-color-scheme: dark) { text { fill: #c9c9c9; } .os { fill: #748ffc; } }
-  </style>
-  <text x="110" y="36" text-anchor="middle">Object<tspan class="os">OS</tspan></text>
-</svg>

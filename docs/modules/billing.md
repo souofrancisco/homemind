@@ -63,6 +63,11 @@ atual à API da casa.
 | **B — perguntar** (recomendada pelo PDF) | Cria pedido na aplicação. «É minha»: basta quem assume. Atribuir a outro: pelo menos metade dos moradores aceita (fecha antes se o próprio assumir). Inconclusivo ao fim de 24 h → por igual (D-32) | P0 |
 | **C — por presença** | Divide pelos que estavam em casa (usa presença de P2) | P1 |
 
+**APP-03 #96 / P-18 (PROPOSTA):** o pedido pode incluir uma dica de dono provável só quando o
+aparelho tem vencedor identificado com confiança ≥ 0,8 e `appliance_owner_resident_id` (dono
+declarado em `Appliance.ownership`) é um inquilino elegível. A dica não usa presença, horários,
+histórico nem altera a votação D-32. Sem todas estas condições, os campos da dica ficam `None`.
+
 Só se pergunta quando o custo estimado **do consumo** (utilização completa do aparelho) é ≥ `ask_threshold_cents` (omissão 0,50 €, configurável por casa em `HouseholdPolicy`); abaixo, sem custo estimável ou com a regra A, vai direto para a conta comum. A pergunta pode sair com o consumo ainda a decorrer, logo que passa o limiar (D-32).
 
 ## Cálculo da fatura
@@ -119,6 +124,8 @@ O sumário executivo cita 21,20 €; o corpo do documento (§6.2 e §7.1) cita 4
 
 ## Orçamentos (P0 → P1)
 
+**IMPLEMENTADO — integração com o assistente:** `features/billing/agent_providers.py` fornece consumo, orçamento, recibo e custo por aparelho. `top_appliances` reutiliza `budgets.month_spend`, `closing.period_inputs`, `tariff.value_millicents`, `allowance.apply` e, em mês fechado, a evidência/alocação finalizada; as linhas reconciliam ao total do morador. `consumption_change` compara dois totais mensais e as variações por aparelho sem inferir causas. Leituras síncronas e só de leitura, sob o lock SQLite partilhado. O registo é feito em `app.state.agent_providers`. O protocolo `ApplianceProvider` é aditivo **PROPOSTO à P5** em `contracts/agent_providers.py`.
+
 - Orçamento pessoal: limiares 50 / 80 / 100 % (omissão do PDF), notificação por limiar **uma só vez** por período (`last_threshold_notified`).
 - O gasto comparado inclui **todos os custos** (parte do termo fixo + resíduo + consumo individual), isto é, o valor que o morador vai pagar (D-31).
 - Previsão do fim do mês (ALERT-02): projeção linear do gasto acumulado, com intervalo de incerteza; ver «Previsão e tarifário» abaixo. Algoritmos mais complexos ficam fora do MVP.
@@ -136,7 +143,7 @@ Todos produzem `alerts.alert_raised`; o módulo `notifications` decide destinat�
 
 ## Ficheiros existentes reutilizáveis
 
-Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `core/errors.py`, o relógio injetado dos testes do motor antigo (`features/engine/tests/`) e `TARIFA_EUR_KWH` de `core/config.py`.
+Nenhum de domínio. O módulo usa o padrão de feature (`router.py`, `tests/`), `core/errors.py` e relógio injetado nos testes; tarifas vêm do contrato e configuração da casa. Os testes antigos do motor e `TARIFA_EUR_KWH` foram removidos na BASE-04.
 
 ## Estado
 
@@ -205,7 +212,7 @@ Puros, com relógio simulado e sem rede/hardware: fixtures, regra A/B/C, prazo d
 
 ## Plafond solidário de aquecimento (BILL-03)
 
-**IMPLEMENTADO.** O aquecimento básico de cada quarto é pago por todos; só o excesso é individual (v5.1 §8). Premissas:
+**IMPLEMENTADO.** **É uma opção do senhorio, por quarto** (`room.included_wh`; **0 = sem plafond**, e então cada um paga o seu quarto, que é a regra 1: «o teu quarto é teu»). Quando o senhorio define um plafond, o aquecimento básico desse quarto é pago por todos e só o excesso é individual (v5.1 §8). Os 30 kWh que aparecem na demo vêm dos dados de demonstração, não são um valor obrigatório. Premissas:
 
 | Premissa | Regra |
 |---|---|

@@ -13,10 +13,10 @@ router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 async def tools(request: Request) -> list[dict[str, Any]]:
     """Descoberta (`tools/list`) para registar capacidades em docs/mcp-capabilities.md."""
     try:
-        engine = getattr(request.app.state, "engine", None)
-        if engine is not None and isinstance(engine.home, McpHome):
+        home = getattr(request.app.state, "home", None)  # publicado por features/energy
+        if isinstance(home, McpHome):
             # Reutiliza a sessão única (renovações OAuth não colidem).
-            return await engine.home.listar_ferramentas()
+            return await home.listar_ferramentas()
         return await altice.list_tools()
     except Exception as e:  # indisponível/config em falta: sem detalhes (podem conter headers)
         raise HTTPException(502, "MCP Altice indisponível") from e

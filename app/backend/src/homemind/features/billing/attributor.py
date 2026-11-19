@@ -109,6 +109,7 @@ def _on_consumption(
         [r for r, _ in tenants],
         ev.ts,
         sole,
+        _appliance_name(conn, consumption),
     )
     if decision.attribution is not None:
         return [_record(conn, decision.attribution, ev.correlation_id)]
@@ -130,6 +131,24 @@ def _on_consumption(
             )
         ]
     return []
+
+
+def _appliance_name(conn: sqlite3.Connection, consumption: ConsumptionEvent) -> str | None:
+    """Nome do aparelho vencedor, limitado ao texto curto do pedido de confirmação."""
+    appliance_id = consumption.match.appliance_id
+    if appliance_id is None:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT name FROM appliance WHERE household_id = ? AND id = ?",
+            (str(consumption.household_id), str(appliance_id)),
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    if row is None:
+        return None
+    name = row["name"].strip()
+    return name[:120] or None
 
 
 def locate(conn: sqlite3.Connection, c: ConsumptionEvent) -> ConsumptionEvent:

@@ -1,10 +1,14 @@
 # Contratos
 
+> **Estado BASE-04 (#74):** o motor ObjectOS e as rotas `/api/status`, `/api/state`,
+> `/api/events`, `/api/rules*`, `/api/off`, `/api/simulate` e `WS /api/ws` foram **REMOVIDOS**.
+> As propostas abaixo descrevem a API da Conta Certa; não implicam a existência de WebSocket.
+
 > **HOUSE-03 #86 (IMPLEMENTADO, PR #142):** catálogo temporal de aparelhos e medidores, API filtrada por papel e port tipado de leitura histórica para P1/P4 em `contracts/appliance_catalog.py`. Ver [house-03-appliance-catalog.md](house-03-appliance-catalog.md).
 
 **IMPLEMENTADO (fundação F0)**: modelos Pydantic, eventos de domínio, SQLite, barramento persistente, guardas por casa/papel e OpenAPI→TS. **PLANEADO**: os motores e a maior parte das rotas de P1–P5; **HOUSE-02** (IMPLEMENTADO) acrescenta as rotas de convites e memberships. **DECISÃO PENDENTE**: marcadas por «(proposta)» e listadas em §9 e em [decisions.md](../decisions.md).
 
-A API que já existia (ObjectOS) está em [api-implementada.md](api-implementada.md) e **não mudou**. Entidades e estados: [data-model.md](data-model.md); eventos: [event-flow.md](event-flow.md).
+A API ativa está em [api-implementada.md](api-implementada.md). Entidades e estados: [data-model.md](data-model.md); eventos: [event-flow.md](event-flow.md).
 
 ## 1. Como mudar um contrato
 
@@ -36,7 +40,7 @@ A API que já existia (ObjectOS) está em [api-implementada.md](api-implementada
 
 ## 3. Matriz de contratos
 
-Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), `household.py`, `devices.py`, `energy.py`, `presence.py`, `sensors.py`, `safety.py`, `billing.py`, `notification.py`, `agent.py`, `domain_events.py`, `api.py` (erros e `OPENAPI_MODELS`), `fixtures.py` (determinísticas). Os contratos ObjectOS (`base.py`, `eventos.py`, `home.py`, `regras.py`, `simulacao.py`, `video.py`, `visao.py`) **não foram tocados**.
+Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), `household.py`, `devices.py`, `energy.py`, `presence.py`, `sensors.py`, `safety.py`, `billing.py`, `notification.py`, `agent.py`, `agent_providers.py` (**PROPOSTA #157, item 15**), `domain_events.py`, `api.py` (erros e `OPENAPI_MODELS`), `fixtures.py` (determinísticas). Na BASE-04 foram removidos `simulacao.py` e os modelos de deteção/keypoints de `visao.py`; `eventos.py` e `visao.py` mantêm apenas os tipos ainda necessários à ponte preservada. `regras.py` permanece por ser referenciado pelos tipos antigos do frontend, que esta tarefa não altera.
 
 | Contrato | Produtor (dono) | Consumidores | Persistência | Testes | Pendente |
 |---|---|---|---|---|---|
@@ -57,8 +61,17 @@ Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), 
 | `Notification`, `NotificationView`, `NotificationAction/Response/Preferences`, `ConfirmationRequest` | P3 (pedido: P4) | UI, P4 | **IMPLEMENTADA** (`0300_notifications_core.sql`: `notification`, `notification_read`, `notification_preferences`; *compare-and-set* sobre o estado e a versão/n.º de votos) | modelos + cenário + `notifications/tests` | D-32 (votação nas confirmações) |
 | `ProposedAction`, `ActionConfirmation`, `ActionExecutionResult` | P3 (execução: P1) | P3, `notifications` | **IMPLEMENTADA** (`0310_agent_actions.sql`: `agent_action`, com a confirmação e o resultado em JSON, e `agent_action_log` *append-only* como auditoria; AGENT-03 #112). Executor real **PLANEADO** (P1); na casa demo só SIMULADO | modelos + `agent/tests` | P-06 (LLM e dados) |
 | `AgentMessage` | P3 | app (DTO) | **IMPLEMENTADA** (`0311_agent_messages.sql`: `agent_message`, por residente; retenção 50 mensagens / 30 dias, P-25; nunca enviada ao LLM, P-06; #111) | `agent/tests/test_history.py` | `AgentMessage` sem `resident_id` (desejado: só o próprio lê) |
-| `AgentToolRequest/Result`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3); as ferramentas não persistem resultados; `AutomationRule` é AGENT-04 | modelos | P-06 (LLM e dados) |
+| `AgentToolRequest/Result`, `AgentResponse.interpreter` | P3 | P3 | **IMPLEMENTADO no código; ADITIVO PROPOSTO para aprovação P5**: ferramentas `top_appliances`, `consumption_change`, `explain_attribution`, `pending_confirmations`; parcelas explicadas, proveniência, estado final/provisório e resumos de pedidos; intérprete `llm`/`rules` | modelos + `agent/tests` | aprovação P5; P-06 |
+| `ToolValue`, `ApplianceValue`, `AttributionPartValue`, `AttributionValue`, `ConfirmationValue`, `ConfirmationsValue`, providers e `ProviderSet` | P5 | composição billing/notifications → agent | **PROPOSTA** aditiva em `contracts/agent_providers.py`; interfaces em contratos para não haver importação entre features; campos opcionais do `ProviderSet` | `billing/tests`, `notifications/tests` e `agent/tests` | aprovação P5 |
 | `DomainEvent` (23 tipos), `StoredEvent` | cada módulo | cada módulo | **IMPLEMENTADA** (`domain_event`) | `test_events`, cenário | — |
+
+**APP-03 #96 / P-18 — aditivo PROPOSTA a aprovar pela P5:** `ConfirmationRequest` acrescenta
+`likely_owner_resident_id: UUID | None = None` e `match_confidence: Confidence | None = None`.
+Os dois campos são conjuntos ou ambos `None`; o dono provável tem de constar em
+`eligible_resident_ids`. Billing só os preenche para aparelho identificado com confiança ≥ 0,8
+e dono declarado que seja inquilino ativo. O texto da notificação só mostra o nome se o diretório
+confirmar que o morador é membro ativo. A dica é inferencial e não altera D-32. Esta proposta não
+autoriza expor propriedade de terceiros na API de aparelhos.
 
 ## 4. Eventos de domínio
 
@@ -186,26 +199,26 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 | `POST` | `/api/households/{household_id}/notifications/{id}/read` | dono | **IMPLEMENTADO.** Caminho por casa; revisão P5 |
 | `POST` | `/api/households/{household_id}/notifications/{id}/respond` | T autorizado | **IMPLEMENTADO.** `NotificationRespondIn` `{ "action_id": "mine" \| "everyone" \| "unknown" \| "other", "target_resident_id"? }` (alvo só com `other`, outro inquilino elegível); `409 already_responded` (já votou / já fechada), `409 notification_expired`, `400 invalid_request` (alvo inválido). Caminho por casa; revisão P5 |
 | `GET` `PUT` | `/api/households/{household_id}/notification-preferences` | T, L | **IMPLEMENTADO.** Silêncio noturno e tipos desligados, por casa (`security_alert` não se desliga: `400`). Caminho por casa; revisão P5 |
-| `WS` | `/api/ws` | todos | **PLANEADO.** Novas mensagens: `notification`, `notification_update` (ver abaixo) |
+| `WS` | (caminho a acordar) | todos | **PLANEADO.** O `/api/ws` antigo foi removido em BASE-04; mensagens futuras: `notification`, `notification_update` |
 
 ### Assistente e automações (P3)
 
 | Método | Rota | Papéis | Notas |
 |---|---|---|---|
-| `POST` | `/api/households/{household_id}/agent/messages` | T | **IMPLEMENTADO** (parcial). `{ "text": "…" }` → `AgentResponse`. Dados **SIMULADOS** da casa demo (as outras casas não têm dados); LLM desligado por omissão (`AGENT_LLM_ENABLED`). Um pedido de ação («desliga a luz») devolve `proposed_actions` com uma `ProposedAction` por confirmar (AGENT-03); nunca executa nada. A troca fica no histórico do próprio residente. Caminho por casa; revisão P5 |
+| `POST` | `/api/households/{household_id}/agent/messages` | T | **IMPLEMENTADO** (modo tradutor e cinco ferramentas). `{ "text": "…" }` → `AgentResponse`, incluindo `interpreter` (aditivo **PROPOSTO P5**). LLM desligado por omissão e `AGENT_LLM_SCOPE=demo`; a resposta é escrita por moldes em código. Um pedido de ação («desliga a luz») continua a gerar `proposed_actions` com confirmação (AGENT-03). Histórico só para a app. Caminho por casa; revisão P5 |
 | `GET` | `/api/households/{household_id}/agent/messages?limit` | T | **IMPLEMENTADO** (#111). `[AgentMessage]` (`limit` 1..100, omissão 50), do mais antigo para o mais recente; só o histórico do **próprio** residente (nunca o de outro nem de outra casa). Dados pessoais com retenção curta (50 mensagens, 30 dias, P-25); **nunca** enviado ao LLM (P-06). Revisão P5 |
 | `GET` | `/api/households/{id}/agent/actions[/{aid}]` · `POST …/agent/actions/{aid}/confirm` · `…/reject` | T | **IMPLEMENTADO** (AGENT-03; ver `api-implementada.md`). Só no `confirm` uma ação é executada, no máximo uma vez; na casa demo o executor é SIMULADO. O executor real (hardware) é **PLANEADO** (P1). Caminho por casa (substitui o `/api/agent/actions/{id}/…` proposto); revisão P5 |
 | `GET` `POST` | `/api/households/{id}/automations` | T, O | |
 | `PATCH` | `/api/automations/{id}` | T, O | `{ "status" }`; ativação é passo explícito |
-| `POST` | `/api/automations/parse` | T, O | Reaproveita `POST /api/rules/parse` (NVIDIA); não grava |
+| `POST` | `/api/automations/parse` | T, O | **PLANEADO.** Definir o contrato próprio do assistente; não há dependência da rota removida `/api/rules/parse` |
 
 ### Operação (P1/P5, existentes)
 
-`GET /healthz`, `GET /api/status` e `GET /api/mcp/tools` continuam. `GET /api/video` responde sempre `404` por PRIV-02; nenhuma role recebe frames. Ver [migration.md](migration.md).
+`GET /healthz` e `GET /api/mcp/tools` continuam. `/api/status` foi removido com o motor. `GET /api/video` não devolve frames a utilizadores não autorizados; ver PRIV-02 e [migration.md](migration.md).
 
 ## 7. WebSocket (PLANEADO)
 
-O protocolo atual (`auth` na primeira mensagem, snapshot, `event`, `home_state`, `error`; ver [api-implementada.md](api-implementada.md) §3) mantém-se. Mensagens novas:
+**PLANEADO:** definir e implementar um protocolo de notificações. O protocolo ObjectOS (`auth`, `home_state`, `event`, `error`) foi removido em BASE-04 e não é o protocolo futuro. Mensagens propostas:
 
 ```json
 { "type": "notification",        "data": Notification }
@@ -226,7 +239,7 @@ O servidor só envia notificações do utilizador autenticado (pessoais) e da su
 
 ## 9. Pontos para revisão da equipa (DECISÃO PENDENTE)
 
-Prioridade para aprovar antes de implementar os módulos: ver [decisions.md](../decisions.md) D-23…D-30 e P-16…P-21. Resumo: (1) `Provenance` em duas dimensões; (2) Wh inteiros + milicêntimos; (3) semântica do barramento; (4) 404 vs 403 e membership por datas; (5) `None` em energia/custo; (6) regras de resposta das notificações; (7) OpenAPI por `OPENAPI_MODELS`; (8) nenhuma alteração ao código ObjectOS de domínio; (9) **sem dependências novas**; (10) quem aprova cada pendência.
+Prioridade para aprovar antes de implementar os módulos: ver [decisions.md](../decisions.md) D-23…D-30 e P-16…P-21. Resumo: (1) `Provenance` em duas dimensões; (2) Wh inteiros + milicêntimos; (3) semântica do barramento; (4) 404 vs 403 e membership por datas; (5) `None` em energia/custo; (6) regras de resposta das notificações; (7) OpenAPI por `OPENAPI_MODELS`; (8) sem dependências do código de domínio removido na BASE-04; (9) quem aprova cada pendência.
 
 > **PRIV-02 #119 (revisão de acesso):** o âmbito de leitura do recurso `presence` foi restringido de `household` a `own` para o inquilino; a regra de escrita `own` não mudou. A API de presença permanece planeada. Ver [módulo presença](../modules/presence.md#priv-02-119--investigação-e-arquitetura-de-privacidade-17112026).
 
