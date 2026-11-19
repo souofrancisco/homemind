@@ -61,7 +61,7 @@ Nota: o **#217** apaga a cópia de presença da faturação (`billing_presence_s
 |---|---|
 | ✔ `safety` **não consome** a casa vazia: o evento já existe (PRES-06, #216; contrato em `contracts/presence.py`) | código |
 | Estado AWAY e armamento: **simulação distinta de execução real** | código |
-| Segurança por MCP **só com whitelist expandida depois de revisão** (hoje: lâmpada e tomada; nunca alarme, segurança, cenários ou timers) | decisão |
+| ✔ Leitura MCP do alarme (`get_home_security_status`, só leitura) com whitelist alargada, **decidida por P2 sem revisão** (D-36); validada no browser contra o MCP real a 2026-11-19 ([evidência](../evidence/seguranca-leitura-real-2026-11-19/README.md)). **`ARMED` assumido** (parser dá `unknown` para o resto); por confirmar com o alarme armado (roteiro manual). Escrita real do alarme continua **fora** (D-07/P-01, MCP-04) | decisão + validação |
 | Ausência de sinais mantém `unknown` (critério a provar com teste) | código |
 
 Já **desbloqueada**: o #131 (PRES-06) está fechado.

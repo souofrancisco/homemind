@@ -77,11 +77,13 @@ Os PDFs continuam a mencionar Telegram; essa parte **não faz parte da arquitetu
 | A-06 | Validação do ambiente (`make check`, Compose) registada em [development/testing.md](development/testing.md) (secção «Estado do ambiente»). MCP e câmara **não** foram reexecutados | Guia de validação manual |
 | A-07 | O utilizador GitHub de P1 é `brunovieira88` (o pedido escrevia `brunoviera88`) | Confirmar com P1 |
 
+| **D-36** | **Leitura do alarme via MCP (SAFE-02 #115), decidida por P2 sem revisão de P1/P5/P3/P4 (ninguém revê; o utilizador decide por todos).** A whitelist de LEITURA passa a incluir `get_home_security_status`; o `McpHome` (código de P1) ganha um ouvinte opcional `seguranca` (aditivo) e os contratos de segurança (`SecurityPanelState`, `SecurityAction`, `AwayStatus`) ficam como estão. `DISARMED` observado; **`ARMED` é formato ASSUMIDO** (o parser dá `unknown` para o resto). **A escrita real do alarme continua fora** (`patch_home_security_status` nunca é chamada; D-07/P-01; MCP-04 PLANEADO) | Pedido do utilizador; só leitura, sem efeitos físicos |
+
 ## Pontos por resolver
 
 | ID | Questão | Quem decide | Antes de |
 |---|---|---|---|
-| P-01 | Estender o MCP a **leitura** de sensores de contacto/clima e/ou a segurança/cenários? (hoje proibido). **Nota (SAFE-02 #115):** por decisão do utilizador a whitelist de LEITURA foi alargada a `get_home_security_status` (só leitura; escrita, `patch_home_security_status`, cenários e timers continuam proibidos); precisa de revisão P1/P5 e da equipa sobre D-07/P-01 | Equipa + mentores | Qualquer automação por sensores |
+| P-01 | Estender o MCP a **leitura** de sensores de contacto/clima e/ou a segurança/cenários? (hoje proibido). **Nota (SAFE-02 #115):** por decisão do utilizador a whitelist de LEITURA foi alargada a `get_home_security_status` (só leitura; escrita, `patch_home_security_status`, cenários e timers continuam proibidos); registada em **D-36** (decidida por P2, sem revisão de P1/P5/P3/P4; ninguém revê); D-07/P-01 mantêm a escrita fora | Equipa + mentores | Qualquer automação por sensores |
 | P-02 | **Proposta implementada (D-26), aguarda aprovação:** papéis na base de dados (`membership.role`) | Equipa | Antes de P1–P4 usarem as guardas |
 | ~~P-03~~ | **Resolvido (D-32).** Quem pode responder a um pedido de confirmação e como se contesta (primeira resposta vence?); omissão da regra da casa (`ask`), limiar (0,50 €) e prazo (24 h) | Equipa | C-P3-02, C-P4-01 |
 | P-04 | O que vê um inquilino dos outros (totais da casa/quartos vs mais)? | Equipa | UI de consumo |
