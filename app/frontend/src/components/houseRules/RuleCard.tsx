@@ -26,7 +26,7 @@ export default function RuleCard({ rule, tapName, busy, onVote, onSuspend, onRea
         <Group justify="space-between" align="flex-start" wrap="wrap">
           <Title order={3} size="h4">{rule.name}</Title>
           <Group gap="xs">
-            <Badge color={rule.origin === "simulated" ? "grape" : "teal"} variant="light">{originLabel(rule.origin)}</Badge>
+            <Badge color={rule.origin === "simulated" ? "orange" : "teal"} variant="light">{originLabel(rule.origin)}</Badge>
             {rule.status === "active" && <Badge color="green" variant="light">Ativa</Badge>}
             {rule.status === "disabled" && !pending && <Badge color="gray" variant="light">Suspensa</Badge>}
             {pending && <Badge color="yellow" variant="light">{reactivating ? "Reativação em votação" : "Em votação"}</Badge>}
