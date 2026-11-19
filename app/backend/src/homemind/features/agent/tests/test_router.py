@@ -8,7 +8,7 @@ import pytest
 from homemind.contracts import fixtures as fx
 from homemind.contracts.agent import AgentResponse
 from homemind.features.agent import router as agent_router
-from homemind.features.agent.assistant import ACTION_TEXT, UNAVAILABLE_PREFIX
+from homemind.features.agent.assistant import ACTION_TEXT
 from homemind.features.agent.config import AgentSettings
 from homemind.features.agent.formatting import format_eur, format_kwh
 from homemind.features.agent.tests._fakes import FakeLLM
@@ -78,23 +78,19 @@ def test_resposta_do_llm_fundamentada_passa(client, llm):
     kwh, eur = ana_values()
     llm.complete = FakeLLM(
         [
-            json.dumps({"tool": "consumption_summary", "args": {"period": "2026-11"}}),
-            json.dumps({"answer": f"Consumiste {kwh} e pagas {eur}."}),
+            json.dumps({"tools": [{"tool": "consumption_summary", "args": {"period": "2026-11"}}]}),
         ]
     )
     r = ask(client, ANA).json()
-    assert f"Consumiste {kwh} e pagas {eur}." in r["text"] and "Fonte:" in r["text"]
-    assert not r["text"].startswith(UNAVAILABLE_PREFIX) and r["tool_result_ids"]
+    assert kwh in r["text"] and eur in r["text"] and "interpretado" not in r["text"]
+    assert r["interpreter"] == "llm" and r["tool_result_ids"]
 
 
 def test_numeros_nao_suportados_dao_resposta_deterministica(client, llm):
-    tool = json.dumps({"tool": "consumption_summary", "args": {}})
-    bad = json.dumps({"answer": "Consumiste 999,0 kWh."})
-    llm.complete = FakeLLM([tool, bad, bad])
+    llm.complete = FakeLLM([json.dumps({"tools": [{"tool": "consumption_summary", "args": {}}]})])
     r = ask(client, ANA).json()
-    kwh, eur = ana_values()
-    assert r["text"].startswith(UNAVAILABLE_PREFIX) and "999" not in r["text"]
-    assert kwh in r["text"] and eur in r["text"]
+    assert "999" not in r["text"] and "SIMULADO" in r["text"]
+    assert r["interpreter"] == "llm"
 
 
 def test_llm_indisponivel_cai_no_recurso(client, llm):
@@ -102,7 +98,7 @@ def test_llm_indisponivel_cai_no_recurso(client, llm):
 
     llm.complete = FakeLLM([LLMUnavailable("x")])
     r = ask(client, ANA).json()
-    assert r["text"].startswith(UNAVAILABLE_PREFIX) and ana_values()[0] in r["text"]
+    assert r["text"].startswith("O assistente está indisponível") and ana_values()[0] in r["text"]
 
 
 def test_excecao_inesperada_do_llm_da_200_com_recurso(client, llm, caplog):
@@ -110,7 +106,10 @@ def test_excecao_inesperada_do_llm_da_200_com_recurso(client, llm, caplog):
     with caplog.at_level("WARNING"):
         r = ask(client, ANA)
     assert r.status_code == 200
-    assert r.json()["text"].startswith(UNAVAILABLE_PREFIX) and ana_values()[0] in r.json()["text"]
+    assert (
+        r.json()["text"].startswith("O assistente está indisponível")
+        and ana_values()[0] in r.json()["text"]
+    )
     assert "segredo-xyz" not in caplog.text
 
 
@@ -118,6 +117,7 @@ def test_pedido_de_acao_so_propoe_e_o_llm_nunca_e_chamado(client, llm):
     llm.complete = FakeLLM([])  # esgotado: se fosse chamado, o teste falhava
     r = ask(client, ANA, "Desliga o aquecedor da sala").json()
     assert r["text"] != ACTION_TEXT and "Ainda não foi executado" in r["text"]
+    assert r["interpreter"] == "rules"
     assert [a["status"] for a in r["proposed_actions"]] == ["proposed"] and r[
         "tool_result_ids"
     ] == []
@@ -218,6 +218,24 @@ def test_llm_desligado_por_omissao(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     s = AgentSettings(_env_file=None)
     assert s.agent_llm_enabled is False and s.agent_total_timeout_s == 30.0
+
+
+def test_scope_demo_nao_chama_llm_em_casa_real(client, llm, monkeypatch, real_house):
+    llm.complete = FakeLLM([json.dumps({"tools": []})])
+    monkeypatch.setattr(
+        agent_router,
+        "get_agent_settings",
+        lambda: AgentSettings(agent_llm_enabled=True, agent_llm_scope="demo"),
+    )
+    response = ask(
+        client,
+        "sub-gina",
+        "Quanto gastei este mês?",
+        url=f"/api/households/{real_house}/agent/messages",
+    )
+    assert response.status_code == 200
+    assert llm.complete.calls == []
+    assert response.json()["interpreter"] == "rules"
 
 
 def test_get_complete_so_com_flag_e_chave(monkeypatch):

@@ -167,8 +167,8 @@ def test_record_exchange_corta_sem_tocar_nos_outros(app, now):
 def test_o_llm_nunca_recebe_mensagens_anteriores(client, llm):
     llm.complete = FakeLLM(
         [
-            json.dumps({"answer": "Sem números."}),
-            json.dumps({"answer": "Sem números."}),
+            json.dumps({"tools": []}),
+            json.dumps({"tools": []}),
         ]
     )
     ask(client, ANA, "primeira pergunta secreta")
@@ -177,4 +177,4 @@ def test_o_llm_nunca_recebe_mensagens_anteriores(client, llm):
     second_call = json.dumps(llm.complete.calls[1])
     assert "segunda pergunta" in second_call
     assert "primeira pergunta secreta" not in second_call
-    assert "Sem números" not in second_call  # nem a resposta anterior
+    assert "tools" in second_call

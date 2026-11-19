@@ -2,10 +2,12 @@
 
 from datetime import timedelta
 
+import pytest
+
 from homemind.contracts import fixtures as fx
 from homemind.contracts.billing import AttributionMethod, AttributionTarget
 from homemind.contracts.common import ValueKind, cost_cents, replace
-from homemind.contracts.energy import ConsumptionStatus, CostEstimate, LocationKind
+from homemind.contracts.energy import ApplianceMatch, ConsumptionStatus, CostEstimate, LocationKind
 from homemind.contracts.household import CommonAreaRule, HouseholdPolicy
 from homemind.features.billing.attribution import decide, worth_asking
 
@@ -68,6 +70,32 @@ def test_pedido_de_confirmacao_inclui_nome_do_aparelho():
     event = _custo(fx.consumption(closed=True), 50)
     d = decide(event, POLICY, ROOM_RESIDENT, fx.TENANTS, NOW, appliance_name="Aquecedor")
     assert d.confirmation.appliance_name == "Aquecedor"
+
+
+def test_dica_de_dono_so_com_match_forte_e_dono_inquilino():
+    event = _custo(fx.consumption(closed=True), 50)
+    c = decide(event, POLICY, ROOM_RESIDENT, fx.TENANTS, NOW).confirmation
+    assert c.likely_owner_resident_id == fx.BRUNO
+    assert c.match_confidence == 0.9
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"match": ApplianceMatch(appliance_id=fx.HEATER, confidence=0.79)},
+        {"match": ApplianceMatch(), "appliance_owner_resident_id": None},
+        {"appliance_owner_resident_id": None},
+        {"appliance_owner_resident_id": fx.LANDLORD},
+        {"appliance_owner_resident_id": None},  # aparelho comum, sem dono declarado
+    ],
+    ids=["confianca-baixa", "sem-vencedor", "sem-dono", "dono-nao-inquilino", "comum"],
+)
+def test_sem_prova_suficiente_nao_inclui_dica(changes):
+    event = _custo(fx.consumption(closed=True), 50)
+    event = replace(event, **changes)
+    c = decide(event, POLICY, ROOM_RESIDENT, fx.TENANTS, NOW).confirmation
+    assert c.likely_owner_resident_id is None
+    assert c.match_confidence is None
 
 
 def test_pedido_de_confirmacao_sem_nome_deixa_nome_vazio():

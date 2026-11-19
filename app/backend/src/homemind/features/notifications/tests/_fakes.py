@@ -46,9 +46,11 @@ class FakeDirectory:
         rooms: dict[tuple[UUID, UUID], tuple[str, RoomKind]] | None = None,
         room_tenants: dict[tuple[UUID, UUID], list[UUID]] | None = None,
         appliances: dict[tuple[UUID, UUID], str] | None = None,
+        resident_names: dict[tuple[UUID, UUID], str] | None = None,
     ) -> None:
         self.rooms = rooms or {}
         self.appliances = appliances or {}
+        self.resident_names = resident_names or {}
         self._room_tenants = room_tenants or {}
         self.roles = (
             roles
@@ -72,6 +74,9 @@ class FakeDirectory:
 
     def appliance_name(self, household_id: UUID, appliance_id: UUID) -> str | None:
         return self.appliances.get((household_id, appliance_id))
+
+    def resident_name(self, household_id: UUID, resident_id: UUID) -> str | None:
+        return self.resident_names.get((household_id, resident_id))
 
     def tenants(self, household_id: UUID, at: datetime) -> list[UUID]:
         found = [r for (h, r), role in self.roles.items() if h == household_id and role == "tenant"]

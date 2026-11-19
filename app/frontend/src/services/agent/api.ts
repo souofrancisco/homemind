@@ -3,12 +3,16 @@ import { request } from "../api/client";
 
 export type AgentMessageIn = components["schemas"]["AgentMessageIn"];
 export type AgentResponse = components["schemas"]["AgentResponse"];
+export type AgentMessage = components["schemas"]["AgentMessage"];
 
 export const sendAgentMessage = (householdId: string, input: AgentMessageIn) =>
   request<AgentResponse>(
     `/api/households/${encodeURIComponent(householdId)}/agent/messages`,
     { method: "POST", body: JSON.stringify(input) },
   );
+
+export const listAgentMessages = (householdId: string) =>
+  request<AgentMessage[]>(`/api/households/${encodeURIComponent(householdId)}/agent/messages`);
 
 // Ações propostas (AGENT-03): só se executam com a confirmação de quem as recebeu.
 export type AgentActionView = components["schemas"]["AgentActionView"];

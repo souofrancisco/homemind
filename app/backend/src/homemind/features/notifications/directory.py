@@ -89,3 +89,11 @@ class SqliteResidentDirectory:
             (str(household_id), str(appliance_id)),
         ).fetchone()
         return row["name"] if row else None
+
+    def resident_name(self, household_id: UUID, resident_id: UUID) -> str | None:
+        row = self._conn.execute(
+            "SELECT r.display_name FROM resident r JOIN membership m ON m.resident_id = r.id"
+            " WHERE m.household_id = ? AND m.resident_id = ? AND m.status = 'active'",
+            (str(household_id), str(resident_id)),
+        ).fetchone()
+        return row["display_name"] if row else None

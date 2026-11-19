@@ -21,7 +21,7 @@ from homemind.contracts import billing
 from homemind.contracts import fixtures as fx
 from homemind.core.db import Database, migrate
 from homemind.core.events import append_event, load_events
-from homemind.demo.scenario import events, references
+from homemind.demo.scenario import CLOCK, DemoClock, events, references
 from homemind.features.households.repo import seed_demo
 
 DEMO_ROOT = Path(__file__).resolve().parents[4] / ".demo-data"
@@ -37,6 +37,7 @@ class DemoSafetyError(RuntimeError):
 @dataclass(frozen=True)
 class DemoStore:
     root: Path
+    clock: DemoClock = CLOCK
 
     @property
     def path(self) -> Path:
@@ -121,7 +122,7 @@ class DemoStore:
             raise DemoSafetyError("base sem marcador válido de demonstração") from exc
 
     @staticmethod
-    def _populate(conn: sqlite3.Connection) -> None:
+    def _populate(conn: sqlite3.Connection, clock: DemoClock = CLOCK) -> None:
         if not seed_demo(conn):
             raise DemoSafetyError("a casa já existe na base nova")
         conn.execute("CREATE TABLE demo_marker (id INTEGER PRIMARY KEY, token TEXT NOT NULL)")
@@ -130,12 +131,12 @@ class DemoStore:
             "CREATE TABLE demo_reference (kind TEXT NOT NULL, id TEXT NOT NULL,"
             " payload_json TEXT NOT NULL, PRIMARY KEY(kind, id))"
         )
-        for kind, identifier, model in references():
+        for kind, identifier, model in references(clock):
             conn.execute(
                 "INSERT INTO demo_reference VALUES (?,?,?)",
                 (kind, str(identifier), model.model_dump_json()),
             )
-        for event in events():
+        for event in events(clock):
             append_event(conn, event)
 
     def _build(self) -> None:
@@ -150,7 +151,7 @@ class DemoStore:
             try:
                 db.open()
                 migrate(db)
-                db.run_sync(self._populate)
+                db.run_sync(lambda conn: self._populate(conn, self.clock))
             finally:
                 db.close()
             os.replace(candidate, self.path)
@@ -195,7 +196,7 @@ class DemoStore:
             db.open()
 
             def publish(conn: sqlite3.Connection) -> None:
-                for event in events():
+                for event in events(self.clock):
                     append_event(conn, event)  # F0 deduplica por id, conflito é erro
 
             db.run_sync(publish)
@@ -210,7 +211,7 @@ class DemoStore:
             db.open()
             actual = db.run_sync(load_events)
             stored = [item.event for item in actual]
-            expected = events()
+            expected = events(self.clock)
             if stored != expected:
                 raise AssertionError("o replay divergiu do cenário oficial")
             if [item.seq for item in actual] != list(range(1, len(expected) + 1)):

@@ -123,6 +123,15 @@ class NotificationService:
         ]
         if not responders:
             return Outcome(None)
+        likely_owner_name = None
+        if (
+            req.likely_owner_resident_id is not None
+            and req.match_confidence is not None
+            and req.likely_owner_resident_id in responders
+        ):
+            likely_owner_name = self._directory.resident_name(
+                household_id, req.likely_owner_resident_id
+            )
         n = compose_confirmation(
             req,
             household_id=household_id,
@@ -131,6 +140,7 @@ class NotificationService:
             correlation_id=correlation_id,
             source_event_id=source_event_id,
             now=now,
+            likely_owner_name=likely_owner_name,
         )
         return self._create(n, provenance, dedupe=True)
 

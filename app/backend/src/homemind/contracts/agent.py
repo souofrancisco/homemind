@@ -3,7 +3,7 @@
 Distinções que os tipos impõem:
 leitura (`AgentToolRequest/Result`) ≠ proposta (`ProposedAction`) ≠ confirmação humana
 (`ActionConfirmation`) ≠ execução (`ActionExecutionResult`). O assistente nunca inventa
-números: tudo o que afirma vem de um `AgentToolResult` referenciado na resposta.
+números: respostas geradas em código a partir de um `AgentToolResult` referenciado.
 Ações físicas limitam-se ao que o MCP permite (lâmpada: power/brightness/color_rgb;
 tomada: power) e dependem de flag + grant (connectors/write_grant). Esta camada não escreve.
 """
@@ -58,6 +58,10 @@ class AgentTool(StrEnum):
     consumption_summary = "consumption_summary"
     budget_status = "budget_status"
     receipt = "receipt"
+    top_appliances = "top_appliances"
+    consumption_change = "consumption_change"
+    explain_attribution = "explain_attribution"
+    pending_confirmations = "pending_confirmations"
 
 
 class AgentToolRequest(ContractModel):
@@ -69,7 +73,10 @@ class AgentToolRequest(ContractModel):
     @model_validator(mode="after")
     def _arguments(self) -> Self:
         needs_bill = self.tool is AgentTool.receipt
-        if needs_bill != (self.bill_id is not None) or (self.period is None) == (not needs_bill):
+        needs_period = self.tool not in (AgentTool.receipt, AgentTool.pending_confirmations)
+        if needs_bill != (self.bill_id is not None) or (needs_period and self.period is None):
+            raise ValueError("argumentos incoerentes com a ferramenta")
+        if not needs_period and self.period is not None:
             raise ValueError("argumentos incoerentes com a ferramenta")
         return self
 
@@ -84,6 +91,14 @@ class AgentToolResult(ContractModel):
     energy_wh: EnergyWh | None = None
     cost_cents: Cents | None = None
     error_code: str | None = None
+    appliances: list[ApplianceCost] = []
+    previous_period: Period | None = None
+    previous_cost_cents: Cents | None = None
+    difference_cents: Annotated[int, Field(strict=True, ge=-(10**12), le=10**12)] | None = None
+    attribution_parts: list[AttributionPart] = []
+    final: bool | None = None
+    pending_count: Annotated[int, Field(strict=True, ge=0)] | None = None
+    pending: list[PendingConfirmation] = []
 
     @model_validator(mode="after")
     def _coherent(self) -> Self:
@@ -95,6 +110,26 @@ class AgentToolResult(ContractModel):
         if (self.energy_wh is not None or self.cost_cents is not None) and not self.provenance:
             raise ValueError("valores exigem proveniência")
         return self
+
+
+class ApplianceCost(ContractModel):
+    label: ShortText
+    cost_cents: Cents
+    percent: Annotated[int, Field(strict=True, ge=0, le=100)]
+    provenance: Provenance
+
+
+class AttributionPart(ContractModel):
+    label: ShortText
+    amount_cents: Cents
+    provenance: Provenance
+
+
+class PendingConfirmation(ContractModel):
+    appliance_name: ShortText | None = None
+    estimated_cost_cents: Cents | None = None
+    expires_at: UtcDatetime
+    provenance: Provenance
 
 
 # --- ações físicas ---------------------------------------------------------------------------
@@ -218,8 +253,10 @@ class AgentResponse(ContractModel):
     household_id: UUID
     text: Annotated[str, Field(min_length=1, max_length=2000)]
     tool_result_ids: list[UUID] = []  # request_id dos resultados que sustentam os números
+    tool_results: list[AgentToolResult] = []  # dados tipados que sustentam a resposta deste turno
     proposed_actions: list[ProposedAction] = []
     created_at: UtcDatetime
+    interpreter: Literal["llm", "rules"] | None = None
 
 
 # --- automações ------------------------------------------------------------------------------

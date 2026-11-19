@@ -1,6 +1,6 @@
 # Módulos `agent` e `automations` — assistente de IA e automações
 
-**Dono: P3 (RafaelMat0s-Dev); execução física: P1.** **IMPLEMENTADO (backend parcial: leitura com dados SIMULADOS, histórico da conversa por residente (#111), ações propostas com confirmação (AGENT-03) e propostas a partir de alertas de janela aberta (AGENT-03b)); o resto PLANEADO** (ver «Estado de implementação» no fim). Substitui o agente que vivia no Telegram: o assistente está **dentro da aplicação** (D-01).
+**Dono: P3 (RafaelMat0s-Dev); execução física: P1.** **IMPLEMENTADO:** ferramentas de leitura, tradutor opcional, respostas por moldes determinísticos, transparência do intérprete, histórico e ações propostas com confirmação. Aditivos de contrato desta tarefa são **PROPOSTA**, a aprovar pela P5. AGENT-04 continua **PLANEADO**. O assistente está **dentro da aplicação** (D-01).
 
 ## Responsabilidade
 
@@ -12,7 +12,7 @@
 
 | Regra | Como se cumpre |
 |---|---|
-| **O modelo nunca inventa números** | Todos os valores vêm de funções (ferramentas) do backend; o LLM só redige; as contas são feitas em código ([billing.md](billing.md)) |
+| **O modelo nunca inventa números** | O LLM só traduz a pergunta em ferramentas; o servidor executa e escreve a resposta com moldes. Contas feitas em código ([billing.md](billing.md)) |
 | Respeita o papel | As ferramentas executam com as permissões do utilizador autenticado; o senhorio não usa o assistente de consumo individual (**PROPOSTA**) |
 | Confirmação humana | Uma ação sugerida cria `agent_action` e só se executa em `POST /api/households/{id}/agent/actions/{aid}/confirm` (**IMPLEMENTADO**; só o próprio residente; o LLM nunca propõe: o pedido é interpretado em código). Sensíveis (segurança, cortes fora de regras aprovadas) pedem sempre confirmação |
 | Sem vídeo | O LLM nunca recebe imagens, frames nem URLs de câmara; só texto |
@@ -20,7 +20,9 @@
 | Sem escritas físicas sem autorização | A execução é uma porta injetada (`ActionExecutor`, P1) que aplica flag + grant + whitelist e relê; esta feature não importa conectores nem o motor. Casa demo: só executor SIMULADO |
 | Proveniência | As respostas indicam se um valor é medido, estimado, inferido ou simulado |
 
-## Ferramentas (funções) propostas
+## Ferramentas (funções) implementadas
+
+`consumption_summary`, `budget_status`, `receipt`, `top_appliances`, `consumption_change`, `explain_attribution` e `pending_confirmations` (**IMPLEMENTADO**). O detalhamento soma ao total de `month_spend`, incluindo conta comum, plafond solidário e parte fixa/base; em meses fechados usa a evidência e as parcelas do recibo. A explicação expõe apenas a parte do próprio morador, sem presenças, horas ou votos. Pedidos pendentes são lidos das notificações e filtrados por elegibilidade e voto do próprio. Sem dados de billing, a explicação devolve `None`.
 
 | Ferramenta | Devolve | Dono do dado |
 |---|---|---|
@@ -78,9 +80,9 @@ sequenceDiagram
 
 `features/agent/llm.py` e `features/agent/config.py` (cliente NVIDIA do assistente, separado do motor removido), mais as ferramentas tipadas existentes. As páginas antigas do frontend foram removidas na BASE-04; a interface atual está na aplicação Conta Certa.
 
-## Ficheiros novos previstos
+## Ficheiros novos previstos (restantes)
 
-`features/agent/{tools,router,service,tests}`, `features/automations/{repo,service,engine,runner,simulation,router,tests}` (o motor só simulado), `contracts/agent.py` (existe na `main`), frontend `pages/AssistantPage.tsx`.
+`features/automations/{repo,service,engine,runner,simulation,router,tests}` (existem; o motor só simulado); ferramentas adicionais exigem contrato revisto.
 
 ## Dependências
 
@@ -101,18 +103,19 @@ Tipos reais de `contracts/agent.py` e `contracts/common.py` (já não há `_prov
 
 | O quê | Onde |
 |---|---|
-| Registo de ferramentas só de leitura (`consumption_summary`, `budget_status`, `receipt`); o residente vem do contexto, nunca dos argumentos; só inquilinos; sem dados → `no_data` (nunca zero) | `features/agent/tools.py` |
-| Ciclo do assistente: pedido de ação e senhorio → resposta fixa; senão JSON `{"tool"}`/`{"answer"}` com `max_steps`, timeout, 1 correção de JSON, 1 de números, rodapé `Fonte:` | `assistant.py`, `guardrails.py`, `formatting.py`, `prompt.py` |
-| **Recurso determinístico** sem LLM (indisponível, JSON inválido, números não suportados, passos esgotados): mostra os factos das ferramentas formatados em código | `assistant.py::fallback_reply` |
+| Registo de sete ferramentas de leitura; período validado (2000-01 até ao mês atual), residente do contexto, só inquilinos, sem dados → `no_data`. `explain_attribution` usa a explicação do recibo ou os componentes de `month_spend`; `pending_confirmations` mostra até três de todos os pedidos elegíveis por responder | `features/agent/tools.py` |
+| Modo tradutor: uma chamada ao LLM e uma repetição apenas para JSON inválido; recebe a pergunta atual e instruções, nunca resultados; resposta final montada pelo servidor | `assistant.py`, `answers.py`, `prompt.py` |
+| Recurso por palavras-chave quando o LLM está desligado ou fora do âmbito; erro/prazo do LLM apresenta indisponibilidade; JSON inválido duas vezes ou `tools: []` apresenta resposta fixa útil | `assistant.py`, `intents.py` |
 | Endpoint `POST /api/households/{household_id}/agent/messages` (corpo `AgentMessageIn`, resposta `AgentResponse`; `proposed_actions` só tem a proposta de um pedido de ação, ver abaixo). `require_access(Resource.agent, write)`: só inquilino; senhorio e operador 403 `forbidden_role`; não-membro e membership terminada 404 `household_not_found`; corpo inválido 400 `invalid_request` | `router.py` |
-| Providers **SIMULADOS** derivados de `contracts/fixtures.py`, só para a casa `fixtures.HOUSEHOLD` com `source_kind='demo'`; qualquer outra casa, período ou residente → «Não tenho dados» | `simulated.py` (`SimulatedProviders`, `EmptyProviders`) |
+| Providers reais de consumo, orçamento, recibo, aparelhos, comparação e explicação da atribuição; provider de notificações pendentes. Registo imutável `ProviderSet` composto com `dataclasses.replace`, sem dependência da ordem de lifespans. Casa real descarta proveniência simulada | `features/billing/agent_providers.py`, `features/notifications/agent_providers.py`, `features/agent/sources.py` |
 | LLM **desligado por omissão**: só há chamada com `AGENT_LLM_ENABLED=true` **e** `NVIDIA_API_KEY`; `get_complete` é uma dependência substituível (testes) | `config.py`, `router.py` |
+| `AGENT_LLM_SCOPE=demo` (omissão) limita o LLM a casas demo; `all` permite todas. Só a pergunta sai para a NVIDIA. `AgentResponse.interpreter` marca `llm` ou `rules`; histórico antigo fica sem selo | `config.py`, `router.py`, `MessageBubble.tsx` |
 
-Os números da casa de demonstração vêm todos das fixtures (alocação da Ana na fatura A, orçamento e gasto da Carla, total do recibo) e são mostrados como **SIMULADO**. O gasto do orçamento é o `spent_cents` da amostra do evento `alerts.threshold_crossed` das fixtures (o `Budget` só tem o limite).
+Quando não há registos de billing, os números da casa de demonstração vêm das fixtures (alocação da Ana na fatura A, orçamento e gasto da Carla, total do recibo) e são mostrados como **SIMULADO**. Havendo billing persistido, o provider de billing responde primeiro.
 
-**Limite dos dados SIMULADOS:** só cobrem o período `2026-11`. O período por omissão é o mês corrente, por isso a partir de 1 de dezembro de 2026 a resposta por omissão é «Não tenho dados» até existirem os *providers* reais de P4.
+**Limite dos dados SIMULADOS:** as fixtures só cobrem o período `2026-11`. Sem dados de billing nesse período, a resposta por omissão noutros meses é «Não tenho dados».
 
-Prazo total da resposta: `AGENT_TOTAL_TIMEOUT_S` (30 s; efetivo = mínimo entre este e `AGENT_LLM_TIMEOUT_S` × `AGENT_MAX_STEPS`). Ao esgotar, ou com qualquer erro inesperado do LLM, usa-se o recurso determinístico (log só com o tipo da exceção).
+Prazo do LLM: `AGENT_LLM_TIMEOUT_S` (20 s), limitado por `AGENT_TOTAL_TIMEOUT_S` (30 s). Ao esgotar ou falhar, usa-se o router de palavras-chave com aviso de indisponibilidade (log só com o tipo da exceção). Com LLM desligado por configuração, o router funciona diretamente sem aviso.
 
 ### IMPLEMENTADO — AGENT-03 (ações propostas com confirmação, refs #112)
 
@@ -165,19 +168,23 @@ Cada `POST …/agent/messages` grava a **troca** (a pergunta e a resposta) no hi
 - **Nunca vai para o LLM (P-06):** o histórico serve só para a app o mostrar. O assistente e o LLM recebem apenas a pergunta atual (teste dedicado).
 - O histórico guarda o texto da resposta tal como foi mostrado (inclui o rótulo **SIMULADO** e o rodapé `Fonte:`); não guarda números à parte.
 
+### IMPLEMENTADO — providers reais e conversa na app
+
+`BillingAgentProviders` reutiliza `closing.period_inputs`, `tariff`, `budgets.status` e as alocações finalizadas. O recibo mais recente considera apenas a revisão corrente (`status='finalized'`). Os Protocols síncronos usam a ligação SQLite partilhada sob o lock de `Database`, com consultas curtas só de leitura; não abrem transação `BEGIN IMMEDIATE`. A composição regista o `ProviderSet` em `app.state.agent_providers` no lifespan de billing. O residente continua a vir exclusivamente da membership/token. O contrato partilhado novo `contracts/agent_providers.py` é **PROPOSTA** aditiva a aprovar pela P5 (#157, item 15); `features/agent/providers.py` reexporta os nomes antigos.
+
+`pages/AssistantPage.tsx` apresenta o histórico ao abrir, envia mensagens e carrega ações propostas pendentes. Respostas recentes mostram «interpretado por IA» ou «interpretado por regras»; mensagens históricas podem não ter selo. As respostas mantêm proveniência e rótulo REAL/SIMULADO.
+
 ### PLANEADO
 
-- *Providers* reais de P4 (consumo, orçamento, recibos) e P1 (energia), registados no arranque sem a feature importar outra; trocar `simulated.py`.
 - AGENT-04 (automações), `who_is_home`, `explain_difference`, `list_pending_confirmations`.
-- **P-06** (que dados de consumo podem sair para o fornecedor de LLM): decidir antes de ligar `AGENT_LLM_ENABLED` em qualquer ambiente.
-- Frontend `AssistantPage`.
+- **P-06:** **PROPOSTA** — em modo tradutor apenas a pergunta sai para a NVIDIA; nunca dados da casa, resultados ou histórico. `AGENT_LLM_SCOPE=demo` por omissão; aprovação da equipa continua pendente.
 
 ### Pedidos pendentes (para a revisão do contrato e do `core/`)
 
-1. **`AgentToolResult` pobre:** sem `period`, `confidence` nem linhas de detalhe; «porque pago mais?» precisa de linhas do recibo.
-2. **Só três ferramentas** em `AgentTool`; AGENT-01 pede também aparelhos, explicação da atribuição e notificações pendentes.
+1. Aditivo **PROPOSTA P5**: `AgentTool` acrescenta `top_appliances` e `consumption_change`; `AgentToolResult` acrescenta linhas por aparelho, totais e diferença mensal; `AgentResponse.interpreter` marca `llm`/`rules`.
+2. `AgentTool` não inclui explicação da atribuição nem notificações pendentes; continuam planeadas.
 3. **`receipt` exige `bill_id`:** hoje o `ReceiptProvider.latest_bill` resolve «o último recibo» (PROPOSTA a rever).
-4. **Interface dos *providers*:** os `Protocol` vivem em `features/agent/providers.py`; propor movê-los para `contracts/agent.py` e registá-los em `app.state`.
+4. **Interface dos *providers*:** agora em `contracts/agent_providers.py` (**PROPOSTA #157, item 15**, aprovação P5); a feature agente mantém reexport compatível.
 5. **`AgentMessage` sem `resident_id`:** o histórico é por residente (a tabela guarda-o; o contrato não o expõe, o que é o desejado: só o próprio lê as suas). A linha `GET …/agent/messages` já consta de `contracts.md` (estado IMPLEMENTADO; falta a revisão da P5).
 6. **`AgentResponse` sem `used_llm`/`degraded`:** a app não distingue resposta do LLM de recurso determinístico.
 7. **Definições do LLM** em `features/agent/config.py`; o assistente continua a ler `NVIDIA_API_KEY` e `NVIDIA_MODEL`.
