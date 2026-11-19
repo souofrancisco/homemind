@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 48" role="img" aria-label="Conta Certa">
+  <style>
+    text { font: 700 34px "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; letter-spacing: -1px; fill: #16181d; }
+  </style>
+  <text x="125" y="36" text-anchor="middle">Conta Certa</text>
+</svg>

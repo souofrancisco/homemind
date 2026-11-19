@@ -28,7 +28,8 @@ export async function request<T>(path: string, init: RequestInit = {}, auth = tr
   if (!r.ok) {
     const payload = await r.json().catch(() => null);
     const message = payload?.detail?.message ?? payload?.detail ?? payload?.error?.message ?? `Erro ${r.status}`;
-    notifications.show({ color: "red", title: "Pedido falhou", message });
+    notifications.clean();
+    notifications.show({ color: "red", title: "Pedido falhou", message, autoClose: 6000, withCloseButton: true });
     throw new Error(message);
   }
   if (r.status === 204) return undefined as T;

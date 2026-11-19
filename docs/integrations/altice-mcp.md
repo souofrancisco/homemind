@@ -1,6 +1,6 @@
 # MCP Altice — ponto de entrada
 
-A integração MCP é **central** para a Conta Certa: é por ela que a casa lê dispositivos e (quando autorizado) atua. Esta página resume as regras e a evidência; o detalhe técnico está nos documentos abaixo, **preservados do ObjectOS sem perda**.
+A integração MCP é **central** para a Conta Certa: é por ela que a casa lê dispositivos e (quando autorizado) atua. Esta página resume as regras e a evidência; os documentos abaixo preservam a investigação e as medições do ObjectOS.
 
 | Documento | Conteúdo |
 |---|---|
@@ -16,7 +16,7 @@ Guia oficial de ligação da organização: [references/altice-mcp-guia-ligacao.
 
 - Ferramentas usadas: **só** `get_home_devices`, `get_device_details`, `update_device_capabilities`.
 - Dispositivos: **só** lâmpada (`power`, `brightness`, `color_rgb`) e tomada (`power`).
-- **Nunca** alarme, segurança, cenários ou timers. As ferramentas `patch_home_security_status`, `post_new_scenario`, `patch_scenario_activation`, `post_execute_scenario`, `post_timer_device` existem no servidor mas **estão fora do âmbito** (decisão P-01 para as rever).
+- **Nunca escrever** alarme, segurança, cenários ou timers. Exceção só de **leitura** (SAFE-02 #115, decisão do utilizador, por rever pela equipa): `get_home_security_status`. As ferramentas `patch_home_security_status`, `post_new_scenario`, `patch_scenario_activation`, `post_execute_scenario`, `post_timer_device` existem no servidor mas **estão fora do âmbito** (decisão P-01 para as rever).
 - Escritas físicas: `ENABLE_PHYSICAL_WRITES=false` por omissão **e** grant temporário (`make mcp-writes-on`). Um agente não executa escritas físicas sem autorização explícita do utilizador nessa tarefa.
 - Escrita física confirmada **só** por releitura; uma escrita de resultado incerto **nunca** é repetida.
 - Segredos (`MCP_API_KEY`, tokens, URL RTSP) só em `app/.env` e `app/.mcp-auth/`. Nunca em logs, erros, testes, issues ou docs. IDs de dispositivos nunca em documentação.
@@ -24,7 +24,7 @@ Guia oficial de ligação da organização: [references/altice-mcp-guia-ligacao.
 
 ## Política de escrita por regra (MCP-04) — **IMPLEMENTADO** (sem escritas físicas executadas)
 
-Código: `connectors/write_policy.py` (pura) e `McpHome.tomada_por_regra` / `McpHome.lampada_por_regra`. O caminho manual/ObjectOS (`definir_tomada`, `definir_lampada` → `bool`) **não mudou**.
+Código: `connectors/write_policy.py` (pura) e `McpHome.tomada_por_regra` / `McpHome.lampada_por_regra`. O caminho manual do conector (`definir_tomada`, `definir_lampada` → `bool`) mantém-se separado da política de escrita por regra.
 
 **Resultado explícito** (`WriteResult`: `outcome` + `reason` sem IDs nem segredos):
 

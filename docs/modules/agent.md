@@ -1,6 +1,6 @@
 # Módulos `agent` e `automations` — assistente de IA e automações
 
-**Dono: P3 (RafaelMat0s-Dev); execução física: P1.** **IMPLEMENTADO (backend parcial: leitura com dados SIMULADOS, histórico da conversa por residente (#111), ações propostas com confirmação (AGENT-03) e propostas a partir de alertas de janela aberta (AGENT-03b)); o resto PLANEADO** (ver «Estado de implementação» no fim). Substitui o agente que vivia no Telegram: o assistente está **dentro da aplicação** (D-01).
+**Dono: P3 (RafaelMat0s-Dev); execução física: P1.** **IMPLEMENTADO:** ferramentas de leitura, tradutor opcional, respostas por moldes determinísticos, transparência do intérprete, histórico e ações propostas com confirmação. Aditivos de contrato desta tarefa são **PROPOSTA**, a aprovar pela P5. AGENT-04 continua **PLANEADO**. O assistente está **dentro da aplicação** (D-01).
 
 ## Responsabilidade
 
@@ -12,7 +12,7 @@
 
 | Regra | Como se cumpre |
 |---|---|
-| **O modelo nunca inventa números** | Todos os valores vêm de funções (ferramentas) do backend; o LLM só redige; as contas são feitas em código ([billing.md](billing.md)) |
+| **O modelo nunca inventa números** | O LLM só traduz a pergunta em ferramentas; o servidor executa e escreve a resposta com moldes. Contas feitas em código ([billing.md](billing.md)) |
 | Respeita o papel | As ferramentas executam com as permissões do utilizador autenticado; o senhorio não usa o assistente de consumo individual (**PROPOSTA**) |
 | Confirmação humana | Uma ação sugerida cria `agent_action` e só se executa em `POST /api/households/{id}/agent/actions/{aid}/confirm` (**IMPLEMENTADO**; só o próprio residente; o LLM nunca propõe: o pedido é interpretado em código). Sensíveis (segurança, cortes fora de regras aprovadas) pedem sempre confirmação |
 | Sem vídeo | O LLM nunca recebe imagens, frames nem URLs de câmara; só texto |
@@ -20,7 +20,9 @@
 | Sem escritas físicas sem autorização | A execução é uma porta injetada (`ActionExecutor`, P1) que aplica flag + grant + whitelist e relê; esta feature não importa conectores nem o motor. Casa demo: só executor SIMULADO |
 | Proveniência | As respostas indicam se um valor é medido, estimado, inferido ou simulado |
 
-## Ferramentas (funções) propostas
+## Ferramentas (funções) implementadas
+
+`consumption_summary`, `budget_status`, `receipt`, `top_appliances`, `consumption_change`, `explain_attribution` e `pending_confirmations` (**IMPLEMENTADO**). O detalhamento soma ao total de `month_spend`, incluindo conta comum, plafond solidário e parte fixa/base; em meses fechados usa a evidência e as parcelas do recibo. A explicação expõe apenas a parte do próprio morador, sem presenças, horas ou votos. Pedidos pendentes são lidos das notificações e filtrados por elegibilidade e voto do próprio. Sem dados de billing, a explicação devolve `None`.
 
 | Ferramenta | Devolve | Dono do dado |
 |---|---|---|
@@ -55,18 +57,32 @@ sequenceDiagram
 ## Automações
 
 - Modelo `AutomationRule` ([data-model.md](../architecture/data-model.md)): gatilho, condição, ações, confirmação, estado `draft → proposed → active`.
-- Reaproveita o fluxo atual **texto → proposta validada → confirmação explícita** (`features/engine/llm.py`, `POST /api/rules/parse`) com um schema novo; `ParseResponse` não grava nem executa.
-- **Âmbito do MCP:** só lâmpada (`power`, `brightness`, `color_rgb`) e tomada (`power`). Gatilhos por sensores de contacto/clima exigem **leitura** de dispositivos hoje fora da seleção do `McpHome` — **PROPOSTA** de extensão só de leitura (P-01). **Cenários** do Connected Home (`post_new_scenario`), alarme e segurança **continuam proibidos** até decisão explícita da equipa.
+- O assistente atual usa `features/agent/llm.py` e ferramentas tipadas próprias. O cliente NVIDIA e a rota de propostas de regras do motor foram removidos em BASE-04; automações futuras precisam de contrato próprio.
+- **Âmbito do MCP:** só lâmpada (`power`, `brightness`, `color_rgb`) e tomada (`power`). Gatilhos por sensores de contacto/clima exigem **leitura** de dispositivos hoje fora da seleção do `McpHome` — **PROPOSTA** de extensão só de leitura (P-01). **Cenários** do Connected Home (`post_new_scenario`), alarme e segurança **continuam proibidos** até decisão explícita da equipa. **Leitura do alarme (SAFE-02 #115), alargamento da whitelist de LEITURA por decisão do utilizador (a rever por P1/P5 e equipa, D-07/P-01):** o `McpHome` pode chamar também `get_home_security_status` (só leitura, opcional, ~30 s) e entrega-a, com a lista de `get_home_devices`, a um ouvinte `seguranca` (`features/safety/panel_reader.py`). Real 2026-11-19: `DISARMED`; `ARMED` assumido. A whitelist de escrita não mudou e `patch_home_security_status` nunca é chamada.
 - A votação da casa (PDF §12: 👍/👎) passa a ser aprovação na aplicação (**PROPOSTA**, P2).
+- **SAFE-04 (#117), PROPOSTA D-35:** o **contrato** já está em `contracts/agent.py` (**IMPLEMENTADO** só como modelos e testes): `AutomationRule.actions` só pode «desligar a tomada» (`power=False`), `AutomationVote` e `rule_approval_outcome` (maioria absoluta = mais de metade; 24 h; sem maioria = rejeitada, `proposed→draft`), e os eventos `automation.vote_decided` e `automation.status_changed` (+ `automation.proposed`/`automation.executed` já existentes). **IMPLEMENTADO** (`features/automations`, migração `0320_automations.sql`, testado com bases em memória e relógio simulado; nunca visto no browser nem com hardware): persistência (`automation_rule`, `automation_vote`, `automation_log` só de acrescentar), votação, suspensão, reativação e rotas.
+  - **Propor** (só inquilino ativo): a regra fica `proposed` e emite `automation.proposed`; o proponente **vota a favor ao propor** (1 voto; com a maioria já atingida, ex.: 1 morador, fecha aprovada no próprio pedido). No máximo 3 votações abertas por morador, contando propostas e reativações que pediu (409 `too_many_open`). O alvo e o `trigger.device_id` têm de ser **tomadas** conhecidas da casa (nunca de outra casa nem a lâmpada; `invalid_target`) e a única ação é desligar o alvo. O alvo pode ser a tomada **agregada** (a extensão, que alimenta vários aparelhos): a UI da onda 4 tem de avisar disso a quem vota. O corpo é `{name, trigger, target_device_id}`; o autor vem do token.
+  - **Votar** (`POST …/vote`, `{approve}`): um voto por morador, só os inquilinos elegíveis (gravados à abertura da ronda), prazo fixo de 24 h; depois de cada voto aplica-se `rule_approval_outcome` (maioria absoluta). Aprovada: `active`, `approved_by_resident_id` = quem deu o voto decisivo, eventos `vote_decided` + `status_changed`. Maioria impossível: `proposed→draft` e só `vote_decided`. Votos fora de prazo nunca contam; a ronda sem maioria no prazo é **rejeitada de forma preguiçosa** (na leitura ou ao votar), idempotente. Cada fecho é um compare-and-set.
+  - **Suspender** (`PATCH …/{id}` com `{status:"disabled"}`): qualquer inquilino, na hora, `active→disabled`, evento `status_changed`. **Reativar** (`POST …/{id}/reactivate`): conta para o limite de 3 votações abertas de quem reativa (409 `too_many_open`); abre uma ronda nova com votos limpos (o reativador não vota sozinho) e reemite `automation.proposed` com a regra `disabled` (id estável por regra+ronda) para avisar os moradores; a regra continua `disabled` até a maioria votar (`active` nunca é direto) e uma ronda sem maioria deixa-a `disabled`.
+  - Respostas (`AutomationView`) só têm contagens e o voto do próprio; nunca quem votou o quê. Senhorio e operador: 403; fora da casa: 404 (`Resource.automation`). O aviso `automation_proposal` à casa vem de `automation.proposed` (`notifications.automation_proposal`; só inquilinos; um por ronda) e fecha ao decidir a votação (`automation.vote_decided`, `notifications.automation_decided`).
+  - **Motor de execução (onda 3), IMPLEMENTADO só SIMULADO** (`features/automations/{engine,runner}.py`; testado com bases em memória, `SimulatedExecutor`/executores falsos e relógio simulado; nunca visto no browser nem com hardware). `engine.py` é lógica pura (o «agora» é o `ts` do evento); `runner.py` liga-o ao barramento (consumidor `automations`, lifespan do router) e executa.
+  - **UI «Regras da casa» (onda 4), IMPLEMENTADA** (frontend `pages/HouseRulesPage.tsx`, `components/houseRules/`, `hooks/useHouseAutomations.ts`, `services/automations/`; rota `/regras`, só inquilinos): propostas em votação com contagens e `my_vote`, regras ativas com «Suspender» (confirmação), suspensas com «Reativar», formulário «Propor regra» (`power_above` ou `presence_changed`; tomadas = as devolvidas por `GET …/automations/plugs`, isto é, exatamente as que o servidor aceita no `POST`; antes vinham do `energy/overview` e a tomada viva da demo web dava 400 `invalid_target`). Mostra «SIMULADO» pela `origin` e avisa sempre que a tomada pode ser a extensão agregada (a lista não traz o sinal `aggregate`). Na demo, o servidor aceita as tomadas do `DemoDevices` (a extensão do cenário offline, sem leituras) **e** as tomadas SIMULADAS (`source=fake`) do catálogo da casa, entre elas a tomada viva da demo web; assim uma regra pode vigiar e desligar a tomada que tem leituras, sempre só no executor simulado. Casa real: só tomadas reais do diretório da P1 (PLANEADO; hoje nenhuma). Vista no browser só contra a demo SIMULADA com um emissor OIDC falso local (não o Authentik); evidência em `docs/evidence/regras-da-casa-ui-2026-11-18/`.
+    - **Gatilhos:** `power_above` usa `energy.reading_recorded` (potência instantânea do dispositivo do gatilho), porque `ConsumptionEvent` só traz `peak_w`/`energy_wh` e não prova que a potência se manteve; dispara quando a potência fica **estritamente acima** de `threshold_w` sem interrupção durante `duration_s`. Uma leitura sem potência utilizável, um intervalo > 5 min entre leituras, uma leitura abaixo do limiar ou `energy.consumption_closed` quebram a sequência. `presence_changed` só dispara em transições in↔out face ao estado imediatamente anterior do morador; a primeira observação e qualquer transição que envolva `uncertain` só registam o estado (decisão do utilizador).
+    - **Só regras `active` e aprovadas** (`status=active`, sem votação aberta, `approved_by_resident_id`), e só eventos desde a ativação. A **confirmação humana é a votação já feita**: a `ProposedAction` nasce `confirmed`, confirmada por quem deu o voto decisivo, com a justificação «aprovada por votação»; não se pede confirmação nova. Antes de executar relê-se a regra: uma suspensão posterior vale na hora (o disparo é descartado).
+    - **Execução:** `select_executor` + `run_execution` (`features/agent/execution.py`; dependência feature→feature declarada). Casa de demonstração: SEMPRE o `SimulatedExecutor`; casa real: `app.state.agent_action_executor` (P1/MCP-04, que aplica flag + grant e relê) ou nenhum → `blocked` (`executor_unavailable`), sem tentar. O executor físico real continua **PLANEADO/bloqueado** sem grant; `ENABLE_PHYSICAL_WRITES` mantém-se falso. Só desliga tomadas; a lâmpada nunca é alvo.
+    - **Guardas:** um disparo por episódio; cooldown por regra (1 h) e por dispositivo (`AGENT_ACTION_COOLDOWN_S`); duas regras sobre o mesmo dispositivo no mesmo evento executam uma vez (lidera a de menor id); `uncertain` nunca se repete e bloqueia o dispositivo `AGENT_ACTION_LOCKOUT_S` (um novo episódio nesse prazo fica `blocked`/`uncertain_lockout`). O bloqueio volta a consultar-se mesmo antes de chamar o executor (um disparo já decidido não passa). Reentrega do barramento e reinício não duplicam.
+    - **Auditoria:** `automation.executed` (id estável por regra+evento+dispositivo, resultado REAL, `blocked` incluído, com `code`). Sem migração nova: o `automation_log` só aceita os tipos da votação. O estado reconstrói-se do registo de eventos (`restore`); um disparo decidido mas ainda não executado quando o processo morre perde-se (preferível a repetir). O `restore` só relê a janela recente de leituras (24 h + folgas) e toda a presença.
+    - **Limitações conhecidas:** há uma janela mínima entre a releitura da regra e a chamada ao executor (uma suspensão nesse instante não a pára; só importa se vier a ligar-se um executor FÍSICO, P1/MCP-04); se `bus.publish` falhar depois de executar, perde-se o registo `automation.executed` (o episódio fica marcado e não repete); um `handle` que levante depois de mutar o motor perde o disparo. Em todos os casos preferimos não executar a repetir.
+  - **PLANEADO:** UI (onda 4) e regras vindas do assistente (AGENT-04).
 - Prioridade: P2. Nada disto bloqueia o MVP.
 
 ## Ficheiros existentes reutilizáveis
 
-`features/engine/llm.py` (cliente NVIDIA, retry, schema), `features/engine/router.py` (`/api/rules/parse`), `core/config.py` (`NVIDIA_API_KEY`), frontend `NewAutomationPage`, `hooks/useNewRule.ts`.
+`features/agent/llm.py` e `features/agent/config.py` (cliente NVIDIA do assistente, separado do motor removido), mais as ferramentas tipadas existentes. As páginas antigas do frontend foram removidas na BASE-04; a interface atual está na aplicação Conta Certa.
 
-## Ficheiros novos previstos
+## Ficheiros novos previstos (restantes)
 
-`features/agent/{tools,router,service,tests}`, `features/automations/{router,service,tests}`, `contracts/agent.py` (existe na `main`), frontend `pages/AssistantPage.tsx`.
+`features/automations/{repo,service,engine,runner,simulation,router,tests}` (existem; o motor só simulado); ferramentas adicionais exigem contrato revisto.
 
 ## Dependências
 
@@ -87,18 +103,19 @@ Tipos reais de `contracts/agent.py` e `contracts/common.py` (já não há `_prov
 
 | O quê | Onde |
 |---|---|
-| Registo de ferramentas só de leitura (`consumption_summary`, `budget_status`, `receipt`); o residente vem do contexto, nunca dos argumentos; só inquilinos; sem dados → `no_data` (nunca zero) | `features/agent/tools.py` |
-| Ciclo do assistente: pedido de ação e senhorio → resposta fixa; senão JSON `{"tool"}`/`{"answer"}` com `max_steps`, timeout, 1 correção de JSON, 1 de números, rodapé `Fonte:` | `assistant.py`, `guardrails.py`, `formatting.py`, `prompt.py` |
-| **Recurso determinístico** sem LLM (indisponível, JSON inválido, números não suportados, passos esgotados): mostra os factos das ferramentas formatados em código | `assistant.py::fallback_reply` |
+| Registo de sete ferramentas de leitura; período validado (2000-01 até ao mês atual), residente do contexto, só inquilinos, sem dados → `no_data`. `explain_attribution` usa a explicação do recibo ou os componentes de `month_spend`; `pending_confirmations` mostra até três de todos os pedidos elegíveis por responder | `features/agent/tools.py` |
+| Modo tradutor: uma chamada ao LLM e uma repetição apenas para JSON inválido; recebe a pergunta atual e instruções, nunca resultados; resposta final montada pelo servidor | `assistant.py`, `answers.py`, `prompt.py` |
+| Recurso por palavras-chave quando o LLM está desligado ou fora do âmbito; erro/prazo do LLM apresenta indisponibilidade; JSON inválido duas vezes ou `tools: []` apresenta resposta fixa útil | `assistant.py`, `intents.py` |
 | Endpoint `POST /api/households/{household_id}/agent/messages` (corpo `AgentMessageIn`, resposta `AgentResponse`; `proposed_actions` só tem a proposta de um pedido de ação, ver abaixo). `require_access(Resource.agent, write)`: só inquilino; senhorio e operador 403 `forbidden_role`; não-membro e membership terminada 404 `household_not_found`; corpo inválido 400 `invalid_request` | `router.py` |
-| Providers **SIMULADOS** derivados de `contracts/fixtures.py`, só para a casa `fixtures.HOUSEHOLD` com `source_kind='demo'`; qualquer outra casa, período ou residente → «Não tenho dados» | `simulated.py` (`SimulatedProviders`, `EmptyProviders`) |
+| Providers reais de consumo, orçamento, recibo, aparelhos, comparação e explicação da atribuição; provider de notificações pendentes. Registo imutável `ProviderSet` composto com `dataclasses.replace`, sem dependência da ordem de lifespans. Casa real descarta proveniência simulada | `features/billing/agent_providers.py`, `features/notifications/agent_providers.py`, `features/agent/sources.py` |
 | LLM **desligado por omissão**: só há chamada com `AGENT_LLM_ENABLED=true` **e** `NVIDIA_API_KEY`; `get_complete` é uma dependência substituível (testes) | `config.py`, `router.py` |
+| `AGENT_LLM_SCOPE=demo` (omissão) limita o LLM a casas demo; `all` permite todas. Só a pergunta sai para a NVIDIA. `AgentResponse.interpreter` marca `llm` ou `rules`; histórico antigo fica sem selo | `config.py`, `router.py`, `MessageBubble.tsx` |
 
-Os números da casa de demonstração vêm todos das fixtures (alocação da Ana na fatura A, orçamento e gasto da Carla, total do recibo) e são mostrados como **SIMULADO**. O gasto do orçamento é o `spent_cents` da amostra do evento `alerts.threshold_crossed` das fixtures (o `Budget` só tem o limite).
+Quando não há registos de billing, os números da casa de demonstração vêm das fixtures (alocação da Ana na fatura A, orçamento e gasto da Carla, total do recibo) e são mostrados como **SIMULADO**. Havendo billing persistido, o provider de billing responde primeiro.
 
-**Limite dos dados SIMULADOS:** só cobrem o período `2026-11`. O período por omissão é o mês corrente, por isso a partir de 1 de dezembro de 2026 a resposta por omissão é «Não tenho dados» até existirem os *providers* reais de P4.
+**Limite dos dados SIMULADOS:** as fixtures só cobrem o período `2026-11`. Sem dados de billing nesse período, a resposta por omissão noutros meses é «Não tenho dados».
 
-Prazo total da resposta: `AGENT_TOTAL_TIMEOUT_S` (30 s; efetivo = mínimo entre este e `AGENT_LLM_TIMEOUT_S` × `AGENT_MAX_STEPS`). Ao esgotar, ou com qualquer erro inesperado do LLM, usa-se o recurso determinístico (log só com o tipo da exceção).
+Prazo do LLM: `AGENT_LLM_TIMEOUT_S` (20 s), limitado por `AGENT_TOTAL_TIMEOUT_S` (30 s). Ao esgotar ou falhar, usa-se o router de palavras-chave com aviso de indisponibilidade (log só com o tipo da exceção). Com LLM desligado por configuração, o router funciona diretamente sem aviso.
 
 ### IMPLEMENTADO — AGENT-03 (ações propostas com confirmação, refs #112)
 
@@ -117,7 +134,7 @@ Limites (por dispositivo, espelham `connectors/write_policy.py` sem o importar; 
 
 Honestidade: `confirmed` exige releitura (o contrato recusa o contrário); `uncertain` diz «Não repito a ação»; **SIMULADO** aparece em todas as mensagens da casa demo. Casas reais: sem diretório ficam sem dispositivos (recusa `no_device`); com diretório mas sem executor, `blocked` `executor_unavailable`.
 
-**Ligação com a P1 (PROPOSTA, fora desta feature):** registar em `app.state.agent_action_executor` um `ActionExecutor` (`async execute(action, confirmation) -> ActionExecutionResult`: aplica flag + grant + whitelist e `RuleWritePolicy` se quiser, escreve **uma vez**, relê, e devolve `confirmed` só com releitura) e em `app.state.agent_device_directory` um `DeviceDirectory` (`actuators(household_id) -> list[ActuatorDevice]`, ids internos; o id do MCP resolve-se no executor). Enquanto não existirem, uma casa real nunca executa.
+**Ligação com a P1 — IMPLEMENTADA para a lâmpada (`features/energy/kit_actuators.py`, registada no arranque do engine só com `HOME_BACKEND=mcp` e `ENERGY_HOUSEHOLD_ID`):** `KitLampDirectory` (a lâmpada do kit, id interno derivado do id MCP, divisão de `MCP_LAMP_ROOM_ID`) e `KitLampExecutor` (`McpHome.definir_lampada`: flag + grant + whitelist + releitura; guardas → `blocked`; erro MCP → `failed`; resto → `uncertain`; cores só do vocabulário `CORES`). Texto original da proposta: registar em `app.state.agent_action_executor` um `ActionExecutor` (`async execute(action, confirmation) -> ActionExecutionResult`: aplica flag + grant + whitelist e `RuleWritePolicy` se quiser, escreve **uma vez**, relê, e devolve `confirmed` só com releitura) e em `app.state.agent_device_directory` um `DeviceDirectory` (`actuators(household_id) -> list[ActuatorDevice]`, ids internos; o id do MCP resolve-se no executor). Enquanto não existirem, uma casa real nunca executa.
 
 Não há ainda os eventos `agent.action_confirmed`/`agent.action_executed` (só `agent.action_proposed`): o rasto completo está em `agent_action_log`. Uma execução interrompida (cancelamento do pedido) grava logo `executed/uncertain` com código `interrupted`; uma ação `confirmed` há mais de prazo do executor + 30 s (crash entre o COMMIT e o desfecho) é resolvida da mesma forma, de forma preguiçosa, na leitura e antes de verificar os limites (linha de log em `agent_action_log`). Nunca se reexecuta e o dispositivo fica bloqueado 300 s. A coluna `executed_at` (usada pelos limites) é sempre a hora do servidor; a do executor fica só em `execution_json` e, se fora de [confirmação − 5 s, agora + 5 s], o resultado é `uncertain/invalid_result`.
 
@@ -130,7 +147,7 @@ Consumidor `agent.budget_light` (nome permanente) de `alerts.threshold_crossed` 
 - **Privacidade (que lâmpada):** `ActuatorDevice.room_id` (novo, opcional). Primeiro uma lâmpada no quarto do morador; senão uma de zona comum, e a `rationale` avisa que a cor fica à vista de quem lá estiver (o morador decide); nunca a lâmpada de outro quarto nem uma de divisão desconhecida (`choose_bulb`, puro). A lâmpada da casa demo é a da sala (`room_id = ROOM_SALA`).
 - **Idempotente:** id `stable_id("agent.budget_light", evento, residente)`. Um limiar novo retira a proposta anterior ainda por confirmar (`system_reject`, `code="superseded"`). Evento com mais de `AGENT_ACTION_TTL_S` (600 s) ignorado. Uma casa real ignora eventos e dispositivos simulados.
 - **App:** a página Orçamento mostra a proposta aberta com «Mudar a cor» / «Agora não» e, depois, a `message` do servidor (SIMULADO etiquetado; sucesso só com releitura).
-- **Ressalva (runtime real):** sem o diretório e o executor da P1 registados em `app.state`, uma casa real não recebe propostas (sem lâmpada no diretório) ou fica `blocked` (`executor_unavailable`). A lâmpada física ainda não foi validada à mão.
+- **Ressalva (runtime real):** o diretório e o executor da lâmpada do kit existem (testados só com o FakeMcp). Sem `HOME_BACKEND=mcp` + `ENERGY_HOUSEHOLD_ID` não se registam e uma casa real fica `blocked` (`executor_unavailable`); sem `MCP_LAMP_ROOM_ID` a lâmpada não tem divisão e nunca recebe a cor do orçamento. **A lâmpada física ainda não foi validada à mão** (guia: ALR-06).
 
 ### IMPLEMENTADO — AGENT-03b (propostas a partir de alertas de conforto, refs #112)
 
@@ -151,22 +168,26 @@ Cada `POST …/agent/messages` grava a **troca** (a pergunta e a resposta) no hi
 - **Nunca vai para o LLM (P-06):** o histórico serve só para a app o mostrar. O assistente e o LLM recebem apenas a pergunta atual (teste dedicado).
 - O histórico guarda o texto da resposta tal como foi mostrado (inclui o rótulo **SIMULADO** e o rodapé `Fonte:`); não guarda números à parte.
 
+### IMPLEMENTADO — providers reais e conversa na app
+
+`BillingAgentProviders` reutiliza `closing.period_inputs`, `tariff`, `budgets.status` e as alocações finalizadas. O recibo mais recente considera apenas a revisão corrente (`status='finalized'`). Os Protocols síncronos usam a ligação SQLite partilhada sob o lock de `Database`, com consultas curtas só de leitura; não abrem transação `BEGIN IMMEDIATE`. A composição regista o `ProviderSet` em `app.state.agent_providers` no lifespan de billing. O residente continua a vir exclusivamente da membership/token. O contrato partilhado novo `contracts/agent_providers.py` é **PROPOSTA** aditiva a aprovar pela P5 (#157, item 15); `features/agent/providers.py` reexporta os nomes antigos.
+
+`pages/AssistantPage.tsx` apresenta o histórico ao abrir, envia mensagens e carrega ações propostas pendentes. Respostas recentes mostram «interpretado por IA» ou «interpretado por regras»; mensagens históricas podem não ter selo. As respostas mantêm proveniência e rótulo REAL/SIMULADO.
+
 ### PLANEADO
 
-- *Providers* reais de P4 (consumo, orçamento, recibos) e P1 (energia), registados no arranque sem a feature importar outra; trocar `simulated.py`.
 - AGENT-04 (automações), `who_is_home`, `explain_difference`, `list_pending_confirmations`.
-- **P-06** (que dados de consumo podem sair para o fornecedor de LLM): decidir antes de ligar `AGENT_LLM_ENABLED` em qualquer ambiente.
-- Frontend `AssistantPage`.
+- **P-06:** **PROPOSTA** — em modo tradutor apenas a pergunta sai para a NVIDIA; nunca dados da casa, resultados ou histórico. `AGENT_LLM_SCOPE=demo` por omissão; aprovação da equipa continua pendente.
 
 ### Pedidos pendentes (para a revisão do contrato e do `core/`)
 
-1. **`AgentToolResult` pobre:** sem `period`, `confidence` nem linhas de detalhe; «porque pago mais?» precisa de linhas do recibo.
-2. **Só três ferramentas** em `AgentTool`; AGENT-01 pede também aparelhos, explicação da atribuição e notificações pendentes.
+1. Aditivo **PROPOSTA P5**: `AgentTool` acrescenta `top_appliances` e `consumption_change`; `AgentToolResult` acrescenta linhas por aparelho, totais e diferença mensal; `AgentResponse.interpreter` marca `llm`/`rules`.
+2. `AgentTool` não inclui explicação da atribuição nem notificações pendentes; continuam planeadas.
 3. **`receipt` exige `bill_id`:** hoje o `ReceiptProvider.latest_bill` resolve «o último recibo» (PROPOSTA a rever).
-4. **Interface dos *providers*:** os `Protocol` vivem em `features/agent/providers.py`; propor movê-los para `contracts/agent.py` e registá-los em `app.state`.
+4. **Interface dos *providers*:** agora em `contracts/agent_providers.py` (**PROPOSTA #157, item 15**, aprovação P5); a feature agente mantém reexport compatível.
 5. **`AgentMessage` sem `resident_id`:** o histórico é por residente (a tabela guarda-o; o contrato não o expõe, o que é o desejado: só o próprio lê as suas). A linha `GET …/agent/messages` já consta de `contracts.md` (estado IMPLEMENTADO; falta a revisão da P5).
 6. **`AgentResponse` sem `used_llm`/`degraded`:** a app não distingue resposta do LLM de recurso determinístico.
-7. **Definições do LLM** em `features/agent/config.py` (`features/engine/config.py` é REMOVE): decidir se ficam aqui ou passam para `core/config`.
+7. **Definições do LLM** em `features/agent/config.py`; o assistente continua a ler `NVIDIA_API_KEY` e `NVIDIA_MODEL`.
 8. **OpenAPI:** o FastAPI anuncia 422 `HTTPValidationError` para corpos inválidos, mas `core/errors.py` responde 400 `invalid_request` (vale para todas as rotas).
 9. **Rota por casa:** o caminho de `contracts.md` era `POST /api/agent/messages`; a rota é por casa, como as outras (D1).
 10. **AGENT-03 (contrato):** falta `ErrorCode` para `action_not_found`, `action_not_pending` e `action_expired` (hoje strings); `AgentActionView` é local a `features/agent/actions.py` e devia estar em `contracts/agent.py`; faltam os eventos `agent.action_confirmed` e `agent.action_executed` e o *schema* da proveniência (`origin`) em `ProposedAction`.

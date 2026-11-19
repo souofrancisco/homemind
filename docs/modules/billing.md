@@ -63,6 +63,11 @@ atual à API da casa.
 | **B — perguntar** (recomendada pelo PDF) | Cria pedido na aplicação. «É minha»: basta quem assume. Atribuir a outro: pelo menos metade dos moradores aceita (fecha antes se o próprio assumir). Inconclusivo ao fim de 24 h → por igual (D-32) | P0 |
 | **C — por presença** | Divide pelos que estavam em casa (usa presença de P2) | P1 |
 
+**APP-03 #96 / P-18 (PROPOSTA):** o pedido pode incluir uma dica de dono provável só quando o
+aparelho tem vencedor identificado com confiança ≥ 0,8 e `appliance_owner_resident_id` (dono
+declarado em `Appliance.ownership`) é um inquilino elegível. A dica não usa presença, horários,
+histórico nem altera a votação D-32. Sem todas estas condições, os campos da dica ficam `None`.
+
 Só se pergunta quando o custo estimado **do consumo** (utilização completa do aparelho) é ≥ `ask_threshold_cents` (omissão 0,50 €, configurável por casa em `HouseholdPolicy`); abaixo, sem custo estimável ou com a regra A, vai direto para a conta comum. A pergunta pode sair com o consumo ainda a decorrer, logo que passa o limiar (D-32).
 
 ## Cálculo da fatura
@@ -119,6 +124,8 @@ O sumário executivo cita 21,20 €; o corpo do documento (§6.2 e §7.1) cita 4
 
 ## Orçamentos (P0 → P1)
 
+**IMPLEMENTADO — integração com o assistente:** `features/billing/agent_providers.py` fornece consumo, orçamento, recibo e custo por aparelho. `top_appliances` reutiliza `budgets.month_spend`, `closing.period_inputs`, `tariff.value_millicents`, `allowance.apply` e, em mês fechado, a evidência/alocação finalizada; as linhas reconciliam ao total do morador. `consumption_change` compara dois totais mensais e as variações por aparelho sem inferir causas. Leituras síncronas e só de leitura, sob o lock SQLite partilhado. O registo é feito em `app.state.agent_providers`. O protocolo `ApplianceProvider` é aditivo **PROPOSTO à P5** em `contracts/agent_providers.py`.
+
 - Orçamento pessoal: limiares 50 / 80 / 100 % (omissão do PDF), notificação por limiar **uma só vez** por período (`last_threshold_notified`).
 - O gasto comparado inclui **todos os custos** (parte do termo fixo + resíduo + consumo individual), isto é, o valor que o morador vai pagar (D-31).
 - Previsão do fim do mês (ALERT-02): projeção linear do gasto acumulado, com intervalo de incerteza; ver «Previsão e tarifário» abaixo. Algoritmos mais complexos ficam fora do MVP.
@@ -136,7 +143,7 @@ Todos produzem `alerts.alert_raised`; o módulo `notifications` decide destinat�
 
 ## Ficheiros existentes reutilizáveis
 
-Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `core/errors.py`, o relógio injetado dos testes do motor antigo (`features/engine/tests/`) e `TARIFA_EUR_KWH` de `core/config.py`.
+Nenhum de domínio. O módulo usa o padrão de feature (`router.py`, `tests/`), `core/errors.py` e relógio injetado nos testes; tarifas vêm do contrato e configuração da casa. Os testes antigos do motor e `TARIFA_EUR_KWH` foram removidos na BASE-04.
 
 ## Estado
 
@@ -150,15 +157,16 @@ Nenhum de domínio. Reaproveitar o padrão de feature (`router.py`, `tests/`), `
 | Regra da sala por data (política versionada, HOUSE-04 #87, `features/billing/rules.py`, migração `0108`): o atribuidor decide cada consumo com a versão do dia em que começou | IMPLEMENTADO (ver «Regras da casa versionadas») |
 | Entrada da fatura (BILL-01): `BillIn` → pré-visualização → rascunho em `billing_bill` (migração `0100`), `billing.bill_created`, leitura por papel | IMPLEMENTADO (`features/billing/{bills,router}.py`) |
 | Fecho do mês (BILL-04, `features/billing/closing.py`, migração `0102`): finalizar (parcelas imutáveis, Σ = total ao cêntimo, `409` ao repetir), correções por revisão (a anterior fica `superseded`), resumo do senhorio por quarto e recibo do inquilino | IMPLEMENTADO |
+| Correção da fatura pelo senhorio na app (BILL-04): «Corrigir fatura» numa fatura finalizada abre o mesmo formulário já preenchido; pré-visualizar e confirmar cria a revisão seguinte (`POST …/revisions`), a anterior fica «Substituída» | IMPLEMENTADO |
 | Orçamento pessoal e avisos 50/80/100 % (ALERT-01, `features/billing/budgets.py`, migração `0103`): gasto com todos os custos (D-31), desconhecido sem preço, um aviso por limiar e ciclo (ao saltar vários avisa só o mais alto), reset explícito ao redefinir; reavaliado em cada atribuição, fecho de fatura e a cada 60 s. `alerts.threshold_crossed` → aviso pessoal (consumidor `notifications.budget_threshold`) | IMPLEMENTADO |
 | Picos nas zonas comuns (ALERT-03, `features/billing/peaks.py`, consumidor `billing.peaks`, migração `0105`): por tomada, a partir de `energy.reading_recorded`; > 1,5 kW durante > 30 min (leituras utilizáveis; lacuna > 10 min recomeça a contagem) → `alerts.alert_raised` (`kind=peak`, potência, início do episódio). Um aviso por incidente (só rearma depois de > 30 min abaixo do limite). Tomada de zona comum → `room_id`; sem divisão ou não registada → «pico de consumo por identificar»; quarto e `main_meter` nunca avisam. Aparelho só com um único consumo a decorrer identificado com confiança ≥ 0,8 e de âmbito `common`. Aviso da casa pelo consumidor `notifications.peak_alert` | IMPLEMENTADO |
 | Gasto anormal nas zonas comuns (ALERT-03, `features/billing/anomalies.py`, consumidor `billing.anomalies`, migração `0121`): por tomada **de zona comum** (quartos, contadores gerais e tomadas sem divisão nunca), energia do dia = Σ potência × tempo entre leituras `ok` (intervalos ≤ 10 min; lacunas não se preenchem) e tempo coberto, no fuso da casa. Habitual = mediana dos dias com ≥ 20 h de leituras nos 7 anteriores (mínimo 3; sem isso não avisa). Avisa quando hoje (até agora) ≥ 2× o habitual **e** ≥ +1 kWh, uma vez por tomada e dia: `alerts.alert_raised` `kind=anomaly` (`warning`) → `peak_alert` só para os moradores (o senhorio não vê gastos diários) | IMPLEMENTADO |
 | Lâmpada do orçamento (ALERT-06, `contracts.billing.budget_light`): `BudgetStatus.light` = verde < 80 %, âmbar (`amarelo` de `CORES`) a 80 %, vermelho a 100 %, com `label` em texto (não depende só da cor); sem orçamento ou gasto desconhecido → `null`, nunca verde por omissão. Só para a lâmpada do **próprio quarto** (nunca a de uma zona comum: o orçamento é pessoal) | IMPLEMENTADO (cor na API/app) |
-| Cor do orçamento na lâmpada (ALERT-06, consumidor `agent.budget_light`, ver [agent.md](agent.md)): a 80 % / 100 % propõe-se ao **próprio** morador pôr uma lâmpada em âmbar / vermelho; nunca automático. Lâmpada do seu quarto primeiro; senão uma de zona comum, com o aviso de que fica à vista; nunca a de outro quarto. A página Orçamento mostra a proposta («Mudar a cor» / «Agora não») e o desfecho honesto | IMPLEMENTADO (casa demo: executor SIMULADO). Lâmpada **real**: depende do diretório e do executor da P1 (flag + grant MCP-04 + releitura); sem eles fica `blocked`. Validação manual com o kit: por fazer |
+| Cor do orçamento na lâmpada (ALERT-06, consumidor `agent.budget_light`, ver [agent.md](agent.md)): a 80 % / 100 % propõe-se ao **próprio** morador pôr uma lâmpada em âmbar / vermelho; nunca automático. Lâmpada do seu quarto primeiro; senão uma de zona comum, com o aviso de que fica à vista; nunca a de outro quarto. A página Orçamento mostra a proposta («Mudar a cor» / «Agora não») e o desfecho honesto | IMPLEMENTADO (casa demo: executor SIMULADO). Lâmpada **real**: diretório e executor do kit IMPLEMENTADOS (`features/energy/kit_actuators.py`; flag + grant MCP-04 + releitura; divisão em `MCP_LAMP_ROOM_ID`), testados só com o FakeMcp. Validação manual com o kit: **por fazer** (guia ALR-06) |
 | Quartos frios (ALERT-06, `features/billing/comfort.py`, migração `0120`): consumidor `billing.cold_rooms` de `sensor.reading_recorded` (só temperatura `ok` com quarto `bedroom`; `unknown`/`stale`/sem quarto/sala ignorados). Guarda só o agregado da noite (22:00–08:00, fuso da casa); noite fria = média < 18 °C; ≥ 3 noites frias nas últimas 7 completas → `alerts.cold_room` para o inquilino do quarto, uma vez por janela. Consumidor P3 `notifications.cold_room` → `comfort_alert` pessoal (nunca senhorio), sem valores de plafond (aviso «ainda tens X kWh do plafond»: PLANEADO) | IMPLEMENTADO |
 | Plafond solidário de aquecimento (BILL-03, `features/billing/allowance.py`, migração `0106`): ver «Plafond solidário» abaixo | IMPLEMENTADO |
 | Contestar e reemitir (BILL-06, `features/billing/contestations.py`, migração `0130`): o inquilino contesta o **próprio** recibo (opcionalmente um consumo atribuído a si; uma aberta por fatura); só o senhorio decide, sempre com justificação. Rejeitar não muda nada. Aceitar passa o consumo contestado para a conta comum (`manual`, auditado com o senhorio como autor; nunca pior do que a divisão igual), corrige opcionalmente os dados da fatura e **reemite sempre como nova revisão** (a anterior fica `superseded`), guardando o antes/depois da parcela. Correções diretas (`/revisions`) levam as contestações abertas para a nova revisão. O senhorio vê quarto, motivo e decisão, nunca o consumo nem presença. `billing.contestation_changed` → consumidor P3 `notifications.contestation` (aberta: aviso aos senhorios sem o motivo; decidida: aviso a quem contestou com justificação e antes/depois). Respostas tardias a «de quem é esta conta?» não mudam faturas fechadas (o atribuidor ignora-as após o prazo). **App (página Faturas):** o inquilino contesta o recibo («Não concordo com este recibo») ou um consumo na explicação («Este consumo não é meu») e vê o estado e a decisão; o senhorio vê a lista e aceita/rejeita com justificação. Corrigir os dados da fatura ao aceitar (`bill`) só pela API | IMPLEMENTADO |
-| Previsão do fim do mês e tarifário simples/bi-horário (ALERT-02, `features/billing/{budgets,tariff}.py`, migração `0108`): ver «Previsão e tarifário» abaixo | IMPLEMENTADO (API; a página do orçamento ainda não mostra a previsão) |
+| Previsão do fim do mês e tarifário simples/bi-horário (ALERT-02, `features/billing/{budgets,tariff}.py`, migração `0107`): ver «Previsão e tarifário» abaixo | IMPLEMENTADO (API e app: a página Orçamento mostra a previsão e o intervalo, ou que ainda faltam dados; o senhorio define o tarifário na página Faturas, `components/billing/TariffCard.tsx`) |
 | Fecho valorizado à hora (bi-horário na repartição da fatura real) | PLANEADO: o fecho reparte o total real por kWh, sem preço por hora |
 
 ## Previsão e tarifário (ALERT-02)
@@ -204,7 +212,7 @@ Puros, com relógio simulado e sem rede/hardware: fixtures, regra A/B/C, prazo d
 
 ## Plafond solidário de aquecimento (BILL-03)
 
-**IMPLEMENTADO.** O aquecimento básico de cada quarto é pago por todos; só o excesso é individual (v5.1 §8). Premissas:
+**IMPLEMENTADO.** **É uma opção do senhorio, por quarto** (`room.included_wh`; **0 = sem plafond**, e então cada um paga o seu quarto, que é a regra 1: «o teu quarto é teu»). Quando o senhorio define um plafond, o aquecimento básico desse quarto é pago por todos e só o excesso é individual (v5.1 §8). Os 30 kWh que aparecem na demo vêm dos dados de demonstração, não são um valor obrigatório. Premissas:
 
 | Premissa | Regra |
 |---|---|
@@ -221,7 +229,9 @@ Exemplo do PDF (v5.1 §20, teste `test_exemplo_do_pdf_excesso_de_330_kwh`): fatu
 - linha `heating_allowance`: 7,5 kWh = 1,20 € para cada morador;
 - total da Ana: 69,60 €; total de cada um dos outros: 16,80 €.
 
-**PLANEADO:** o aviso privado «ainda tens X kWh do plafond» junto do alerta de quarto frio; e quem pode alterar `included_wh` depois de criado o quarto, e com que efeito (só nas faturas seguintes).
+**IMPLEMENTADO (seguimentos):**
+- **Editar o plafond** (migração `0109_billing_room_allowances.sql`, `features/billing/room_allowances.py`): só o senhorio, `PUT /api/households/{id}/room-allowances/{room_id}` `{included_wh}` (0 = sem plafond). Vale a partir do dia 1 do mês seguinte, por isso nunca muda o mês em curso nem faturas fechadas; até lá substitui-se. O limite de cada fatura soma, mês a mês, o plafond desse mês (`closing.monthly_allowance` + `allowance.period_limit`). `GET …/room-allowances` (todos os membros) dá o plafond deste mês e a mudança agendada, e a página da casa mostra-os em cada quarto. `RoomView.included_wh` continua a ser o valor da criação.
+- **«Ainda tens X kWh do plafond»** no aviso privado de quarto frio (ALERT-06): `ColdRoomData.allowance_left_wh` = plafond do mês menos o aquecimento provado já coberto, com a mesma regra do fecho (`budgets.allowance_left`). Sem plafond (`None`) o aviso não promete nada; com o plafond gasto diz que já foi usado. Nunca mostra euros.
 
 
 ## Rastreabilidade financeira e retenção (PRIV-04)
@@ -235,11 +245,23 @@ Exemplo do PDF (v5.1 §20, teste `test_exemplo_do_pdf_excesso_de_330_kwh`): fatu
 | Financeira | consumos (`energy.step_detected`, `energy.consumption_*`), perguntas e votos, atribuições, faturas, parcelas, contestações, avisos de orçamento | **nunca apagada automaticamente**; a base de dados recusa DELETE/UPDATE (trigger, migração `0004`). Prazo legal de conservação: por fixar com o DPO (P-08) | IMPLEMENTADO (proteção) / PLANEADO (prazo) |
 | Telemetria em bruto | `energy.reading_recorded`, `sensor.reading_recorded` | `RETENTION_TELEMETRY_DAYS` (omissão **90**, mínimo 62 para o mês corrente e o anterior; `0` desliga). Não se apaga um evento que um consumidor ainda está a tentar processar | IMPLEMENTADO; prazo PROPOSTA |
 | Agregados diários dos alertas | `alerts_device_day`, `alerts_room_night` | o mesmo prazo | IMPLEMENTADO |
-| Presença | `presence.*` | PRIV-03 (#51) | fora desta issue |
+| Presença | `presence.*` | PRESENCE_RETENTION_DAYS (omissão **30**, PROPOSTA): brutos passam a agregados diários sem horários; ver [presence.md](presence.md) | IMPLEMENTADO (PRIV-03 #51); prazo PROPOSTA |
 | Cópia da presença na faturação (regra C) | `billing_presence_state`, `billing_occupancy` (migração `0111`) | apagada pelo próprio consumidor `billing.presence` ao fim de **40 dias** (fica só o último estado ainda em vigor) | IMPLEMENTADO (BILL-07) |
 | Operacional | notificações, alertas, automações, agente | sem expurgo (o histórico do assistente já tem 50 mensagens/30 dias, P-25) | PLANEADO |
 
-O expurgo (`features/retention/purge.py`) corre 1 min após o arranque e de 6 em 6 h, em lotes de 5000 por transação; no log só ficam contagens. **Anonimização:** PLANEADA (exige base legal por categoria, P-08); nenhum registo financeiro é reescrito.
+O expurgo (`features/retention/purge.py`) corre 1 min após o arranque e de 6 em 6 h, em lotes de 5000 por transação; no log só ficam contagens.
+
+**Anonimização de ex-moradores (IMPLEMENTADO, DESLIGADA por omissão; `features/retention/anonymize.py`, migração `0500`).** Liga-se com `RETENTION_ANONYMIZE_AFTER_DAYS` (0 = desligada; mínimo 30) quando a equipa/DPO fixar o prazo (P-08). Abrange quem não tem nenhum contrato aberto e cujo último contrato acabou há mais desse prazo; quem ainda mora numa casa nunca é tocado. Corre no ciclo da retenção, uma pessoa por transação (reconfirmada dentro da transação). Muda: nome → «Ex-morador XXXX»; `auth_subject` → `NULL` (se voltar, é um residente novo); email dos convites → `anonimizado`; apaga a conversa com o assistente, as notificações pessoais, as leituras e as preferências. **Fica** (evidência financeira): o id em faturas, parcelas, atribuições, votos, contestações (incluindo o motivo escrito) e propostas de regra. **Limitações:** o registo de eventos é imutável, por isso o texto de notificações antigas lá guardado não se reescreve; a presença é da PRIV-03 (#51): `features/presence/retention.py` elimina os dados de presença de quem revoga ou sai.
+
+**Prazos — PROPOSTA para a equipa/DPO decidir (P-08), nada disto é parecer jurídico:**
+
+| Dados | Proposta | Porquê |
+|---|---|---|
+| Faturas, parcelas, atribuições, votos, contestações | conservar enquanto houver obrigação contabilística/fiscal ou litígio possível; prazo exato pelo DPO | evidência de cada cobrança (hoje nunca se apagam) |
+| Leituras em bruto (energia, sensores) | 90 dias (`RETENTION_TELEMETRY_DAYS`, ativo) | o recibo não depende delas |
+| Dados pessoais de ex-moradores | anonimizar 90 dias após o fim do contrato (`RETENTION_ANONYMIZE_AFTER_DAYS=90`, hoje desligado) | tempo para contestar a última fatura |
+| Conversa com o assistente | 30 dias / 50 mensagens (já ativo, P-25) | — |
+| Presença | brutos 30 dias (`PRESENCE_RETENTION_DAYS`, ativo, PROPOSTA); agregados e backups por decidir ([presence.md](presence.md)) | — |
 
 **Logs (IMPLEMENTADO, `core/redact.py`):** todos os registos do processo (app e uvicorn) passam por uma *record factory* que mascara `Bearer`, chaves/tokens/passwords (`chave=valor` e JSON), `?code=`/`&state=` do OAuth, credenciais em URLs, URLs RTSP inteiros, MACs, emails e UUIDs (ficam os primeiros 8 caracteres). Rede de segurança: o código continua a não registar estes dados. Frames de vídeo nunca são gravados (PRIV-02).
 

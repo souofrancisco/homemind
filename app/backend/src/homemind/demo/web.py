@@ -20,13 +20,30 @@ import subprocess
 import sys
 import time
 from contextlib import closing
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 import httpx
 
 from homemind.contracts import fixtures as fx
+from homemind.contracts.common import stable_id
+from homemind.contracts.devices import (
+    ApplianceOwnership,
+    ApplianceScope,
+    Device,
+    DeviceKind,
+    DeviceRole,
+    DeviceSource,
+    PowerUnit,
+    SignaturePattern,
+)
+from homemind.contracts.household import MembershipRole, Room, RoomKind
+from homemind.core.access import Grant, HouseholdAccess
 from homemind.demo.cli import DEMO_ROOT, FILE_NAME, DemoStore
+from homemind.demo.scenario import DemoClock, kettle, kettle_signature
+from homemind.features.appliances import repo as appliance_repo
+from homemind.features.households.repo import insert_room
 
 APP = Path(__file__).resolve().parents[4]
 WEB_ROOT = APP / ".demo-web"
@@ -71,26 +88,118 @@ def prepare() -> str:
     source = DEMO_ROOT / FILE_NAME
     if not source.exists():
         raise WebDemoError("base de demo em falta: correr `make demo-prepare`")
-    DemoStore(DEMO_ROOT)._guard(existing=True)  # a original tem de estar íntegra e sem WAL
+    DemoStore(DEMO_ROOT)._guard(existing=True)  # validar a original; nunca aberta para escrita
     WEB_ROOT.mkdir(parents=True, exist_ok=True)
     os.chmod(WEB_ROOT, 0o777)  # o utilizador `app` do contentor tem de criar WAL/SHM
     tmp = WEB_ROOT / f".new-{secrets.token_hex(4)}.sqlite3"
+    seed_root = WEB_ROOT / f".scenario-{secrets.token_hex(4)}"
+    now = datetime.now(UTC).replace(second=0, microsecond=0)
+    # O cenário oficial dura 160 min; termina 15 min antes do arranque do emissor.
+    store = DemoStore(seed_root, DemoClock(now - timedelta(minutes=175)))
     try:
+        store.reset()
+        source = store.path
         with (
             closing(sqlite3.connect(f"{source.as_uri()}?mode=ro", uri=True)) as src,
             closing(sqlite3.connect(tmp)) as dst,
         ):
+            dst.row_factory = sqlite3.Row
             src.backup(dst)  # leitura da original; nada é escrito nela
             dst.execute(
                 "CREATE TABLE demo_web_marker (id INTEGER PRIMARY KEY, token TEXT NOT NULL)"
             )
             dst.execute("INSERT INTO demo_web_marker VALUES (1, ?)", (WEB_MARKER,))
+            _seed_live_catalog(dst, now - timedelta(minutes=175))
+            _seed_history(dst, now - timedelta(minutes=175))
             dst.commit()
         os.chmod(tmp, 0o666)
         os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
+        for suffix in ("", "-wal", "-shm"):
+            Path(f"{store.path}{suffix}").unlink(missing_ok=True)
+        seed_root.rmdir()
     return "criada"
+
+
+def _seed_live_catalog(conn: sqlite3.Connection, at: datetime) -> None:
+    """Catálogo real da cópia web, com proveniência SIMULADA e UUIDs estáveis."""
+    plug_id = stable_id("demo-web-device", "extensao-sala")
+    # A sessão curta gera poucos cêntimos; o limiar da casa de demonstração torna
+    # visível a confirmação sem alterar as regras nem o cálculo de custos.
+    conn.execute("UPDATE household SET ask_threshold_cents=2 WHERE id=?", (str(fx.HOUSEHOLD),))
+    # Na demo web cada um paga só o seu quarto: sem plafond solidário (0 = sem plafond). O cenário
+    # oficial offline mantém os 30 kWh do exemplo do PDF; o plafond é opção do senhorio por quarto.
+    conn.execute(
+        "UPDATE room SET included_wh = 0 WHERE household_id=? AND kind='bedroom'",
+        (str(fx.HOUSEHOLD),),
+    )
+    kitchen_id = stable_id("demo-web-room", "cozinha")
+    insert_room(
+        conn,
+        Room(
+            id=kitchen_id,
+            household_id=fx.HOUSEHOLD,
+            name="Cozinha",
+            kind=RoomKind.common,
+        ),
+    )
+    plug = Device(
+        id=plug_id,
+        household_id=fx.HOUSEHOLD,
+        room_id=fx.ROOM_SALA,
+        name="Tomada da extensão da sala (SIMULADA)",
+        kind=DeviceKind.plug,
+        role=DeviceRole.room_meter,
+        source=DeviceSource.fake,
+        power_unit=PowerUnit.W,
+        online=True,
+        last_seen_at=at,
+    )
+    appliance_repo.register_device(conn, plug)
+    heater = fx.heater()
+    shared_kettle = kettle().model_copy(
+        update={
+            "ownership": ApplianceOwnership(scope=ApplianceScope.common, home_room_id=kitchen_id)
+        }
+    )
+    for appliance in (heater, shared_kettle):
+        appliance_repo.register_appliance(conn, appliance, at)
+        if appliance.id == fx.HEATER:
+            signature = fx.heater_signature().model_copy(
+                update={
+                    "watts_mean": 2040,
+                    "duration_typical_s": 180,
+                    "pattern": SignaturePattern.short,
+                    "updated_at": at,
+                }
+            )
+        else:
+            signature = kettle_signature().model_copy(
+                update={"watts_mean": 1820, "duration_typical_s": 155, "updated_at": at}
+            )
+        appliance_repo.save_appliance_signature(conn, fx.HOUSEHOLD, signature)
+        appliance_repo.set_meter(
+            conn,
+            HouseholdAccess(
+                household_id=fx.HOUSEHOLD,
+                resident_id=fx.OPERATOR,
+                membership_id=stable_id("membership", "operator"),
+                role=MembershipRole.operator,
+                room_id=None,
+                grant=Grant.diagnostic,
+            ),
+            appliance.id,
+            plug_id,
+            at + timedelta(microseconds=1),
+        )
+
+
+def _seed_history(conn: sqlite3.Connection, at: datetime) -> None:
+    """Acrescenta à cópia web dados históricos determinísticos, todos SIMULADOS."""
+    from homemind.demo.web_seed import seed_history
+
+    seed_history(conn, at)
 
 
 def link(username: str, sub: str) -> None:

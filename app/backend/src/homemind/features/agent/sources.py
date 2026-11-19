@@ -24,6 +24,7 @@ from fastapi import Depends, Request
 from homemind.contracts import fixtures as fx
 from homemind.features.agent.providers import (
     REGISTRY_ATTR,
+    ApplianceProvider,
     BudgetProvider,
     ConsumptionProvider,
     ProviderSet,
@@ -63,6 +64,19 @@ def _keep(value: ToolValue | None, real_house: bool) -> ToolValue | None:
     if value is not None and real_house and value.provenance.simulated:
         return None
     return value
+
+
+class _ApplianceChain:
+    def __init__(self, provider: ApplianceProvider | None, real_house: bool):
+        self._provider, self._real = provider, real_house
+
+    def top_appliances(self, household_id, resident_id, period, limit=5):
+        if self._provider is None:
+            return None
+        value = self._provider.top_appliances(household_id, resident_id, period, limit)
+        if value is not None and self._real and value[0].provenance.simulated:
+            return None
+        return value
 
 
 class _ConsumptionChain:
@@ -117,7 +131,7 @@ class _ReceiptChain:
 
 def resolve(
     registered: ProviderSet, household_id: UUID, source_kind: str
-) -> tuple[ConsumptionProvider, BudgetProvider, ReceiptProvider]:
+) -> tuple[ConsumptionProvider, BudgetProvider, ReceiptProvider, ApplianceProvider]:
     """Cadeias de consumo, orçamento e recibo para esta casa (ver o módulo)."""
     demo_data = household_id == fx.HOUSEHOLD and source_kind == "demo"
     real_house = source_kind != "demo"
@@ -131,4 +145,5 @@ def resolve(
         _ConsumptionChain(consumption or [_EMPTY], real_house),
         _BudgetChain(budget or [_EMPTY], real_house),
         _ReceiptChain(receipt or [_EMPTY], real_house),
+        _ApplianceChain(registered.appliances, real_house),
     )

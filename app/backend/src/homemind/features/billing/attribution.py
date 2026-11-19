@@ -19,12 +19,13 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from homemind.contracts.billing import Attribution, AttributionMethod, AttributionTarget
-from homemind.contracts.common import Audit, Origin, Provenance, ValueKind, stable_id
+from homemind.contracts.common import Audit, Confidence, Origin, Provenance, ValueKind, stable_id
 from homemind.contracts.energy import ConsumptionEvent, ConsumptionStatus, LocationKind
 from homemind.contracts.household import CommonAreaRule, HouseholdPolicy
 from homemind.contracts.notification import ConfirmationRequest
 
 SYSTEM = "billing"
+LIMIAR_CONFIANCA_DONO_PROVAVEL: Confidence = 0.8
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,7 @@ def decide(
     tenants: Sequence[UUID],
     now: datetime,
     sole_occupant: tuple[UUID, float, bool] | None = None,
+    appliance_name: str | None = None,
 ) -> Decision:
     """`room_resident`: quarto → morador ativo; `tenants`: inquilinos ativos (quem responde).
     `sole_occupant` (regra C): (morador, confiança, prova simulada) se só ele estava em casa."""
@@ -74,12 +76,25 @@ def decide(
             )
         return Decision(_attribution(event, now, AttributionMethod.equal_fallback, None))
     if worth_asking(event, policy) and tenants:
+        likely_owner = event.appliance_owner_resident_id
+        match_confidence = event.match.confidence
+        if (
+            event.match.appliance_id is None
+            or match_confidence is None
+            or match_confidence < LIMIAR_CONFIANCA_DONO_PROVAVEL
+            or likely_owner not in tenants
+        ):
+            likely_owner = None
+            match_confidence = None
         return Decision(
             confirmation=ConfirmationRequest(
                 consumption_event_id=event.id,
                 estimated_cost_cents=event.cost_estimate.cents,
                 eligible_resident_ids=list(tenants),
                 expires_at=now + timedelta(hours=policy.ask_timeout_hours),
+                appliance_name=appliance_name[:120] if appliance_name else None,
+                likely_owner_resident_id=likely_owner,
+                match_confidence=match_confidence,
             )
         )
     if event.status is ConsumptionStatus.ongoing:

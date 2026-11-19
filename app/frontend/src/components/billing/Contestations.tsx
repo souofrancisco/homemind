@@ -107,7 +107,7 @@ function Decide({ householdId, c, onDone }: { householdId: string; c: LandlordCo
         {c.contests_consumption ? " e passa o consumo contestado para a conta comum, por igual." : "."}
       </Text>
       <Group>
-        <Button size="xs" color="green" disabled={!resolution.trim()} loading={busy} onClick={() => void decide("accepted")}>Aceitar e reemitir</Button>
+        <Button className="conta-keep-color" size="xs" color="green" disabled={!resolution.trim()} loading={busy} onClick={() => void decide("accepted")}>Aceitar e reemitir</Button>
         <Button size="xs" color="gray" variant="light" disabled={!resolution.trim()} loading={busy} onClick={() => void decide("rejected")}>Rejeitar</Button>
       </Group>
     </Stack>

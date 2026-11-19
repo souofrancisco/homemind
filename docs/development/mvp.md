@@ -51,7 +51,7 @@ Casa de 4 moradores: Ana, Bruno, Carla e Diogo (os nomes da tabela de fatura do 
 | Presença | Registo manual real; câmara só se acesso à imagem comprovado | Passagens simuladas |
 | Fatura e recibos | Cálculo real em código sobre dados com proveniência; **fatura do mês de demonstração é simulada** | Rótulo SIMULADO nos recibos |
 
-**Regra:** nenhum passo se descreve como REAL no pitch sem PASS no [guia de validação](guia-validacao-manual.md) nesse dia (regra já em uso no ObjectOS). A integração MCP continua a ser parte central (leituras reais já provadas; escritas e consumo por validar — ver [integrations/altice-mcp.md](../integrations/altice-mcp.md)).
+**Regra:** nenhum passo se descreve como REAL no pitch sem PASS no [guia de validação](guia-validacao-manual.md) nesse dia. A integração MCP continua a ser parte central (leituras reais já provadas; escritas e consumo por validar — ver [integrations/altice-mcp.md](../integrations/altice-mcp.md)).
 
 ## Plano B completo (sem acesso ao hardware)
 

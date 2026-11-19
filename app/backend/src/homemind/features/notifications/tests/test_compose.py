@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from homemind.contracts.common import Origin
 from homemind.contracts.notification import (
     ConfirmationChoice,
+    ConfirmationRequest,
     NotificationKind,
     NotificationScope,
     NotificationSeverity,
@@ -101,6 +102,67 @@ def test_confirmacao_sem_nome_nem_custo_e_simulada():
     n = _confirmation(confirmation_request(name=None, cost=None), origin=Origin.simulated)
     assert n.body == "Um aparelho está ligado numa zona comum (SIMULADO)."
     assert "estimados" not in n.body
+
+
+def test_confirmacao_com_dica_inferencial_e_confianca_arredondada():
+    req = confirmation_request().model_copy(
+        update={"likely_owner_resident_id": BRUNO, "match_confidence": 0.874}
+    )
+    # O nome só é inserido pelo serviço depois de o validar no diretório.
+    n = compose_confirmation(
+        req,
+        household_id=HOUSE,
+        responder_ids=[ANA, BRUNO],
+        origin=Origin.real,
+        correlation_id=uid("corr"),
+        source_event_id=uid("dica"),
+        now=T0,
+        likely_owner_name="Bruno",
+    )
+    assert n.body == (
+        "O aquecedor está ligado numa zona comum, cerca de 0,64 € estimados. "
+        "Parece ser do Bruno (aparelho identificado a 87 %); confirma."
+    )
+
+
+@pytest.mark.parametrize(
+    ("owner", "confidence", "eligible"),
+    [
+        (BRUNO, None, [ANA, BRUNO]),
+        (None, 0.9, [ANA, BRUNO]),
+        (uid("nao-elegivel"), 0.9, [ANA, BRUNO]),
+    ],
+    ids=["dono-sem-confianca", "confianca-sem-dono", "dono-fora-dos-elegiveis"],
+)
+def test_contrato_rejeita_dica_incoerente(owner, confidence, eligible):
+    base = confirmation_request(eligible=eligible).model_dump()
+    with pytest.raises(ValidationError):
+        ConfirmationRequest(
+            **(base | {"likely_owner_resident_id": owner, "match_confidence": confidence})
+        )
+
+
+def test_confirmacao_omite_dica_sem_nome_e_nao_repete_nome_no_aparelho():
+    req = confirmation_request(name="Aquecedor do bruno").model_copy(
+        update={"likely_owner_resident_id": BRUNO, "match_confidence": 0.9}
+    )
+    kwargs = {
+        "household_id": HOUSE,
+        "responder_ids": [ANA, BRUNO],
+        "origin": Origin.real,
+        "correlation_id": uid("corr"),
+        "source_event_id": uid("dica-sem-nome"),
+        "now": T0,
+    }
+    without_name = compose_confirmation(req, **kwargs)
+    assert "Parece" not in without_name.body and "identificado" not in without_name.body
+    with_name = compose_confirmation(
+        req,
+        **(kwargs | {"source_event_id": uid("dica-duplicada")}),
+        likely_owner_name="BRUNO",
+    )
+    assert with_name.body.endswith("Aparelho identificado a 90 %.")
+    assert "Parece" not in with_name.body
 
 
 def test_confirmacao_respeita_a_ordem_das_opcoes():

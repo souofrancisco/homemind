@@ -445,3 +445,30 @@ def handle(conn: sqlite3.Connection, stored: de.StoredEvent) -> list[de.DomainEv
             return []
         return evaluate(conn, ev.household_id, row["period_start"][:7], ev.ts)
     return []
+
+
+def allowance_left(
+    conn: sqlite3.Connection, household_id: UUID, room_id: UUID, period: str
+) -> int | None:
+    """Plafond solidário (BILL-03) que o quarto ainda tem no mês: o limite do mês menos o
+    aquecimento provado já coberto, com a mesma regra do fecho. `None` sem plafond."""
+    month = month_period(period)
+    limits = room_limits(conn, household_id, month)
+    if room_id not in limits:
+        return None
+    attributions, consumptions = period_inputs(conn, household_id, month)
+    shares = [
+        EnergyShare(a.target_resident_id, c.energy_wh, c.provenance, c.id)
+        for a in attributions
+        if a.target_type is AttributionTarget.resident
+        and (c := consumptions[a.consumption_event_id]).energy_wh
+    ]
+    _, covered = allowance.apply(
+        shares,
+        consumptions,
+        tenants_in_period(conn, household_id, month),
+        limits,
+        heating_appliances(conn, household_id),
+    )
+    used = sum(wh for cid, wh in covered.items() if consumptions[cid].room_id == room_id)
+    return max(0, limits[room_id] - used)

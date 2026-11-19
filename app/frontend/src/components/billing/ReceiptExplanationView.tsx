@@ -3,6 +3,8 @@ import {
   IconAlertCircle, IconBolt, IconCoin, IconFlame, IconGavel, IconHistory, IconMapPin, IconSearch,
 } from "@tabler/icons-react";
 import type { ReceiptExplanation } from "../../services/billing/api";
+import { useHouseholdSession } from "../../app/providers/HouseholdProvider";
+import OriginBadge from "../common/OriginBadge";
 
 // Só apresentação: todos os números e textos vêm do servidor (BILL-05); aqui não se calcula nada.
 export type Own = ReceiptExplanation["own"][number];
@@ -14,8 +16,6 @@ const eur = (cents: number) => money.format(cents / 100);
 const kwh = (wh: number) => `${(wh / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 2 })} kWh`;
 const when = new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" });
 
-const kindLabel = { measured: "medido", estimated: "estimado", inferred: "inferido" } as const;
-const originLabel = { real: "REAL", simulated: "SIMULADO" } as const;
 const methodLabel: Record<Own["method"], string> = {
   room_rule: "Regra do quarto",
   confirmation: "Pergunta «De quem é esta conta?»",
@@ -49,11 +49,8 @@ const stageIcon = {
 } as const;
 
 function ProvBadge({ p }: { p: Prov }) {
-  return (
-    <Badge size="sm" variant="light" color={p.origin === "simulated" ? "orange" : "teal"}>
-      {originLabel[p.origin]} · {kindLabel[p.kind]}
-    </Badge>
-  );
+  const session = useHouseholdSession();
+  return <OriginBadge origin={p.origin} kind={p.kind} demo={session.house?.source_kind === "demo"} />;
 }
 
 function OwnItem({ item, onContest }: { item: Own; onContest?: (item: Own) => void }) {
@@ -75,7 +72,7 @@ function OwnItem({ item, onContest }: { item: Own; onContest?: (item: Own) => vo
             <ProvBadge p={item.provenance} />
             <Badge size="sm" variant="outline">{methodLabel[item.method]} · {actorLabel[item.decided_by]}</Badge>
             {item.corrections > 0 && <Badge size="sm" variant="outline" color="yellow">corrigido</Badge>}
-            {item.covered_wh > 0 && <Badge size="sm" variant="light" color="teal">plafond solidário · {kwh(item.covered_wh)}</Badge>}
+            {item.covered_wh > 0 && <Badge size="sm" variant="light" color="teal">aquecimento incluído · {kwh(item.covered_wh)}</Badge>}
           </Group>
           <Timeline bulletSize={24} lineWidth={2}>
             {item.steps.map((step, i) => {
@@ -121,7 +118,7 @@ function CommonList({ groups }: { groups: Group_[] }) {
 function AllowanceSection({ a }: { a: NonNullable<ReceiptExplanation["allowance"]> }) {
   return (
     <Stack gap="xs">
-      <Title order={4} size="h5">Plafond solidário de aquecimento · {eur(a.amount_cents)}</Title>
+      <Title order={4} size="h5">Aquecimento incluído pelo senhorio, pago por todos · {eur(a.amount_cents)}</Title>
       <Text size="sm">
         O aquecimento básico de cada quarto é pago por todos. Na casa, {kwh(a.house_covered_wh)} de aquecimento foram cobertos;
         a tua parte igual é {kwh(a.my_share_wh)}.

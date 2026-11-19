@@ -1,6 +1,6 @@
 # Módulo `presence` — câmara na porta e presença
 
-**Dono: P2 (1Mii).** **IMPLEMENTADO** (PRES-03 #107, PRES-04 #108): telemóveis com opt-in, pistas Wi-Fi, resposta a «estás em casa?» e fusão em casa/fora/incerto. **Não há check-in manual «cheguei/saí»**: a presença regista-se só pela câmara (porta) e pelo telemóvel no Wi-Fi (decisão do dono). **PLANEADO**: câmara na porta (PRES-01/02; a fusão já consome `presence.door_crossed`, hoje só com fixtures), ocupação (PRES-05). Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
+**Dono: P2 (1Mii).** **IMPLEMENTADO** (PRES-03 #107, PRES-04 #108, PRES-05 #109 ocupação e visitas anónimas): telemóveis com opt-in, pistas Wi-Fi, resposta a «estás em casa?» e fusão em casa/fora/incerto. **Não há check-in manual «cheguei/saí»**: a presença regista-se só pela câmara (porta) e pelo telemóvel no Wi-Fi (decisão do dono). **PLANEADO**: câmara na porta (PRES-01/02; a fusão já consome `presence.door_crossed`, hoje só com fixtures). Entidades: `PresenceEvent`, `PersonPresence` ([data-model.md](../architecture/data-model.md)).
 
 ## Responsabilidade
 
@@ -24,7 +24,7 @@ Saber **quando alguém entra ou sai** e, a partir daí, **quem está em casa** �
 | `energy.consumption_detected` com `appliance_owner_resident_id` (P1) | idem, `source=appliance` (só `in`) |
 | Resposta a «estás em casa?» (`notification.responded`, `ref.type=presence_check`, P3) — consumidor **IMPLEMENTADO**; o produtor (`notifications.presence_check`, APP-02) **IMPLEMENTADO** (backend; UI PLANEADA) | pista manual |
 | `sensor.reading_recorded` (contacto, fumo; P1) | `SafetyAlert` em `safety.alert_raised` (SAFE-01/03) |
-| — | `presence.changed` por pessoa; `presence.confirmation_needed` (pistas em conflito); `presence.occupancy_changed` (anónimo; «casa possivelmente vazia» só na fase 2) |
+| — | `presence.changed` por pessoa; `presence.confirmation_needed` (pistas em conflito); `presence.occupancy_changed` (anónimo, só quando o estado muda; `likely_empty` = PRES-06, **IMPLEMENTADO**) |
 
 Contratos novos (`PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`, `PresenceDevice`, `CameraStatus`, `SensorReading`, `SafetyAlert`): **PROPOSTA** (D-31), em `contracts/{presence,sensors,safety}.py`.
 
@@ -39,6 +39,21 @@ Contratos novos (`PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`
 
 **Decisões para a demo (dono P2; não definitivas):** os 5 min contam desde que **ambas** as condições coincidem (janela aberta há 10 min e aquecedor que liga → só avisa 5 min depois; se o aquecedor desligar e religar, ou a janela fechar, o relógio recomeça); não há resolvedor de aquecedor de demo — **a regra da janela fica inativa até ENERGY-03 #81**; `notify_landlord=false` por omissão (onde vive a política: provavelmente `HouseholdPolicy`, com P5 — em aberto, P-26); o aviso da tomada agregada fica em `texts.py` para P3, sem mudar o contrato (P-27). O consumidor é idempotente por evento: se a transação do barramento falhar depois do handler, o retry reemite o mesmo alerta.
 
+**AWAY simulado (SAFE-02 #115) — IMPLEMENTADO (lógica + consumidor; sem rotas nem migrações; contrato PROPOSTA a rever por P5 e P3):**
+- A `safety` consome `presence.occupancy_changed` (só o contrato/evento) e dobra-o em `AwayState`: `likely_empty` → `away` (candidato), `occupied` → `home`, `uncertain` ou sem eventos → `unknown`, **nunca** AWAY. Relógio = `ts` do evento; só emite `safety.away_changed` quando o estado muda (o mesmo evento 2× não duplica; eventos atrasados ignoram-se); o estado refaz-se do registo (`restore`).
+- «Armar» é só o registo de uma **proposta SIMULADA** (`arm_proposed=true` em `away`, `executed=false`, proveniência sempre simulada). Não executa, não chama MCP/conectores e não usa `ENABLE_PHYSICAL_WRITES`. Anónimo; o senhorio nunca o vê (sem rota).
+- **Painel de segurança SIMULADO + armar/desarmar com confirmação (SAFE-02 #115) — IMPLEMENTADO (só simulado; contratos PROPOSTA a rever por P5 e P3):**
+  - Fonte: `SecurityPanelState` (`armed`/`disarmed`/`unknown`, evento `safety.security_changed`); o painel da demo é SIMULADO (a leitura real só entra por `real`, ver abaixo) e sem leitura é `unknown`: nunca se assume armado nem desarmado. Casa `real`: painel indisponível (`available=false`, 409 ao propor).
+  - Sinal extra do AWAY (`security.assess`, pura): o painel **corrobora ou contradiz** o `AwayState`, nunca o decide. `away`+armado → `consistent`; `away`+desarmado → `suggest_arm`; `home`+armado → `armed_with_people` (pergunta, não acusação); `home`+desarmado → `normal`; presença `unknown` **ou** painel `unknown` → `no_signal`. Um painel armado, ou uma falha de Wi-Fi/sinais, nunca produz «casa vazia».
+  - Armar/desarmar em duas fases (`safety.security_action`): `POST …/security/proposals {kind}` regista a proposta (caduca em 10 min, uma pendente de cada vez) e `POST …/proposals/{id}/confirm|cancel` decide-a. Confirmar só muda o painel simulado; o resultado vem sempre rotulado «SIMULADO … Nenhum alarme real foi armado/desarmado» e `executed` é sempre falso. Não usa MCP, conectores nem `ENABLE_PHYSICAL_WRITES`.
+  - Permissões (`Resource.security`): só moradores; senhorio e operador 403 em todas as rotas; fora da casa 404. A vista (`SecurityView`) não leva quem propôs nem quem confirmou (o `decided_by` fica só no evento, para auditoria). UI: cartão «Alarme da casa» em Casa (só moradores).
+- **Leitura REAL do alarme via MCP, SÓ LEITURA (SAFE-02 #115) — IMPLEMENTADA e ligada ao `McpHome` (testada só com mocks); `ARMED` NÃO confirmado. Toca em código da P1 e alargou a whitelist de LEITURA por decisão do utilizador (a rever por P1/P5 e pela equipa: D-07/P-01):**
+  - `features/safety/panel_reader.py` (P2; não importa conectores): interpreta duas fontes. (1) `get_home_security_status`: **leitura real 2026-11-19 = `{"status": "DISARMED", "isAlarmed": false}`** (fixture `tests/fixtures/mcp_security_status_real_2026-11-19.json`; o estado físico do alarme nesse momento não foi confirmado por uma pessoa); `DISARMED` é observado, **`ARMED` é FORMATO ASSUMIDO**, por confirmar com o alarme armado; outros valores (ex.: «em casa/fora»), `isAlarmed` não booleano, ou `DISARMED` com `isAlarmed=true` = `unknown`. (2) fonte secundária, `alarmState` do `gateway` em `get_home_devices`: formato assumido; a leitura real deu `normal` (estado de disparo, não de armamento) = `unknown`. Fontes frescas que discordem, leitura com mais de 90 s, ferramenta ausente/não suportada, erro ou timeout = `unknown`. Nunca se infere `armed`/`disarmed`.
+  - Ligação (aditiva): o `McpHome` tem um ouvinte opcional `seguranca` que recebe a lista de `get_home_devices` (a mesma chamada que já fazia para `sensores`) e, de ~30 s em ~30 s (1 em 6 polls, sem polling novo), uma leitura de `get_home_security_status`; a ferramenta é opcional no catálogo (`_tem_estado_seguranca`). O `lifespan` de `features/safety` monta `SecurityPanelCache` em `app.state.security_panel` e entrega-o ao `McpHome` só com `HOME_BACKEND=mcp` e `ENERGY_HOUSEHOLD_ID`; a demo (FakeKit/`fake`) não tem leitura real. Sem ouvinte o comportamento do conector não muda (testado).
+  - Whitelist: `_READ_TOOLS` = `get_home_devices`, `get_device_details`, **`get_home_security_status`**. A de escrita não mudou (`update_device_capabilities` só `_WRITABLE`: lâmpada `power|brightness|color_rgb`, tomada `power`); `patch_home_security_status` nunca é chamada; `ENABLE_PHYSICAL_WRITES` e grant intactos (testado: escritas de segurança recusadas mesmo com flag e grant).
+  - Só numa casa real (`origin: "real"` em `SecurityView`, badge «REAL · só leitura»): alimenta `security.assess` como o painel simulado e nunca decide o AWAY; sem propostas nem armamento (`available=false`, 409). A casa demo usa sempre o painel SIMULADO. A leitura vive em memória; não se persiste nem publica evento. O contrato `SecurityPanelState` deixou de recusar proveniência real (aditivo); `SecurityAction` continua só simulada.
+- **PLANEADO / bloqueado:** confirmar `ARMED` e o estado físico (roteiro `~/homemind-testes-manuais/seguranca-leitura-mcp/`), revisão da equipa ao alargamento da whitelist de leitura (D-07/P-01), validação em hardware da ligação ao `McpHome`, armamento real via MCP (MCP-04 #77, SAFE-04/AGENT-04, escrita real nunca sem grant), alerta de entrada com casa vazia, notificação ao utilizador da proposta (P3), validação em hardware.
+
 **PLANEADO:** o router arranca o serviço **sem** resolvedor de aquecedores (por omissão nada é «aquecimento»), porque depende de ENERGY-03 #81 (identificar aparelhos/`ApplianceCategory.heating`); sem leituras reais de contacto/fumo até MCP-03 #76 (o fumo funciona já com eventos reais ou simulados, quando existirem); a entrega ao utilizador (`notifications.safety_alert`, APP-02 #95) e a proposta de desligar a tomada (`agent.safety_suggestion`, AGENT-03b #112, confirmada em `POST …/agent/actions/{id}/confirm`) já estão **IMPLEMENTADAS**; a execução física depende do executor real da P1 (MCP-04 #77; hoje só SIMULADO na casa demo). Até ENERGY-03 só os cenários simulados exercitam a regra.
 
 ## Passos
@@ -48,7 +63,7 @@ Contratos novos (`PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`
 | 1 | ~~Registo manual «cheguei/saí»~~ — **removido** (decisão do dono); eventos simulados de porta + Wi-Fi permitem à P4 testar a regra C | — |
 | 2 | Detetor de pessoas na soleira (`DetetorYolo` só com a classe «pessoa» + ByteTrack) e linha virtual → `DoorCrossed` | P0 (PRES-02 #106) |
 | 3 | Fusão de pistas por pessoa: em casa / fora / incerto, com tolerância de 20–30 min para ausências e confirmação pela porta (PDF §6.8) | P0 (PRES-04 #108) |
-| 4 | Estado «casa vazia» e alerta de entrada com casa vazia — **fase 2** | P2 (F3: PRES-06 #131, SAFE-02 #115) |
+| 4 | Estado «casa vazia» (**IMPLEMENTADO**, PRES-06 #131) e alerta de entrada com casa vazia (**PLANEADO**, SAFE-02 #115) — fase 2 | P2 (F3) |
 | 5 | Sinal de presença por Wi-Fi (opt-in) e resposta à pergunta «estás em casa?» | P0 (PRES-03 #107) |
 
 Regras de fusão (PDF §6.8): presença no Wi-Fi conta muito, ausência conta pouco; só se considera que alguém saiu se houver uma saída pela porta e passarem 20–30 min; um aparelho a continuar ligado não prova presença, só um a **ligar** prova; contradição (entrada + aparelho a ligar sem ninguém «em casa») → `uncertain` e pergunta na aplicação.
@@ -91,10 +106,10 @@ ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` →
   duas pessoas coladas contam como uma: **limitação conhecida, aceite para a demo**: preferimos contar a menos a inventar entradas).
 - A soleira configura-se só por variáveis de ambiente, sem UI: **aceite para a demo**.
 - `track_id` vive só em memória e é esquecido; pistas sem ID confirmado não contam. Visitas não são
-  distinguidas aqui: são só mais passagens anónimas (o número de visitas é da PRES-05).
+  distinguidas aqui: são só mais passagens anónimas (o número de visitas sai da ocupação agregada, ver «Ocupação e visitas (PRES-05)»).
 - `confidence` é a média da confiança do detetor nessa pessoa, **não** uma precisão medida.
-- Sem frames novos não há eventos e nada daqui conclui «casa vazia». O código ObjectOS (`visao`,
-  gestos) fica intacto e deixa de ser necessário neste caminho (remoção: BASE-04 #74).
+- Sem frames novos não há eventos e nada daqui conclui «casa vazia». A deteção de objetos e os
+  gestos do ObjectOS foram removidos na BASE-04 e não fazem parte deste caminho.
 
 ## Pistas por pessoa (PRES-03) — IMPLEMENTADO
 
@@ -144,19 +159,84 @@ ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` →
 
 **Provenance.** `simulated` se qualquer entrada for simulada; `inferred` quando decide a porta ou o tempo; `measured` só quando o estado vem só de uma resposta do morador (P-19).
 
+## Ocupação e visitas (PRES-05 #109)
+
+**IMPLEMENTADO** (`occupancy.py` puro + `GET /api/presence/occupancy?household_id=`, só morador; senhorio e operador `403 forbidden_role`). **O frontend já não mostra esta ocupação** (o cartão «Quem está em casa» foi retirado da página «Casa»); o endpoint mantém-se e fica disponível para quando houver um uso com sentido. Não grava nada: calcula-se em cada pedido a partir do registo `presence.door_crossed` das últimas 24 h e dos estados dos moradores.
+- **Contagem** = saldo da porta (entradas − saídas). Nunca negativa: uma saída sem entrada anterior (entrada perdida) reinicia o saldo a 0 e deixa a contagem *dessincronizada* (`uncertain`, `people_inside=null`) até haver nova prova coerente.
+- **Reconciliação** com os moradores em casa (telemóvel com opt-in, estado `in`): saldo da porta inferior ao número de moradores em casa, saldo > 20, câmara sem frames/em falha ou nenhuma passagem na janela → `uncertain`, sem número inventado.
+- **Visitas** = pessoas dentro − moradores em casa, **só** quando todos os moradores ativos têm opt-in e estado conhecido; senão `visitors=null`. Zero fiável na porta com nenhum telemóvel com opt-in em casa é `likely_empty` (PRES-06, abaixo).
+- Uma visita é só um número: não gera pista individual, notificação nem conta. Proveniência `simulated` se a câmara ou qualquer passagem da janela o for.
+- **Limitações:** não deteta eventos perdidos que o saldo e os telemóveis não denunciem (ex.: visita que entra sem ser contada e sai contada); só reconcilia moradores, nunca visitas; janela fixa de 24 h para contar passagens (o zero fiável de uma casa vazia mantém-se para lá dela, ver PRES-06).
+
+## Casa vazia (PRES-06 #131) — IMPLEMENTADO (prova de conceito)
+
+Decisão do dono: «casa vazia é casa vazia; conta-se quem entra e sai». Há **uma só fonte de verdade**: `compute_occupancy` (`occupancy.py`), usado pelo cartão (`GET /api/presence/occupancy`) e pelo evento, que por isso nunca se contradizem.
+
+- `likely_empty` (`people_inside=0`, `visitors=0`, `residents_home=0`): contagem da porta fiável a 0 (sem entrada perdida), câmara ativa e nenhum telemóvel com opt-in em casa. Moradores sem opt-in **não bloqueiam**: decide a porta.
+- `uncertain`: câmara parada ou em falha, entrada perdida, ou porta a 0 com um telemóvel de morador em casa. `occupied` com o número se `people_inside > 0`.
+- **Fim de semana:** o zero fiável mantém-se para lá da janela de 24 h enquanto a câmara estiver ativa, o último estado registado for `likely_empty`, não houver passagens depois e nenhum telemóvel estiver em casa. Se a câmara parar, passa a `uncertain`.
+- **Evento** `presence.occupancy_changed` (`HouseOccupancy`, sem contrato novo) só quando o estado muda (o primeiro `uncertain` só grava); avaliado a cada passagem/pista e no *ticker*. Último estado em `presence_house_state` (migração `0210`). Proveniência herdada das fontes (SIMULADA com o clip). Não há rota nova.
+- **Nunca arma nada** físico, não chama MCP nem cria ações; a SAFE-02 (#115) consome-o apenas para o estado AWAY **SIMULADO** (ver «Segurança e conforto»). O senhorio e o operador nunca o veem (403 no cartão; o evento não tem rota).
+- **Limitações:** um visitante que fique sozinho em casa conta como pessoa dentro só se a porta o viu entrar; uma entrada perdida deixa a casa `uncertain` até nova prova coerente; sem validação em hardware real.
+
 **Decisões para a demo (aceites pelo dono).** Varrimento Wi-Fi parado (3 intervalos) com telemóvel registado → pergunta (`uncertain/no_recent_cues`), nunca `out`; saída anónima com vários moradores `in` e sem Wi-Fi → pergunta; único `in` → a saída atribui-se-lhe (limite: uma visita a sair engana-o até à PRES-05).
 
 **Limites assumidos.** Com vários moradores em casa e sem Wi-Fi uma saída pela porta nunca fica atribuída (pergunta-se). Um telemóvel que fica em casa com o dono «fora» e Wi-Fi ativo mantém a dúvida (volta a perguntar de 30 em 30 min). A fusão lê as pistas das últimas 48 h. Os parâmetros (0,6; 0,5; 120 s; 30 min) **não estão medidos**: valores iniciais.
 
+## Retenção, consentimentos, exportação e eliminação (PRIV-03 #51) — IMPLEMENTADO (mecanismo); prazos PROPOSTA
+
+Código: `features/presence/retention.py` (compactação e eliminação), `export.py` (exportação), migração `0201_presence_retention.sql`; rotina no `lifespan` de `features/presence/router.py` (1.ª execução aos 60 s, depois de 10 em 10 min; uma falha só deixa o tipo no log). **Não é parecer jurídico nem afirma conformidade RGPD**; o gate jurídico (P-24) continua a bloquear o piloto com pessoas ou sensores reais (abaixo).
+
+**Inventário** (o que guarda dados de presença e o que lhes acontece):
+
+| Onde | Conteúdo | Destino |
+|---|---|---|
+| `domain_event` `presence.cue_recorded`, `presence.changed`, `presence.confirmation_needed` | pistas, mudanças de estado, pedidos «estás em casa?» (têm `resident_id`) | brutos até **N dias** (`PRESENCE_RETENTION_DAYS`, omissão **30, PROPOSTA**); depois agregados diários e apagados; apagados já na eliminação do morador |
+| `domain_event` `presence.door_crossed`, `presence.occupancy_changed` | passagens anónimas, ocupação | idem (só o agregado da porta); nunca guardam pessoa |
+| `presence_confirmation` | pedidos (idempotência da resposta) | apagada com os brutos (N dias) e na eliminação |
+| `presence_state`, `presence_device` | estado atual; telemóveis (`match_key` HMAC, nunca MAC) | em vigor; **apagados** ao revogar o opt-in ou sair da casa |
+| `presence_daily` (novo) | por morador e dia local: segundos `in`/`out`/`uncertain`, pistas por fonte, pedidos; `end_state` (continuidade) | sem prazo definido (PROPOSTA a decidir); apagado na eliminação do morador. **Sem horários nem MAC** |
+| `presence_door_daily` (novo) | por casa e dia: entradas e saídas | anónimo; sem prazo definido |
+| `presence_retention_log` (novo) | auditoria: ação, casa, morador, motivo, **contagens** | sem prazo definido; nunca guarda conteúdo |
+| Logs da aplicação | só metadados, nunca pessoas, MAC ou frames | — |
+| Backups da base | **fora do âmbito do código**: um backup anterior à eliminação ainda tem os dados | **PLANEADO**: política de backups com o DPO/P5 antes do piloto |
+| Notificações `presence_check` (`notification`, P3) | texto da pergunta | **não tocadas** (módulo de P3); limitação |
+
+**Compactação.** Só eventos `presence.*` de **dias locais inteiros** (fuso da casa) anteriores a `agora − N`, com **N ≥ 2 dias** (a fusão lê 48 h, `CUE_WINDOW`; a ocupação 24 h; `PRESENCE_RETENTION_DAYS` abaixo de 2 é recusado, 0 desliga). Por isso ficam sempre ≥ N dias e, no máximo, mais o resto do dia local do corte. Cada dia é **uma transação**: grava os agregados, apaga as marcas `processed_event`/`event_failure` desses eventos e os eventos. Uma falha a meio reverte tudo (testado); repetir não muda nada. Um evento com falha de consumidor ainda por esgotar nunca se apaga. As horas em cada estado vêm das mudanças `presence.changed` (o dia começa no estado em que o anterior acabou; sem estado conhecido conta como `uncertain`); os dias sem eventos também contam. Morador sem opt-in em vigor: os eventos apagam-se sem agregar.
+
+**Eventos financeiros nunca se tocam** (consumo, atribuição, faturação, recibos, contestações, notificações de conta). O trigger `domain_event_no_delete` (PRIV-04, migração 0004) é recriado pela 0201 só para acrescentar os cinco tipos `presence.*`; todos os outros continuam imutáveis (nunca UPDATE). Testado com dados mistos: nenhum evento financeiro nem marca de consumidor muda. **Replay e idempotência:** o replay republica o que existe (os ids mantêm-se); consumidores já processados não repetem efeitos; as marcas dos eventos apagados saem com eles (sem órfãos). Limitação: um produtor que *reemita* um evento antigo apagado (mesmo `id`) recriá-lo-ia; hoje ninguém o faz fora de minutos.
+
+**Eliminação.** `erase_unconsented` apaga, numa transação por morador e casa, tudo o que é seu: pistas, mudanças, pedidos (eventos e tabela), `presence_state`, `presence_device` e `presence_daily`; reconfirma o opt-in dentro da transação (uma reativação entretanto não perde dados). Dispara-se quando `has_presence_opt_in` deixa de ser verdade: **revogou** o `presence_opt_in` (`opt_in_revoked`) ou **saiu da casa** (membership terminada ou fora de datas, `left_household`). É uma varredura periódica (≤ ~10 min) e não um gancho em `households` (módulo de P5): a **recolha** continua a parar logo na revogação (gate do PRIV-02); só a eliminação do histórico tem este atraso. Não toca em dados financeiros, de outros moradores nem de outras casas.
+
+**Exportação.** `GET /api/presence/export?household_id=`: só os dados do próprio (consentimento, telemóveis sem hash, estado atual, pistas, mudanças, pedidos, agregados diários e o prazo vigente com `proposal=true`). Fora ficam as passagens anónimas da porta e tudo o que é de colegas ou de outras casas. Senhorio e operador `403`, não-membro `404`; testes papel × rota e cross-account.
+
+**Opt-in/opt-out por fonte (estado real).** Existem dois consentimentos: `Membership.presence_opt_in` (pistas individuais e estado) e `PresenceDevice.wifi_opt_in` (Wi-Fi, por telemóvel; revogar apaga o `match_key`). **Por fonte** ainda não há granularidade para câmara/aparelho/manual separadamente, nem registo juridicamente suficiente do consentimento (P-23); a UI de informação e escolha é **PLANEADA**. A app e o cálculo funcionam sem sensores (divisão por igual ou pergunta).
+
+**Medição (teste `test_priv03_volume.py`, `PRESENCE_VOLUME=1 uv run pytest -q -s -k volume` em `app/backend`; fora do `make test`).** Um ano simulado, casa de 4 moradores, **carga SUPOSTA** (não há dados reais): por morador/dia 14 pistas Wi-Fi, 4 de aparelho, 2 manuais, 6 mudanças e 0,5 pedidos; por casa/dia 24 passagens e 30 mudanças de ocupação; N = 30. Resultado numa máquina de desenvolvimento (macOS, SQLite em ficheiro; números de uma execução, variam):
+
+| | Antes | Depois |
+|---|---|---|
+| Eventos `presence.*` | 58 402 | 4 873 (+ 1 340 linhas de agregados diários) |
+| Tamanho da base | 40,8 MB | 40,8 MB sem `VACUUM` (SQLite reutiliza as páginas); **4,3 MB** com `VACUUM` |
+| Fusão de 1 morador (`compute`, mediana de 30) | ≈ 54 ms | ≈ 5 ms |
+| Varrimento de eliminação | 47 ms | 4 ms |
+
+A compactação inicial de 335 dias demorou ≈ 12 s (um dia por transação); em regime só compacta um dia por execução. A consulta da fusão degrada com o histórico porque `load_cues` não tem índice por `ts`: a compactação limita o histórico, não corrige o índice.
+
+**PLANEADO / não implementado.** (a) Usar os agregados para estatística ou calibração: **finalidade nova (P-23)**, exige decisão e informação aos moradores. (b) Prazo dos agregados, do registo de auditoria e dos backups. (c) Granularidade de consentimento por fonte e registo do consentimento (quem aceitou o quê e quando). (d) Informação a moradores e visitantes, sinalização, responsável pelo tratamento, base legal e AIPD (**P-24**). (e) Eliminação imediata por gancho na revogação (hoje varredura). (f) `VACUUM` periódico (só há ganho de tamanho com ele). (g) Notificações `presence_check` antigas (P3).
+
+**Bloqueio de piloto (P-24).** Nada disto autoriza recolher dados de pessoas ou sensores reais: faltam revisão jurídica/produto, base legal por finalidade, responsável, informação, direitos dos titulares e triagem de AIPD. Em FakeHome/fixtures/demo não bloqueia.
+
 ## Limites reais
 
 - Acesso à imagem da câmara do kit (MEARI) **não está provado** para este caso de uso: só há leitura RTSP de 10 min via relay (medição herdada, ver [altice-mcp.md](../integrations/altice-mcp.md)) e a câmara do kit é fixa. Plano B: telemóvel como câmara IP ou clip gravado — dito sempre como tal.
-- A deteção de objetos YOLO e o gesto não estão validados com a câmara real; **não são necessários** para a Conta Certa.
+- A deteção de objetos YOLO e os gestos pertenciam ao ObjectOS e foram removidos na BASE-04;
+  não fazem parte da Conta Certa.
 - A contagem na porta, a fusão e a precisão **não estão medidas**; nenhum valor de precisão pode aparecer em documentos ou pitch antes de medido.
 
 ## Ficheiros existentes reutilizáveis
 
-`features/video/*`, `features/visao/{detetor,thread,dispositivo,pesos,anotar}.py`, `features/gestos/{ponte,presenca}.py`, `contracts/{video,visao,base}.py`, `connectors/…` (nenhum). Ver destinos em [migration.md](../architecture/migration.md).
+`features/video/*`, `features/visao/{dispositivo,pesos}.py`, `contracts/{video,base}.py`. Os módulos removidos e respetivos destinos estão registados em [migration.md](../architecture/migration.md).
 
 ## Ficheiros novos previstos
 
@@ -227,7 +307,7 @@ flowchart LR
 
 **A fronteira das pistas pessoais hoje:** `individual_cue_allowed` verifica casa, membership de tenant ativa, datas no fuso da casa, opt-in atual e identidade autenticada para origem manual; recusa proveniência simulada numa casa real. `record_individual_cue` exige transação SQLite ativa, repete a validação e grava o evento na mesma transação. `BEGIN IMMEDIATE` ordena essa escrita com a revogação concorrente: se a revogação confirmar primeiro, a pista é recusada. Wi-Fi é recusado mesmo que a flag global esteja ativa: `PresenceDevice.wifi_opt_in` não tem ainda persistência consultável, e `membership.presence_opt_in` não o substitui. Não existe produtor ou recolha real. Esta interface é **IMPLEMENTADA**, mas não prova legitimidade de base legal nem constitui uma integração de produto.
 
-**Exposição ObjectOS legada:** `/api/state` e mensagens `home_state` em `/api/ws` já não publicam o booleano de presença (`null` até substituição por DTO com escopo de casa e papel); as transições explícitas “Entrou alguém/Divisão vazia” deixaram de ser escritas no `events.jsonl`. A API antiga não conhece uma casa nem papel do utilizador, portanto não pode servir presença individual. Os outros campos do motor continuam sendo legado autenticado e não são uma API Conta Certa; um futuro endpoint deve usar `require_access(Resource.presence, read)` e devolver apenas o estado do próprio morador. A UI ObjectOS deixa de tentar obter MJPEG e mostra que a captura está desativada.
+**API atual:** a presença usa as rotas próprias de `features/presence`, com guardas `require_access(Resource.presence, read)` e respostas filtradas por papel; não há presença em estado global nem em WebSocket. A API antiga foi removida na BASE-04.
 
 ### Modelo de ameaças — estado após hardening PRIV-02
 
@@ -235,18 +315,18 @@ Escalas: gravidade (G) e probabilidade (P) são **antes das correções**; resid
 
 | Ameaça | G | P | Evidência / controlo técnico | Risco residual |
 |---|---|---|---|---|
-| Senhorio ou funcionário curioso consulta estado de morador | Alta | Média | `Resource.presence.read=own`; senhorio/operador sem grant; nenhum endpoint novo de presença | Médio: API legada não é escopada por casa/papel; não usar para presença individual |
+| Senhorio ou funcionário curioso consulta estado de morador | Alta | Média | `Resource.presence.read=own`; senhorio/operador sem grant; endpoints atuais usam guardas | Baixo no gate atual; validar novamente ao introduzir novos endpoints |
 | Morador consulta presença de terceiro | Alta | Média | grant `own`; membership e `resident_id` vinculados à casa; evento manual compara actor | Baixo no gate; endpoint de leitura continua planeado |
 | Captura/extração de frames por MJPEG | Crítica | Média | `/api/video` sempre 404; nenhuma dependência `Fonte`; factory RTSP rejeitada; ferramentas de medição exigem clip sintético allowlisted | Baixo no serviço; classe RTSP permanece no módulo para testes unitários com capturas falsas |
 | Correlacionar timestamp de passagem com identidade | Alta | Média | nenhum evento de câmara por pessoa; `DoorCrossed` anónimo; sem feed público | Médio se B for criado: timestamps continuam potencialmente pessoais |
-| Reidentificação indireta por contagem, quarto, energia ou rotina | Alta | Média | sem endpoint de ocupação/série temporal; landlord não recebe presença | Médio; minimização e agregação devem ser validadas no desenho PRES-02/05 |
+| Reidentificação indireta por contagem, quarto, energia ou rotina | Alta | Média | `GET /api/presence/occupancy` devolve só o instantâneo agregado (sem série temporal, sem horários); só o morador o lê, o senhorio e o operador recebem 403 | Médio; minimização e agregação devem ser validadas no desenho PRES-02/05 |
 | Segredo RTSP em exceção ou logs | Alta | Baixa | fonte regista apenas tipo da exceção; endpoint responde mensagem genérica; teste injeta URL falsa com credenciais | Baixo para logs FastAPI revistos; observar logs de OpenCV/FFmpeg no deployment antes de piloto |
-| Presença em REST/WS sem autorização por papel | Alta | Média | booleano legado removido do DTO/WS; evento textual explícito removido de `events.jsonl` | Médio: estados e timestamps do motor legado ainda não são DTOs escopados; não ligá-los a fonte real |
-| Persistência por tempo excessivo | Alta | Alta após futura escrita | eventos F0 append-only; PRIV-02 não apaga nem migra eventos | Alto até P-08/P-20 e política separada, incluindo backups |
+| Presença em REST/WS sem autorização por papel | Alta | Média | não há WebSocket ativo; endpoints REST atuais usam guardas por papel | Baixo no gate atual; não criar endpoints globais |
+| Persistência por tempo excessivo | Alta | Alta após futura escrita | eventos F0 append-only; PRIV-02 não apaga nem migra eventos. **PRIV-03:** compactação dos brutos em agregados após N dias (30, PROPOSTA) | Médio: prazos por decidir (P-08/P-20); backups sem política |
 | Falha de sensor interpretada como ausência | Alta | Média | função automática devolve `uncertain`; Wi-Fi nunca infere `out` | Baixo no helper; produtor/fusão ainda não implementados |
 | Casa errada ou membership revogada | Alta | Média | query usa `household_id`, papel tenant, status active e datas; validação e escrita transacionais | Baixo no helper; futuras rotas devem reusar `core.access`/OIDC |
 | Configuração de desenvolvimento ativa em produção | Alta | Média | preview MJPEG inexiste; clip exige `PROFILE=demo`, flag, path allowlist e `HOME_BACKEND=fake`; RTSP recusado | Baixo para API; deployment ainda deve validar env e remover credenciais RTSP não usadas |
-| Consentimento revogado, mas histórico continua | Alta | Média | novas gravações consultam opt-in no mesmo commit SQLite | Alto para histórico: sem expurgo implementado; requer política aprovada e issue própria |
+| Consentimento revogado, mas histórico continua | Alta | Média | novas gravações consultam opt-in no mesmo commit SQLite. **PRIV-03:** eliminação do histórico do morador ao revogar ou sair (varredura ≤ ~10 min) | Médio: backups; atraso até à varredura |
 
 ### Modelo de privacidade e acessos
 
@@ -280,7 +360,7 @@ Escalas: gravidade (G) e probabilidade (P) são **antes das correções**; resid
 | Auditoria de opt-in/revogação | 30 dias propostos | Apenas membership, ação booleana, UTC, propósito e ator autenticado, sem IP/MAC/frame |
 | Totais financeiros/decisões | Prazo próprio da faturação sujeito a revisão | Não reter presença crua para explicar dinheiro se bastar registar razão e proveniência |
 
-**Bloqueio real:** `domain_event` é imutável e **não tem expurgo**; a tabela atual não implementa estes prazos. Não apagar eventos financeiros nem alterar triggers/migrações nesta issue. Proposta separada: abrir issue **F0 — retenção por categoria de dados pessoais**, ligada a P-08/P-20, para definir armazenamento segregado/expiração seletiva de dados de presença e respetiva política de backups sem eliminar evidência financeira. Não encontrei issue GitHub existente dedicada; a issue deverá ser criada antes do piloto. Enquanto isso: só fixtures sintéticas. Uma revogação bloqueia novas recolhas, mas não apaga histórico nem dados de correspondência Wi-Fi.
+**Atualização PRIV-03 (#51):** o mecanismo de compactação e eliminação existe (secção própria acima); os prazos desta tabela continuam PROPOSTA e a compactação usa N=30 (decisão do dono) em vez de 24 h/7 dias. **Texto original do bloqueio (PRIV-02):** `domain_event` é imutável e **não tem expurgo**; a tabela atual não implementa estes prazos. Não apagar eventos financeiros nem alterar triggers/migrações nesta issue. Proposta separada: abrir issue **F0 — retenção por categoria de dados pessoais**, ligada a P-08/P-20, para definir armazenamento segregado/expiração seletiva de dados de presença e respetiva política de backups sem eliminar evidência financeira. Não encontrei issue GitHub existente dedicada; a issue deverá ser criada antes do piloto. Enquanto isso: só fixtures sintéticas. Uma revogação bloqueia novas recolhas, mas não apaga histórico nem dados de correspondência Wi-Fi.
 
 **Informação na aplicação:** antes de ativar, explicar por finalidade e por fonte o que é/ não é recolhido, quem vê, se influencia divisão, como optar/revogar, retenção efetiva, contacto do responsável (por confirmar), direitos e política de visitas; consentimento, quando escolhido como fundamento, deve ser granular e livre. Mostrar estado da câmara e opção de desativação; nunca substituir transparência por uma flag técnica.
 

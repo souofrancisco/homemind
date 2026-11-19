@@ -70,7 +70,7 @@ def kettle_signature() -> devices.ApplianceSignature:
     )
 
 
-def references() -> list[tuple[str, UUID, BaseModel]]:
+def references(clock: DemoClock = CLOCK) -> list[tuple[str, UUID, BaseModel]]:
     """Catálogo tipado, incluindo as DUAS faturas distintas de referência v5.1.
 
     As alocações são valores de fixtures, não resultados de um motor de faturação.
@@ -81,12 +81,14 @@ def references() -> list[tuple[str, UUID, BaseModel]]:
     billing.validate_allocations(b, b_alloc)
     if a.id == b.id or [x.amount_cents for x in a_alloc] == [x.amount_cents for x in b_alloc]:
         raise AssertionError("as duas repartições devem permanecer distintas")
+    heater_signature = fx.heater_signature().model_copy(update={"updated_at": clock.start})
+    kettle_signature_value = kettle_signature().model_copy(update={"updated_at": clock.start})
     rows: list[tuple[str, UUID, BaseModel]] = [
         ("device", fx.METER, fx.meter()),
         ("appliance", fx.HEATER, fx.heater()),
         ("appliance", fx.KETTLE, kettle()),
-        ("signature", fx.heater_signature().id, fx.heater_signature()),
-        ("signature", kettle_signature().id, kettle_signature()),
+        ("signature", heater_signature.id, heater_signature),
+        ("signature", kettle_signature_value.id, kettle_signature_value),
         ("budget", fx.budget().id, fx.budget()),
         ("reference_bill", a.id, a),
         ("reference_bill", b.id, b),
@@ -95,11 +97,11 @@ def references() -> list[tuple[str, UUID, BaseModel]]:
     return rows
 
 
-def power_samples() -> list[energy.EnergyReading]:
-    return [fx.reading(power_w=w, ts=CLOCK.at(minute)) for minute, w in POWER_PROFILE]
+def power_samples(clock: DemoClock = CLOCK) -> list[energy.EnergyReading]:
+    return [fx.reading(power_w=w, ts=clock.at(minute)) for minute, w in POWER_PROFILE]
 
 
-def events() -> list[ev.EventBase]:
+def events(clock: DemoClock = CLOCK) -> list[ev.EventBase]:
     """Entradas tipadas: sem rede, classificadores, identidade ou cálculo financeiro."""
     out: list[ev.EventBase] = []
     correlation = stable_id("demo", "official-correlation")
@@ -112,14 +114,14 @@ def events() -> list[ev.EventBase]:
                 id=stable_id("demo-event", name),
                 household_id=fx.HOUSEHOLD,
                 correlation_id=correlation,
-                ts=CLOCK.at(minute),
+                ts=clock.at(minute),
                 provenance=provenance,
                 data=data,
             )
         )
 
     for minute, w in POWER_PROFILE:
-        reading = fx.reading(power_w=w, ts=CLOCK.at(minute))
+        reading = fx.reading(power_w=w, ts=clock.at(minute))
         add(f"reading-{minute}", ev.EnergyReadingRecorded, minute, reading, fx.SIM_MEASURED)
 
     for name, minute, direction in (
@@ -132,7 +134,7 @@ def events() -> list[ev.EventBase]:
             ev.PresenceDoorCrossed,
             minute,
             presence.DoorCrossed(
-                ts=CLOCK.at(minute),
+                ts=clock.at(minute),
                 direction=direction,
                 confidence=0.93,
                 provenance=fx.SIM_INFERRED,
@@ -163,7 +165,7 @@ def events() -> list[ev.EventBase]:
         energy.EnergyReading(
             id=stable_id("demo-reading", "missing"),
             device_id=fx.METER,
-            ts=CLOCK.at(160),
+            ts=clock.at(160),
             status=energy.ReadingStatus.missing,
             power_w=None,
             provenance=fx.SIM_ESTIMATED,

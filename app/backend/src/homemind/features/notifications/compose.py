@@ -5,9 +5,11 @@ resposta e de estado vivem no contrato (`contracts/notification.py`); aqui só s
 `Notification`.
 """
 
-from datetime import date, datetime
+import unicodedata
+from datetime import date, datetime, timedelta
 from uuid import UUID, uuid5
 
+from homemind.contracts.agent import AutomationRule, AutomationStatus, TriggerKind
 from homemind.contracts.common import Origin
 from homemind.contracts.energy import (
     APPLIANCE_IDENTIFICATION_ACTIONS,
@@ -70,12 +72,27 @@ def compose_confirmation(
     correlation_id: UUID,
     source_event_id: UUID,
     now: datetime,
+    likely_owner_name: str | None = None,
 ) -> Notification:
     """«De quem é esta conta?»: notificação da casa, só para quem pode responder."""
     subject = f"O {req.appliance_name}" if req.appliance_name else "Um aparelho"
     body = f"{subject} está ligado numa zona comum"
     if req.estimated_cost_cents is not None:
         body += f", cerca de {format_eur(req.estimated_cost_cents)} estimados"
+    if req.likely_owner_resident_id is not None and req.match_confidence is not None:
+        confidence = round(req.match_confidence * 100)
+        has_owner_in_name = bool(
+            likely_owner_name
+            and _normalise_name(likely_owner_name) in _normalise_name(req.appliance_name or "")
+        )
+        if likely_owner_name:
+            if has_owner_in_name:
+                body += f". Aparelho identificado a {confidence} %"
+            else:
+                body += (
+                    f". Parece ser do {likely_owner_name} (aparelho identificado a {confidence} %);"
+                    " confirma"
+                )
     if origin is Origin.simulated:
         body += _SIMULATED
     body += "."
@@ -103,6 +120,12 @@ def compose_confirmation(
         correlation_id=correlation_id,
         created_at=now,
     )
+
+
+def _normalise_name(value: str) -> str:
+    """Normalização para comparar nomes sem distinção de maiúsculas ou acentos."""
+    decomposed = unicodedata.normalize("NFKD", value.casefold())
+    return "".join(char for char in decomposed if not unicodedata.combining(char))
 
 
 def compose_budget_alert(
@@ -153,18 +176,32 @@ def compose_cold_room(
     window_nights: int,
     threshold_c: float,
     coldest_night_c: float,
+    allowance_left_wh: int | None = None,
     origin: Origin,
     correlation_id: UUID,
     source_event_id: UUID,
     now: datetime,
 ) -> Notification:
-    """Quarto frio (ALERT-06): pessoal, privado e sem ações. Não promete valores de plafond."""
+    """Quarto frio (ALERT-06): pessoal, privado e sem ações. Diz o plafond solidário que o
+    quarto ainda tem no mês, só se billing o calculou (`None`: sem plafond, não se promete)."""
     t, c = f"{threshold_c:.0f}".replace(".", ","), f"{coldest_night_c:.1f}".replace(".", ",")
     body = (
         f"O teu quarto esteve abaixo de {t} °C em {cold_nights} das últimas {window_nights}"
-        f" noites (a mais fria em média: {c} °C). Não deixes de aquecer por causa da conta;"
-        " se precisares, fala com a casa sobre o plafond solidário."
+        f" noites (a mais fria em média: {c} °C). Não deixes de aquecer por causa da conta"
     )
+    if allowance_left_wh is None:
+        body += "; se precisares, fala com a casa sobre o plafond solidário."
+    elif allowance_left_wh > 0:
+        kwh = f"{allowance_left_wh / 1000:.1f}".replace(".", ",")
+        body += (
+            f": este mês o teu quarto ainda tem {kwh} kWh do plafond solidário, e esse"
+            " aquecimento é pago por todos."
+        )
+    else:
+        body += (
+            ": o plafond solidário do teu quarto deste mês já foi usado; se precisares,"
+            " fala com a casa."
+        )
     return Notification(
         id=notification_id_for(source_event_id, NotificationKind.comfort_alert),
         household_id=household_id,
@@ -206,6 +243,54 @@ def compose_agent_action(
         origin=origin,
         expires_at=expires_at,
         ref=NotificationRef(type=RefType.agent_action, id=action_id),
+        correlation_id=correlation_id,
+        created_at=now,
+    )
+
+
+# Prazo da votação das regras da casa (SAFE-04). O serviço das automações guarda o mesmo valor
+# (`features/automations`); aqui duplica-se porque uma feature não importa outra.
+AUTOMATION_VOTE_WINDOW = timedelta(hours=24)
+
+
+def _trigger_text(rule: AutomationRule) -> str:
+    t = rule.trigger
+    if t.kind is TriggerKind.power_above:
+        return f"quando a potência passar de {t.threshold_w:g} W durante {t.duration_s} s"
+    return "quando mudar quem está em casa"
+
+
+def compose_automation_proposal(
+    *,
+    rule: AutomationRule,
+    source_event_id: UUID,
+    origin: Origin,
+    correlation_id: UUID,
+    now: datetime,
+) -> Notification:
+    """Regra da casa proposta (SAFE-04): da casa (só os inquilinos a veem), sem botões; vota-se na
+    rota das automações (a UI usa o `ref`). Nada é executado enquanto a regra não for aprovada.
+    Regra `disabled` = pedido de reativação. O id deriva do evento de origem (uma por ronda)."""
+    reactivation = rule.status is AutomationStatus.disabled
+    what = "a reativação da regra" if reactivation else "a regra"
+    return Notification(
+        id=notification_id_for_ref(NotificationKind.automation_proposal, source_event_id, None),
+        household_id=rule.household_id,
+        scope=NotificationScope.household,
+        kind=NotificationKind.automation_proposal,
+        severity=NotificationSeverity.info,
+        title="Reativar uma regra da casa: vota"
+        if reactivation
+        else "Nova regra da casa para votar",
+        body=_tag(
+            f"Foi proposta {what} «{rule.name}»: desligar uma tomada {_trigger_text(rule)}. "
+            "Só passa a valer se a maioria dos moradores votar a favor em 24 h; "
+            "até lá nada é executado.",
+            origin,
+        ),
+        origin=origin,
+        expires_at=now + AUTOMATION_VOTE_WINDOW,
+        ref=NotificationRef(type=RefType.automation, id=rule.id),
         correlation_id=correlation_id,
         created_at=now,
     )

@@ -9,6 +9,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -16,6 +17,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 
+from homemind.contracts.agent_providers import ProviderSet
 from homemind.contracts.billing import (
     BillAllocation,
     BillIn,
@@ -33,6 +35,8 @@ from homemind.contracts.billing import (
     LandlordBillView,
     LandlordContestationView,
     ReceiptExplanation,
+    RoomAllowanceIn,
+    RoomAllowanceView,
     RuleVoteIn,
     TariffIn,
     TariffStatus,
@@ -62,9 +66,11 @@ from homemind.features.billing import (
     explanation,
     peaks,
     presence_rule,
+    room_allowances,
     rules,
     tariff,
 )
+from homemind.features.billing.agent_providers import BillingAgentProviders
 
 log = logging.getLogger(__name__)
 EXPIRY_INTERVAL_S = 60.0
@@ -91,6 +97,18 @@ async def run_expiry(db: Database, bus: EventBus, now: datetime) -> int:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     clock = app.dependency_overrides.get(get_clock, get_clock)()
+    providers = BillingAgentProviders(app.state.db, clock)
+    existing = getattr(app.state, "agent_providers", None)
+    if not isinstance(existing, ProviderSet):
+        existing = ProviderSet()
+    app.state.agent_providers = replace(
+        existing,
+        consumption=providers,
+        budget=providers,
+        receipt=providers,
+        appliances=providers,
+        attribution=providers,
+    )
     app.state.bus.subscribe(attributor.CONSUMER, attributor.handle, attributor.EVENT_TYPES)
     app.state.bus.subscribe(budgets.CONSUMER, budgets.handle, budgets.EVENT_TYPES)
     app.state.bus.subscribe(peaks.CONSUMER, peaks.handle, peaks.EVENT_TYPES)
@@ -562,3 +580,40 @@ async def withdraw_house_rules(
     return await _rules_change(
         request, db, lambda conn: rules.withdraw(conn, access.household_id, access.resident_id, now)
     )
+
+
+# --- plafond solidário editado (BILL-03) ---------------------------------------------------------
+
+RoomRead = Annotated[HouseholdAccess, Depends(require_access(Resource.room))]
+RoomWrite = Annotated[HouseholdAccess, Depends(require_access(Resource.room, Operation.write))]
+
+
+@router.get("/households/{household_id}/room-allowances")
+async def list_room_allowances(
+    access: RoomRead, db: DbDep, clock: ClockDep
+) -> list[RoomAllowanceView]:
+    """Plafond de cada quarto este mês e a mudança agendada (visível a todos os membros)."""
+    now = clock()
+    return await db.run(lambda conn: room_allowances.views(conn, access.household_id, now))
+
+
+@router.put("/households/{household_id}/room-allowances/{room_id}")
+async def set_room_allowance(
+    room_id: UUID, body: RoomAllowanceIn, access: RoomWrite, db: DbDep, clock: ClockDep
+) -> RoomAllowanceView:
+    """Só senhorio. Agenda o novo plafond mensal para o dia 1 do mês seguinte (substitui o
+    agendado); nunca muda o mês em curso nem faturas fechadas. `404` quarto de outra casa ·
+    `400` zona comum."""
+    now = clock()
+    try:
+        return await db.run(
+            lambda conn: room_allowances.schedule(
+                conn, access.household_id, room_id, body.included_wh, access.resident_id, now
+            )
+        )
+    except LookupError:
+        raise HTTPException(
+            404, {"code": "room_not_found", "message": "Quarto não encontrado"}
+        ) from None
+    except ValueError as e:
+        raise HTTPException(400, {"code": "invalid_request", "message": str(e)}) from None

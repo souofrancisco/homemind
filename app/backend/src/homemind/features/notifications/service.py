@@ -12,7 +12,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from homemind.contracts import domain_events as de
-from homemind.contracts.agent import ProposedAction
+from homemind.contracts.agent import AutomationRule, AutomationStatus, ProposedAction
 from homemind.contracts.billing import (
     Attribution,
     AttributionStatus,
@@ -44,6 +44,7 @@ from homemind.features.notifications.compose import (
     compose_anomaly_alert,
     compose_appliance_identification,
     compose_attribution_info,
+    compose_automation_proposal,
     compose_budget_alert,
     compose_cold_room,
     compose_confirmation,
@@ -122,6 +123,15 @@ class NotificationService:
         ]
         if not responders:
             return Outcome(None)
+        likely_owner_name = None
+        if (
+            req.likely_owner_resident_id is not None
+            and req.match_confidence is not None
+            and req.likely_owner_resident_id in responders
+        ):
+            likely_owner_name = self._directory.resident_name(
+                household_id, req.likely_owner_resident_id
+            )
         n = compose_confirmation(
             req,
             household_id=household_id,
@@ -130,6 +140,7 @@ class NotificationService:
             correlation_id=correlation_id,
             source_event_id=source_event_id,
             now=now,
+            likely_owner_name=likely_owner_name,
         )
         return self._create(n, provenance, dedupe=True)
 
@@ -274,6 +285,36 @@ class NotificationService:
         )
         return self._create(n, provenance, dedupe=False)
 
+    def on_automation_proposed(
+        self,
+        rule: AutomationRule,
+        *,
+        source_event_id: UUID,
+        correlation_id: UUID,
+        provenance: Provenance,
+    ) -> Outcome:
+        """`automation.proposed` (SAFE-04) -> aviso da casa, só a inquilinos (o senhorio nunca o
+        vê: `automation_proposal` não está na allow-list). Regra `proposed` (proposta) ou
+        `disabled` (reativação); outro estado não tem nada por votar. Sem botões: vota-se na
+        rota das automações. Id derivado do evento de origem (uma por ronda; reentrega não
+        duplica)."""
+        if rule.status not in (AutomationStatus.proposed, AutomationStatus.disabled):
+            return Outcome(None)
+        n = compose_automation_proposal(
+            rule=rule,
+            source_event_id=source_event_id,
+            origin=provenance.origin,
+            correlation_id=correlation_id,
+            now=self._clock(),
+        )
+        return self._create(n, provenance, dedupe=False)
+
+    def on_automation_decided(self, household_id: UUID, rule_id: UUID) -> Outcome:
+        """`automation.vote_decided`: a votação fechou (aprovada, rejeitada ou por prazo); os
+        avisos abertos da regra passam a `expired` (sem evento). Idempotente."""
+        self._expire_open(household_id, NotificationRef(type=RefType.automation, id=rule_id))
+        return Outcome(None)
+
     def on_cold_room(
         self,
         d: de.ColdRoomData,
@@ -294,6 +335,7 @@ class NotificationService:
             window_nights=d.window_nights,
             threshold_c=d.threshold_c,
             coldest_night_c=d.coldest_night_c,
+            allowance_left_wh=d.allowance_left_wh,
             origin=provenance.origin,
             correlation_id=correlation_id,
             source_event_id=source_event_id,

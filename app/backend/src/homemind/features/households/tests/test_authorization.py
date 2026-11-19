@@ -115,11 +115,11 @@ def test_privacy_invariants_of_the_matrix():
     L, T, O_ = MembershipRole.landlord, MembershipRole.tenant, MembershipRole.operator
     never_landlord = (
         *(Resource.presence, Resource.appliance, Resource.device, Resource.camera_status),
-        *(Resource.attribution, Resource.consumption, Resource.agent),
+        *(Resource.attribution, Resource.consumption, Resource.agent, Resource.automation),
     )
     never_operator = (Resource.presence, Resource.member, Resource.bill, Resource.receipt,
                       Resource.budget, Resource.attribution, Resource.agent, Resource.notification,
-                      Resource.energy)  # fmt: skip
+                      Resource.energy, Resource.automation)  # fmt: skip
     for op in Operation:
         for res in never_landlord:
             assert grant_for(L, res, op) is Grant.none, (res, op)  # o senhorio nunca

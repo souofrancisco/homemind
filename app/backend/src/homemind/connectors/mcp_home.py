@@ -1,6 +1,7 @@
 """Home real Altice. Só usa as 3 ferramentas e as capabilities observadas e validadas.
 
 - Whitelist exata de ferramentas e de capabilities por dispositivo (independente da autorização).
+  Leitura extra opcional: `get_home_security_status` (SAFE-02 #115, só leitura; escrita inalterada).
 - Escritas exigem `ENABLE_PHYSICAL_WRITES=true` **e** um grant temporário (ver `write_grant`).
 - O polling (5 s) é o único leitor periódico; `estado()` e `ler_consumo()` só leem o cache.
 - Escrita e releitura na mesma sessão MCP; nunca há retry de uma escrita de resultado incerto.
@@ -37,8 +38,13 @@ log = logging.getLogger(__name__)
 TOOL_HOME_DEVICES = "get_home_devices"
 TOOL_DEVICE_DETAILS = "get_device_details"
 TOOL_UPDATE = "update_device_capabilities"
+# Leitura do estado do alarme (SAFE-02 #115), só LEITURA e opcional: ausente do catálogo = não
+# suportado = `unknown`. Alargada por decisão do utilizador (D-07/P-01 por rever pela equipa).
+TOOL_SECURITY_STATUS = "get_home_security_status"
+# Ferramentas de LEITURA que o conector pode chamar. Escrita: só `TOOL_UPDATE`, sobre `_WRITABLE`.
+_READ_TOOLS = frozenset({TOOL_HOME_DEVICES, TOOL_DEVICE_DETAILS, TOOL_SECURITY_STATUS})
 
-# Capabilities que o ObjectOS pode alterar, por tipo de dispositivo. Nada mais.
+# Capabilities que o conector pode alterar, por tipo de dispositivo. Nada mais.
 _WRITABLE = {"lamp": {"power", "brightness", "color_rgb"}, "plug": {"power"}}
 _POLL_SECONDS = 5
 _READ_TIMEOUT_S = 8
@@ -47,6 +53,8 @@ _CLOSE_TIMEOUT_S = 5
 _WRITE_TIMEOUT_S = 14
 _READBACK_RETRIES = 5
 _READBACK_GAP_S = 0.5
+_SECURITY_READ_TIMEOUT_S = 3  # < _READ_TIMEOUT_S: o alarme lento não cancela o ciclo de poll
+_SECURITY_EVERY_POLLS = 6  # estado do alarme de ~30 s a ~30 s (a leitura caduca aos 90 s)
 _INVENTORY_EVERY_POLLS = 12  # volta a descobrir dispositivos de ~60 s a ~60 s
 _STALE_S = 30  # leitura de consumo mais antiga que isto deixa de ser devolvida
 _POWER = {"on": True, "off": False}  # qualquer outro valor = desconhecido
@@ -187,10 +195,19 @@ def _normalizar(rgb: tuple[int, int, int] | None, brilho: int | None):
     return tuple(min(255, round(c * 100 / brilho)) for c in rgb)
 
 
+def cor_verificavel(esperado: tuple[int, int, int], brilho: int | None) -> bool:
+    """A cor só se confirma se o RGB escalado pelo brilho excede a tolerância.
+
+    A brilho baixo o RGB devolvido tem valores 0–3 e a tolerância cobre-os todos: qualquer cor
+    «confere» (observado em 2026-11-18: vermelho a 1 % passou por branco-azulado).
+    """
+    return brilho is not None and max(esperado) * brilho / 100 >= 2 * _RGB_TOL
+
+
 def _rgb_confere(device: dict[str, Any], esperado: tuple[int, int, int]) -> bool:
     """Compara com o valor efetivamente devolvido, escalado pelo brilho devolvido."""
     raw, brilho = _rgb(_capabilities(device).get("color_rgb")), _brilho(device)
-    if raw is None or brilho is None:
+    if raw is None or brilho is None or not cor_verificavel(esperado, brilho):
         return False
     return all(abs(r - e * brilho / 100) <= _RGB_TOL for r, e in zip(raw, esperado, strict=True))
 
@@ -336,6 +353,10 @@ class McpHome:
         self.ao_estado: EstadoOuvinte | None = None
         self.coletor: EnergyCollector | None = None
         self.sensores: SensorCollector | None = None
+        # Ouvinte opcional do alarme (SAFE-02 #115), só leitura; ducktype (sem importar features):
+        # `ingest(devices)`, `ingest_status(payload)`, `unavailable()`, `unavailable_status()`.
+        self.seguranca: Any | None = None
+        self._tem_estado_seguranca = False
         self._falhas_consecutivas = 0
         self.ultimo_resultado: WriteResult | None = None
         self._politica = RuleWritePolicy()
@@ -372,6 +393,12 @@ class McpHome:
             self._poll_task = None
         await self._con.fechar()
 
+    @property
+    def lamp_ref(self) -> str | None:
+        """Id MCP da lâmpada descoberta (`None` antes da descoberta ou sem lâmpada). Só para o
+        conector derivar um id interno estável; nunca sai para a API, logs ou eventos."""
+        return (self._ids or {}).get("lamp")
+
     # ---- Home ----------------------------------------------------------------------------
     async def definir_lampada(
         self, ligada: bool, cor: Cor | None = None, brilho: int | None = None
@@ -396,17 +423,24 @@ class McpHome:
         # O power é sempre enviado (idempotente): a cache pode estar desatualizada (alguém
         # apagou a luz na app da Altice) e omiti-lo daria um falso negativo.
         changes.append({"type": "power", "value": "on" if ligada else "off"})
+        # O brilho vai ANTES da cor: no kit real escrever `brightness` depois de `color_rgb`
+        # anula a cor enviada e repõe a anterior (observado em 2026-11-18, mcp-capabilities.md).
+        if brilho is not None:
+            changes.append({"type": "brightness", "value": brilho})
         if cor is not None:
             r, g, b = CORES[cor]
             changes.append({"type": "color_rgb", "redValue": r, "greenValue": g, "blueValue": b})
-        if brilho is not None:
-            changes.append({"type": "brightness", "value": brilho})
 
         def confirmado(d: dict[str, Any]) -> bool:
             casa = _lamp_state(d)
             return (
                 casa.ligada is ligada
-                and (cor is None or _rgb_confere(d, CORES[cor]))
+                # a brilho muito baixo a cor lida não distingue cores: só se exige ligada e brilho
+                and (
+                    cor is None
+                    or not cor_verificavel(CORES[cor], casa.brilho)
+                    or _rgb_confere(d, CORES[cor])
+                )
                 and (brilho is None or casa.brilho == brilho)
             )
 
@@ -532,6 +566,11 @@ class McpHome:
                 self.coletor.unavailable()
             except Exception as erro:
                 log.exception("falha no coletor (%s)", type(erro).__name__, exc_info=False)
+        if self.seguranca is not None:
+            try:
+                self.seguranca.unavailable()
+            except Exception as erro:
+                log.exception("falha no leitor do alarme (%s)", type(erro).__name__, exc_info=False)
         if self.sensores is not None:
             try:
                 self.sensores.unavailable()
@@ -594,7 +633,9 @@ class McpHome:
 
     async def _garantir_ferramentas(self, session: Any) -> None:
         if not self._tools_ok:
-            _validate_tools((await session.list_tools()).tools)
+            tools = (await session.list_tools()).tools
+            _validate_tools(tools)
+            self._tem_estado_seguranca = any(t.name == TOOL_SECURITY_STATUS for t in tools)
             self._tools_ok = True
 
     async def _detalhes(self, session: Any, device_id: str) -> dict[str, Any]:
@@ -624,16 +665,45 @@ class McpHome:
             )
         )
         self._aplicar_leitura(lamp, plug)
-        if self.sensores is not None:
+        if self.sensores is not None or self.seguranca is not None:
             payload = _payload(await session.call_tool(TOOL_HOME_DEVICES, {}))
             if not isinstance(payload, dict) or not isinstance(payload.get("devices"), list):
                 raise RuntimeError("Unexpected home-device-list response")
+            if self.sensores is not None:
+                try:
+                    self.sensores.ingest(payload["devices"])
+                except Exception as erro:
+                    log.exception(
+                        "falha no coletor de sensores (%s)", type(erro).__name__, exc_info=False
+                    )
+            if self.seguranca is not None:
+                self._ouvir_seguranca(payload["devices"])
+        if self.seguranca is not None and (self._polls - 1) % _SECURITY_EVERY_POLLS == 0:
+            await self._ler_estado_seguranca(session)
+
+    def _ouvir_seguranca(self, devices: Any) -> None:
+        try:
+            self.seguranca.ingest(devices)
+        except Exception as erro:
+            log.exception("falha no leitor do alarme (%s)", type(erro).__name__, exc_info=False)
+
+    async def _ler_estado_seguranca(self, session: Any) -> None:
+        """Leitura (nunca escrita) do estado do alarme. Qualquer falha ou ferramenta não suportada
+        deixa o estado `unknown` e nunca afeta o resto da leitura."""
+        try:
+            if not self._tem_estado_seguranca:
+                self.seguranca.unavailable_status()
+                return
+            result = await asyncio.wait_for(
+                session.call_tool(TOOL_SECURITY_STATUS, {}), _SECURITY_READ_TIMEOUT_S
+            )
+            self.seguranca.ingest_status(_payload(result))
+        except Exception as erro:  # noqa: BLE001 - só o tipo vai para o log
+            log.warning("estado do alarme indisponível (%s)", type(erro).__name__)
             try:
-                self.sensores.ingest(payload["devices"])
-            except Exception as erro:
-                log.exception(
-                    "falha no coletor de sensores (%s)", type(erro).__name__, exc_info=False
-                )
+                self.seguranca.unavailable_status()
+            except Exception:  # noqa: BLE001
+                pass
 
     def _aplicar_leitura(self, lamp: dict | None, plug: dict | None) -> None:
         if lamp is not None:

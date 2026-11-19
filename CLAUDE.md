@@ -7,7 +7,7 @@ Hierarquia de verdade: decisões da equipa ([`docs/decisions.md`](docs/decisions
 # Parte A — Regras de desenvolvimento
 
 ## Stack e estrutura
-Python 3.12 + FastAPI + Pydantic v2 + SQLite (barramento de eventos); React 19 + Vite + TS + Mantine; Authentik (OIDC). Monorepo `app/` ([`docs/architecture.md`](docs/architecture.md)). Os nomes `homemind` (pacote, cliente OIDC, Compose) são herdados: não renomear. Código ObjectOS (engine, gestos, páginas antigas) só sai num PR da BASE-04 (#74); ler [`docs/architecture/migration.md`](docs/architecture/migration.md) antes de lhe tocar.
+Python 3.12 + FastAPI + Pydantic v2 + SQLite (barramento de eventos); React 19 + Vite + TS + Mantine; Authentik (OIDC). Monorepo `app/` ([`docs/architecture.md`](docs/architecture.md)). Os nomes `homemind` (pacote, cliente OIDC, Compose) são herdados: não renomear. O código ObjectOS (motor, gestos e páginas antigas) foi removido na BASE-04 (#74); consultar [`docs/architecture/migration.md`](docs/architecture/migration.md) para o registo histórico.
 
 ## Arquitetura (não quebrar)
 - Uma feature **não importa outra**: comunica por `contracts/` e eventos de domínio. Recursos partilhados (SQLite, barramento) em `core/` (P5).
@@ -40,7 +40,7 @@ Dentro do MVP: energia por tomada, degraus/assinaturas, repartição, plafond so
 
 ## Regras de domínio
 - **Dinheiro:** repartição determinística em código; arredondamentos explícitos; fecho reconciliado a 100 % da fatura. Recibo distingue **medido / estimado / simulado** e é contestável. O senhorio só reparte o custo real da fatura.
-- **Lâmpada** não mede: consumo estimado 9 W × tempo × brilho. **Plafond solidário:** aquecimento básico por quarto pago em comum; só o excesso é individual.
+- **Lâmpada** não mede: consumo estimado 9 W × tempo × brilho. **Plafond solidário (opcional, por quarto, definido pelo senhorio; 0 = sem plafond):** o aquecimento básico é pago em comum e só o excesso é individual. Sem plafond, cada um paga o seu quarto.
 - **Atribuição por aparelho, não por tomada.** Sem identificação nem evidência: divide-se por igual ou só por quem estava em casa. Consumos < ~5 kWh/mês ignorados; o assistente só pergunta quando vale a pena (~0,50 €).
 - **Presença** (em casa/fora/incerto): Wi-Fi conta muito a favor e pouco contra; «fora» só após 20–30 min **e** saída pela porta. Um aparelho a continuar ligado não prova presença; só um a ligar prova. Contradição → pergunta, não acusação.
 - **«De quem é esta conta?» é votação (D-32)**: um «É minha» basta; atribuir a outra pessoa exige pelo menos metade dos moradores (fecha antes se o próprio assumir); inconclusivo em 24 h → por todos. Fonte única: `confirmation_outcome` em `contracts/notification.py`.

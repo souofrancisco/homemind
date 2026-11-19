@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     profile: Literal["normal", "demo"] = "normal"
     home_backend: Literal["fake", "mcp"] = "fake"
+    demo_live: bool = True
     mcp_endpoint: str = ""
     # Nunca logar nem devolver este valor (header X-API-Key do MCP Altice).
     mcp_api_key: str = ""
@@ -27,6 +28,9 @@ class Settings(BaseSettings):
     mcp_write_max_minutes: int = 60
     mcp_lamp_id: str = ""
     mcp_plug_id: str = ""
+    # ALERT-06: divisão (`room.id`) onde está a lâmpada do kit, na casa ENERGY_HOUSEHOLD_ID. Sem
+    # ela a lâmpada não tem divisão conhecida e nunca recebe a cor do orçamento (mais restritivo).
+    mcp_lamp_room_id: UUID | None = None
     # Unidade de `instantPower` quando o MCP não a declara (o kit real não declara). Vazio =
     # desconhecida: consumo_w fica null. Confirmar com carga conhecida (docs/mcp-capabilities.md).
     mcp_instantpower_unit: Literal["", "W", "dW", "mW"] = ""
@@ -39,6 +43,10 @@ class Settings(BaseSettings):
     # diários dos alertas ficam guardados. 0 = sem expurgo. Mínimo 62: o mês corrente e o
     # anterior têm de estar completos (totais de energia, fecho da fatura). PROPOSTA (P-08).
     retention_telemetry_days: int = 90
+    # PRIV-04: anonimizar um ex-morador N dias depois de o último contrato acabar (nome, conta,
+    # email do convite, conversa e notificações pessoais; os valores financeiros ficam).
+    # 0 = DESLIGADO (omissão) até a equipa/DPO fixar o prazo (P-08); se ligado, mínimo 30.
+    retention_anonymize_after_days: int = 0
     # Authentik (OIDC). Issuer = URL pública do provider (campo `iss` dos tokens);
     # jwks_url pode ser interno (ex.: http://authentik-server:9000/...) em Docker.
     oidc_issuer: str = "http://localhost:9000/application/o/homemind/"
@@ -76,18 +84,6 @@ class Settings(BaseSettings):
     presence_door_confirm_s: float = Field(
         default=1.0, ge=0
     )  # cruzamento reverso anula dentro disto
-    # --- P2 — gestos/presença ---
-    gesto_distancia_max_ombros: float = 0.6  # × largura dos ombros (centro do objeto ao pulso)
-    gesto_confianca_min: float = 0.5  # pulso, cotovelo e ombros (estritamente maior)
-    gesto_janela_s: float = 1.0
-    gesto_fracao_min: float = 0.8
-    gesto_min_frames: int = 3  # frames válidos na janela (evita confirmar com 1-2 a fps baixo)
-    gesto_cooldown_s: float = 3.0  # por classe
-    presenca_ausencia_s: float = 3.0
-    presenca_frames_regresso: int = 2
-    visao_intervalo_max_s: float = 1.0  # buraco entre frames reais > isto reinicia janelas
-    # --- fim P2 ---
-
     # --- P2 — presença (PRES-03/04) ---
     # Sal do `match_key` dos telemóveis (hash do MAC). Segredo: só em app/.env, nunca em logs.
     # Vazio = registo de telemóveis e pistas Wi-Fi desligados (falha fechada).
@@ -107,26 +103,44 @@ class Settings(BaseSettings):
     # Um aparelho pessoal só prova presença se LIGOU há menos de isto (s); já ligado não prova.
     presence_appliance_fresh_s: float = Field(default=300.0, ge=0.0)
     presence_fusion_tick_s: float = Field(default=30.0, ge=1.0)
+    # PRIV-03: dias que os eventos BRUTOS de presença (pistas, passagens, mudanças de estado,
+    # pedidos de confirmação) ficam antes de passarem a agregados diários sem horários. PROPOSTA
+    # (30): o prazo definitivo é decisão da equipa e do DPO (P-08). 0 = sem compactação. Nunca
+    # menos de 2 dias: a fusão lê 48 h e a ocupação 24 h.
+    presence_retention_days: int = 30
     # --- fim P2 — presença ---
 
-    # --- P1 — visão (YOLO objetos + pose + ByteTrack; extra opcional `visao`) ---
+    # --- P2 — visão de presença (extra opcional `visao`) ---
     visao_pasta_modelos: str = "data/modelos"  # pesos .pt (ignorados pelo Git; ver pesos.py)
     visao_variante: Literal["s", "n"] = "s"  # "n" só se o FPS não chegar
     visao_modelo_objetos: str = ""  # vazio -> yolo11{variante}.pt
-    visao_modelo_pose: str = ""  # vazio -> yolo11{variante}-pose.pt
-    visao_conf_objetos: float = 0.4
     visao_conf_pessoa: float = 0.4
-    visao_livro_coco: int = 73  # alternativas se o livro falhar: 39 garrafa, 67 telemóvel
     visao_device: str = "auto"  # auto = CUDA > MPS > CPU; ou cpu / mps / cuda:0
     visao_imgsz: int = 640
     visao_tracker: str = "bytetrack.yaml"
-    # --- fim P1 — visão ---
+    # --- fim P2 — visão de presença ---
 
     @field_validator("retention_telemetry_days")
     @classmethod
     def _retencao(cls, v: int) -> int:
         if v != 0 and v < 62:
             raise ValueError("RETENTION_TELEMETRY_DAYS é 0 (sem expurgo) ou pelo menos 62")
+        return v
+
+    @field_validator("retention_anonymize_after_days")
+    @classmethod
+    def _anonimizar(cls, v: int) -> int:
+        if v != 0 and v < 30:
+            raise ValueError("RETENTION_ANONYMIZE_AFTER_DAYS é 0 (desligado) ou pelo menos 30")
+        return v
+
+    @field_validator("presence_retention_days")
+    @classmethod
+    def _retencao_presenca(cls, v: int) -> int:
+        if v != 0 and v < 2:
+            raise ValueError(
+                "PRESENCE_RETENTION_DAYS é 0 (sem compactação) ou pelo menos 2 (janela da fusão)"
+            )
         return v
 
     @field_validator("presence_door_inside_sign")

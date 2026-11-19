@@ -11,7 +11,8 @@ inquilinos com contrato no período (entradas e saídas no fim do mês, D-33).
 """
 
 import sqlite3
-from datetime import datetime, timedelta
+from collections.abc import Callable
+from datetime import date, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -168,16 +169,49 @@ def heating_appliances(conn: sqlite3.Connection, household_id: UUID) -> frozense
     return frozenset(UUID(r["id"]) for r in rows)
 
 
+def monthly_allowance(
+    conn: sqlite3.Connection, household_id: UUID
+) -> dict[UUID, Callable[[date], int]]:
+    """Quarto → (dia 1 do mês → plafond mensal em Wh). A versão mais recente já começada nesse
+    mês (`billing_room_allowance`) ou, antes dela, o `room.included_wh` da criação."""
+    rooms = conn.execute(
+        "SELECT id, included_wh FROM room WHERE household_id = ? AND kind = 'bedroom'",
+        (str(household_id),),
+    ).fetchall()
+    changes: dict[str, list[tuple[date, int]]] = {}
+    for r in conn.execute(
+        "SELECT room_id, effective_from, included_wh FROM billing_room_allowance"
+        " WHERE household_id = ? ORDER BY effective_from",
+        (str(household_id),),
+    ):
+        changes.setdefault(r["room_id"], []).append(
+            (date.fromisoformat(r["effective_from"]), r["included_wh"])
+        )
+
+    def per_month(initial: int, versions: list[tuple[date, int]]) -> Callable[[date], int]:
+        def wh(month: date) -> int:
+            value = initial
+            for start, v in versions:
+                if start <= month:
+                    value = v
+            return value
+
+        return wh
+
+    return {
+        UUID(r["id"]): per_month(r["included_wh"] or 0, changes.get(r["id"], [])) for r in rooms
+    }
+
+
 def room_limits(
     conn: sqlite3.Connection, household_id: UUID, period: BillPeriod
 ) -> dict[UUID, int]:
-    """Plafond solidário de cada quarto para o período (`room.included_wh` é mensal)."""
-    rows = conn.execute(
-        "SELECT id, included_wh FROM room WHERE household_id = ? AND kind = 'bedroom'"
-        " AND included_wh > 0",
-        (str(household_id),),
-    ).fetchall()
-    return {UUID(r["id"]): allowance.period_limit(r["included_wh"], period) for r in rows}
+    """Plafond solidário de cada quarto para o período (mensal, com as mudanças por mês)."""
+    limits = {
+        room: allowance.period_limit(wh, period)
+        for room, wh in monthly_allowance(conn, household_id).items()
+    }
+    return {room: wh for room, wh in limits.items() if wh > 0}
 
 
 def _bill(conn: sqlite3.Connection, household_id: UUID, bill_id: UUID) -> sqlite3.Row:

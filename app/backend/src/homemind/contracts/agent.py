@@ -3,13 +3,14 @@
 Distinções que os tipos impõem:
 leitura (`AgentToolRequest/Result`) ≠ proposta (`ProposedAction`) ≠ confirmação humana
 (`ActionConfirmation`) ≠ execução (`ActionExecutionResult`). O assistente nunca inventa
-números: tudo o que afirma vem de um `AgentToolResult` referenciado na resposta.
+números: respostas geradas em código a partir de um `AgentToolResult` referenciado.
 Ações físicas limitam-se ao que o MCP permite (lâmpada: power/brightness/color_rgb;
 tomada: power) e dependem de flag + grant (connectors/write_grant). Esta camada não escreve.
 """
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from enum import StrEnum
 from typing import Annotated, Literal, Self
 from uuid import UUID
@@ -57,6 +58,10 @@ class AgentTool(StrEnum):
     consumption_summary = "consumption_summary"
     budget_status = "budget_status"
     receipt = "receipt"
+    top_appliances = "top_appliances"
+    consumption_change = "consumption_change"
+    explain_attribution = "explain_attribution"
+    pending_confirmations = "pending_confirmations"
 
 
 class AgentToolRequest(ContractModel):
@@ -68,7 +73,10 @@ class AgentToolRequest(ContractModel):
     @model_validator(mode="after")
     def _arguments(self) -> Self:
         needs_bill = self.tool is AgentTool.receipt
-        if needs_bill != (self.bill_id is not None) or (self.period is None) == (not needs_bill):
+        needs_period = self.tool not in (AgentTool.receipt, AgentTool.pending_confirmations)
+        if needs_bill != (self.bill_id is not None) or (needs_period and self.period is None):
+            raise ValueError("argumentos incoerentes com a ferramenta")
+        if not needs_period and self.period is not None:
             raise ValueError("argumentos incoerentes com a ferramenta")
         return self
 
@@ -83,6 +91,14 @@ class AgentToolResult(ContractModel):
     energy_wh: EnergyWh | None = None
     cost_cents: Cents | None = None
     error_code: str | None = None
+    appliances: list[ApplianceCost] = []
+    previous_period: Period | None = None
+    previous_cost_cents: Cents | None = None
+    difference_cents: Annotated[int, Field(strict=True, ge=-(10**12), le=10**12)] | None = None
+    attribution_parts: list[AttributionPart] = []
+    final: bool | None = None
+    pending_count: Annotated[int, Field(strict=True, ge=0)] | None = None
+    pending: list[PendingConfirmation] = []
 
     @model_validator(mode="after")
     def _coherent(self) -> Self:
@@ -94,6 +110,26 @@ class AgentToolResult(ContractModel):
         if (self.energy_wh is not None or self.cost_cents is not None) and not self.provenance:
             raise ValueError("valores exigem proveniência")
         return self
+
+
+class ApplianceCost(ContractModel):
+    label: ShortText
+    cost_cents: Cents
+    percent: Annotated[int, Field(strict=True, ge=0, le=100)]
+    provenance: Provenance
+
+
+class AttributionPart(ContractModel):
+    label: ShortText
+    amount_cents: Cents
+    provenance: Provenance
+
+
+class PendingConfirmation(ContractModel):
+    appliance_name: ShortText | None = None
+    estimated_cost_cents: Cents | None = None
+    expires_at: UtcDatetime
+    provenance: Provenance
 
 
 # --- ações físicas ---------------------------------------------------------------------------
@@ -217,8 +253,10 @@ class AgentResponse(ContractModel):
     household_id: UUID
     text: Annotated[str, Field(min_length=1, max_length=2000)]
     tool_result_ids: list[UUID] = []  # request_id dos resultados que sustentam os números
+    tool_results: list[AgentToolResult] = []  # dados tipados que sustentam a resposta deste turno
     proposed_actions: list[ProposedAction] = []
     created_at: UtcDatetime
+    interpreter: Literal["llm", "rules"] | None = None
 
 
 # --- automações ------------------------------------------------------------------------------
@@ -285,7 +323,71 @@ class AutomationRule(ContractModel):
             raise ValueError("regra ativa exige aprovação explícita")
         if self.source is AutomationSource.natural_language and not self.nl_text:
             raise ValueError("origem em linguagem natural exige nl_text")
+        if any(
+            a.capability is not DeviceCapability.power or a.power is not False for a in self.actions
+        ):
+            raise ValueError("a única ação de uma regra é desligar a tomada")
         return self
 
     def transition(self, new: AutomationStatus) -> None:
         check_transition(AUTOMATION_TRANSITIONS, self.status, new)
+
+
+# --- votação das regras da casa (SAFE-04, D-35 PROPOSTA) ----------------------------------------
+
+
+class AutomationVote(ContractModel):
+    """Voto de um morador numa regra `proposed`. A regra e a casa vêm do contexto; o morador
+    vem sempre do token."""
+
+    resident_id: UUID
+    approve: bool
+    at: UtcDatetime
+
+
+class RuleVerdict(StrEnum):
+    approved = "approved"  # maioria absoluta a favor: a regra passa a `active`
+    rejected = "rejected"  # maioria impossível ou prazo sem maioria: `proposed -> draft`
+    pending = "pending"
+
+
+class RuleApprovalOutcome(ContractModel):
+    verdict: RuleVerdict
+    votes_for: Annotated[int, Field(strict=True, ge=0)]
+    votes_against: Annotated[int, Field(strict=True, ge=0)]
+    majority: Annotated[int, Field(strict=True, ge=1)]  # votos a favor necessários
+
+    @property
+    def decided(self) -> bool:
+        return self.verdict is not RuleVerdict.pending
+
+
+def absolute_majority(eligible: int) -> int:
+    """Mais de metade dos elegíveis (2 → 2, 3 → 2, 4 → 3, 5 → 3). Não confundir com
+    `votes_needed` (D-32), que é «pelo menos metade»."""
+    return eligible // 2 + 1
+
+
+def rule_approval_outcome(
+    votes: Collection[AutomationVote], eligible: Collection[UUID], *, expired: bool = False
+) -> RuleApprovalOutcome:
+    """Fonte única da votação de regras. Aprovada quando os votos a favor atingem a maioria
+    absoluta; rejeitada quando já não a pode atingir ou quando o prazo acabou sem maioria.
+    Votos repetidos ou de quem não é elegível são erro (o serviço já os impede)."""
+    voters = [v.resident_id for v in votes]
+    if not eligible or len(set(eligible)) != len(eligible):
+        raise ValueError("elegíveis em falta ou repetidos")
+    if len(set(voters)) != len(voters) or not set(voters) <= set(eligible):
+        raise ValueError("votos repetidos ou de quem não é elegível")
+    majority = absolute_majority(len(eligible))
+    pro = sum(v.approve for v in votes)
+    against = len(voters) - pro
+    if pro >= majority:
+        verdict = RuleVerdict.approved
+    elif expired or against >= len(eligible) - majority + 1:
+        verdict = RuleVerdict.rejected
+    else:
+        verdict = RuleVerdict.pending
+    return RuleApprovalOutcome(
+        verdict=verdict, votes_for=pro, votes_against=against, majority=majority
+    )

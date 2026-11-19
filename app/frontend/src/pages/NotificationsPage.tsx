@@ -2,6 +2,8 @@ import { Alert, Badge, Button, Card, Group, Loader, Select, Stack, Text, Title }
 import { IconAlertCircle } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
+import ManualControls from "../components/notifications/ManualControls";
+import OriginBadge from "../components/common/OriginBadge";
 import { getMembers, type MemberView } from "../services/households/api";
 import {
   listNotifications, markNotificationRead, respondToNotification, type NotificationView,
@@ -11,7 +13,10 @@ const when = new Intl.DateTimeFormat("pt-PT", { dateStyle: "medium", timeStyle: 
 const statusLabel: Record<NotificationView["status"], string> = {
   unread: "Por ler", read: "Lida", actioned: "Respondida", expired: "Expirada", dismissed: "Dispensada",
 };
-const severityColor = { info: "blue", warning: "orange", critical: "red" } as const;
+// Aviso de regra da casa (SAFE-04): fica `expired` quando a votação fecha (aprovada, rejeitada
+// ou por prazo), por isso não é «prazo de confirmação de aparelho».
+const isRule = (n: NotificationView) => n.kind === "automation_proposal";
+const severityColor = { info: "gray", warning: "orange", critical: "red" } as const;
 const verdictLabel: Record<NonNullable<NotificationView["voting"]>["verdict"], string> = {
   pending: "Votação em curso — ainda não há decisão",
   self_claimed: "Decidido: assumido por quem o usou",
@@ -21,9 +26,10 @@ const verdictLabel: Record<NonNullable<NotificationView["voting"]>["verdict"], s
 // A ação «É de outra pessoa» exige indicar a pessoa (contrato D-32): id fixado pelo backend.
 const OTHER = "other";
 
-function Card1({ n, householdId, members, onChange }: {
+export function NotificationCard({ n, householdId, members, onChange }: {
   n: NotificationView; householdId: string; members: MemberView[]; onChange: (v: NotificationView) => void;
 }) {
+  const session = useHouseholdSession();
   const [busy, setBusy] = useState(false);
   const [target, setTarget] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
@@ -35,45 +41,67 @@ function Card1({ n, householdId, members, onChange }: {
     act(() => respondToNotification(householdId, n.id, { action_id: actionId, target_resident_id: targetId ?? null }));
   const canAct = n.can_respond && (n.status === "unread" || n.status === "read");
   const v = n.voting;
+  const isVote = v?.verdict === "pending" && canAct;
 
   return (
-    <Card withBorder radius="lg" p="lg">
+    <Card id={n.kind === "confirmation_request" ? `confirmation-vote-${n.id}` : undefined} p={{ base: "md", sm: 28 }} component="article" aria-label={n.title}>
+      <div className="conta-vote" data-vote={isVote ? "true" : "false"}>
       <Stack gap="sm">
-        <Group justify="space-between" align="flex-start" wrap="wrap">
-          <Title order={3} size="h4">{n.title}</Title>
-          <Group gap="xs">
-            <Badge color={severityColor[n.severity]} variant="light">{statusLabel[n.status]}</Badge>
-            {n.origin === "simulated" && <Badge color="orange" variant="light">SIMULADO</Badge>}
+        {isVote && v ? <>
+          <Group gap="xs"><Badge className="conta-pending-badge">Falta a tua resposta · {v.votes} de {v.eligible} já votaram</Badge>
+            <OriginBadge origin={n.origin} demo={session.house?.source_kind === "demo"} /></Group>
+          <Title order={3} className="conta-vote-title">{n.title}</Title>
+        </> : (
+          <Group justify="space-between" align="flex-start" wrap="wrap">
+            <Title order={3} size={18}>{n.title}</Title>
+            <Group gap="xs">
+              <Badge color={severityColor[n.severity]} variant="light">{isRule(n) && n.status === "expired" ? "Votação encerrada" : statusLabel[n.status]}</Badge>
+              {n.kind === "presence_check" && <Badge color="gray" variant="light">Presença</Badge>}
+              <OriginBadge origin={n.origin} demo={session.house?.source_kind === "demo"} />
+            </Group>
           </Group>
-        </Group>
-        <Text>{n.body}</Text>
-        {v && (
-          <Alert color={v.verdict === "pending" ? "blue" : "gray"} variant="light" title={verdictLabel[v.verdict]}>
+        )}
+        <Text fz={isVote ? 16 : undefined} c={isVote ? "dimmed" : undefined}>{n.body}</Text>
+        {n.kind === "presence_check" && <Text size="sm" c="dimmed">Sem câmara, a tua resposta é a forma de confirmar a presença. É uma pergunta, não uma acusação; só tu a vês.</Text>}
+        {v && !isVote && (
+          <Alert className={v.verdict === "pending" ? "conta-pending" : undefined} color={v.verdict === "pending" ? "orange" : "gray"} variant="light" title={verdictLabel[v.verdict]}>
             {v.votes} de {v.eligible} votos (decide-se com {v.votes_needed}).
             {v.my_vote ? " O teu voto está registado; podes vê-lo mas não alterá-lo." : ""}
             {v.verdict !== "pending" && (v.pays_me ? " Esta utilização fica a teu cargo." : " Esta utilização não fica a teu cargo.")}
           </Alert>
         )}
-        {n.response && !v && <Text size="sm" c="dimmed">Respondeste {when.format(new Date(n.response.responded_at))}.</Text>}
-        {canAct && !picking && (
-          <Group gap="xs">
-            {n.actions.map((a) => (
-              <Button key={a.id} size="sm" loading={busy} variant={a.style === "primary" ? "filled" : "light"} color={a.style === "danger" ? "red" : undefined}
-                onClick={() => (a.id === OTHER ? setPicking(true) : void respond(a.id))}>{a.label}</Button>
-            ))}
-            {n.status === "unread" && <Button size="sm" variant="subtle" loading={busy} onClick={() => void act(() => markNotificationRead(householdId, n.id))}>Marcar como lida</Button>}
-          </Group>
+        {n.kind === "confirmation_request" && canAct && <Text size="sm" c="dimmed">O voto não se pode mudar. Se te enganares, podes contestar o recibo depois de o mês fechar.</Text>}
+        <div role="status" aria-live="polite">{n.response && !v && <Text size="sm" c="dimmed">Respondeste {when.format(new Date(n.response.responded_at))}.</Text>}</div>
+        <Text size="xs" c="dimmed">{n.scope === "personal" ? "Pessoal" : "Da casa"} · {when.format(new Date(n.created_at))}{n.expires_at && n.status !== "expired" ? ` · responder até ${when.format(new Date(n.expires_at))}` : ""}</Text>
+      </Stack>
+      {canAct && <Stack gap="xs" w="100%">
+        {!picking && (
+          <div className="conta-vote-actions">
+            {n.actions.map((a) => {
+              const consequence: Record<string, string> = { mine: "Pagas tu. Decide logo.", everyone: "Dividido por todos os moradores.", other: "Escolhes quem. Para valer, metade dos moradores tem de concordar.", unknown: "Fica em aberto. Sem decisão em 24 h, divide-se por todos." };
+              const emphasized = a.style === "primary";
+              return <Button key={a.id} className={emphasized || a.id === OTHER ? "conta-vote-wide" : undefined} size="md" fullWidth mih={emphasized ? 52 : 48} fw={emphasized ? 700 : 600}
+                title={consequence[a.id]} aria-label={consequence[a.id] ? `${a.label}. ${consequence[a.id]}` : `${a.label}: ${n.title}`} loading={busy}
+                variant={emphasized ? "filled" : "default"} color={a.style === "danger" ? "red" : undefined}
+                onClick={() => (a.id === OTHER ? setPicking(true) : void respond(a.id))}>{a.label}</Button>;
+            })}
+            {n.status === "unread" && n.kind !== "confirmation_request" && <Button size="md" mih={48} variant="default" loading={busy} onClick={() => void act(() => markNotificationRead(householdId, n.id))}>Marcar como lida</Button>}
+          </div>
         )}
-        {canAct && picking && (
+        {picking && (
           <Group align="end">
             <Select label="De quem é?" placeholder="Escolhe uma pessoa" data={members.map((m) => ({ value: m.resident_id, label: m.display_name }))} value={target} onChange={setTarget} />
             <Button disabled={!target} loading={busy} onClick={() => void respond(OTHER, target ?? undefined)}>Confirmar</Button>
             <Button variant="subtle" onClick={() => setPicking(false)}>Cancelar</Button>
           </Group>
         )}
-        {!canAct && n.status === "expired" && <Text size="sm" c="dimmed">O prazo terminou; sem resposta, a utilização divide-se por todos.</Text>}
-        <Text size="xs" c="dimmed">{n.scope === "personal" ? "Pessoal" : "Da casa"} · {when.format(new Date(n.created_at))}{n.expires_at && n.status !== "expired" ? ` · responder até ${when.format(new Date(n.expires_at))}` : ""}</Text>
-      </Stack>
+      </Stack>}
+      {!canAct && n.status === "expired" && <Text size="sm" c="dimmed">{isRule(n)
+        ? "A votação desta regra já terminou. O resultado está em «Regras da casa»."
+        : n.kind === "confirmation_request"
+          ? "O prazo terminou; sem resposta, a utilização divide-se por todos."
+          : "O prazo terminou sem resposta; nada foi executado."}</Text>}
+      </div>
     </Card>
   );
 }
@@ -88,10 +116,17 @@ export default function NotificationsContent() {
     if (!householdId) return;
     let active = true;
     Promise.all([listNotifications(householdId), session.membership?.role === "tenant" ? getMembers(householdId) : Promise.resolve([])])
-      .then(([items, members]) => active && setState({ key: householdId, items, members }))
+      .then(([items, all]) => {
+        // «É de outra pessoa» só pode apontar para os outros inquilinos ativos: nem o senhorio,
+        // nem o operador, nem a própria pessoa (para isso há «É minha»).
+        const members = all.filter(
+          (m) => m.role === "tenant" && m.status === "active" && m.membership_id !== session.membership?.id,
+        );
+        if (active) setState({ key: householdId, items, members });
+      })
       .catch(() => active && setState({ key: householdId, items: null, members: [] }));
     return () => { active = false; };
-  }, [householdId, reload, session.membership?.role]);
+  }, [householdId, reload, session.membership?.role, session.membership?.id]);
 
   if (!householdId) return null;
   const cur = state?.key === householdId ? state : null;
@@ -101,11 +136,18 @@ export default function NotificationsContent() {
       <Button w="fit-content" color="red" variant="light" onClick={() => setReload((n) => n + 1)}>Tentar novamente</Button>
     </Alert>
   );
-  if (!cur.items.length) return <Text c="dimmed">Sem notificações. Quando houver uma utilização a confirmar ou um aviso de orçamento, aparece aqui.</Text>;
+  const tenant = session.membership?.role === "tenant";
+  if (!cur.items.length) return (
+    <Stack gap="md">
+      <Text c="dimmed">Sem notificações. Quando houver uma utilização a confirmar ou um aviso de orçamento, aparece aqui.</Text>
+      {tenant && <ManualControls householdId={householdId} />}
+    </Stack>
+  );
   const replace = (v: NotificationView) => setState({ ...cur, items: cur.items!.map((i) => (i.id === v.id ? v : i)) });
   return (
     <Stack gap="md">
-      {cur.items.map((n) => <Card1 key={n.id} n={n} householdId={householdId} members={cur.members} onChange={replace} />)}
+      {cur.items.map((n) => <NotificationCard key={n.id} n={n} householdId={householdId} members={cur.members} onChange={replace} />)}
+      {tenant && <ManualControls householdId={householdId} />}
     </Stack>
   );
 }

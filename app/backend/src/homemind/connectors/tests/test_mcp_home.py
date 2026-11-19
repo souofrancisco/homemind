@@ -9,7 +9,8 @@ import pytest
 
 from homemind.connectors.altice_auth import OAuthReauthRequired
 from homemind.connectors.fake_home import FakeHome
-from homemind.connectors.mcp_home import McpHome
+from homemind.connectors.mcp_home import McpHome, _rgb_confere, cor_verificavel
+from homemind.connectors.mcp_verify import verify_lamp
 from homemind.connectors.write_grant import read_grant, write_grant
 from homemind.core.config import Settings
 
@@ -31,6 +32,7 @@ class FakeMcp:
         self.down = False
         self.explicit_error = False
         self.ignore_writes = False
+        self.brightness_resets_color = False  # escrever o brilho anula a cor enviada antes
         self.fail_reads = 0  # falhas transitórias de get_device_details (a sessão fecha)
         self.die_after_write = False  # o transporte cai logo após a 1.ª escrita
         self.list_calls = 0
@@ -110,6 +112,9 @@ class FakeMcp:
             dev["base"] = (body["redValue"], body["greenValue"], body["blueValue"])
         else:
             caps[kind].update(body)
+            if kind == "brightness" and self.brightness_resets_color:
+                # observado no kit real (2026-11-18): o brilho repõe a cor anterior
+                dev["base"] = (255, 255, 255)
         if "base" in dev:  # lâmpada real: color_rgb devolvido = cor × brilho/100
             b = caps["brightness"]["value"]
             for k, c in zip(("redValue", "greenValue", "blueValue"), dev["base"], strict=True):
@@ -183,6 +188,65 @@ def test_readback_reflects_device_values(tmp_path):
     lamp = run(home.estado()).lampada
     # RGB devolvido (128,0,0) a 50% normaliza para a cor pedida; o nome é derivado dele
     assert (lamp.ligada, lamp.rgb, lamp.brilho, lamp.cor) == (True, (255, 0, 0), 50, "vermelho")
+
+
+def test_lamp_brightness_is_written_before_color(tmp_path):
+    # Kit real (2026-11-18): escrever o brilho DEPOIS da cor anula a cor e repõe a anterior.
+    home, mcp, _ = make(tmp_path)
+    mcp.brightness_resets_color = True
+    assert run(home.definir_lampada(True, "vermelho", 50)) is True
+    lamp = run(home.estado()).lampada
+    assert (lamp.rgb, lamp.brilho) == ((255, 0, 0), 50)
+    tipos = [a["body"]["type"] for _, a in mcp.writes()]
+    assert tipos.index("brightness") < tipos.index("color_rgb")
+
+
+def _lamp_json(rgb, brilho):
+    r, g, b = rgb
+    return {
+        "type": "bulb",
+        "capabilities": _caps(
+            ("brightness", {"value": brilho}),
+            ("color_rgb", {"redValue": r, "greenValue": g, "blueValue": b}),
+        ),
+    }
+
+
+def test_color_check_is_not_fooled_at_low_brightness():
+    # a 1 % o RGB lido (0–3) cabia todo na tolerância: vermelho passava por branco-azulado
+    vermelho_a_1 = _lamp_json((3, 0, 0), 1)
+    assert cor_verificavel((200, 200, 255), 1) is False
+    assert _rgb_confere(vermelho_a_1, (200, 200, 255)) is False
+    assert _rgb_confere(vermelho_a_1, (255, 0, 0)) is False  # não verificável: nunca «confere»
+    # com brilho suficiente a cor distingue-se
+    assert cor_verificavel((200, 200, 255), 40) is True
+    assert _rgb_confere(_lamp_json((102, 0, 0), 40), (200, 200, 255)) is False
+    assert _rgb_confere(_lamp_json((80, 80, 102), 40), (200, 200, 255)) is True
+
+
+def test_verify_lamp_applies_and_restores_color_in_the_safe_order(tmp_path, monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _="": "AUTORIZO LAMPADA")
+    home, mcp, _ = make(tmp_path, grant=("lamp",))
+    mcp.brightness_resets_color = True
+    mcp.dev["L0"]["capabilities"][0]["value"] = "on"
+    r = run(verify_lamp(home))
+    assert r["applied_confirmed"] is True and r["restored_confirmed"] is True
+    assert r["restored_color_verified"] is True
+    final = r["final"]
+    assert (final["ligada"], final["brilho"]) == (True, 30)
+    assert all(abs(c - 255) <= 3 for c in final["rgb"])  # normalizado a 30 %: arredonda
+    tipos = [a["body"]["type"] for _, a in mcp.writes()]
+    assert tipos == ["power", "brightness", "color_rgb", "brightness", "color_rgb", "power"]
+
+
+def test_verify_lamp_flags_unverifiable_color_when_restoring_to_dim(tmp_path, monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _="": "AUTORIZO LAMPADA")
+    home, mcp, _ = make(tmp_path, grant=("lamp",))
+    mcp.dev["L0"]["capabilities"][0]["value"] = "on"
+    mcp.dev["L0"]["capabilities"][1]["value"] = 1  # brilho inicial 1 %
+    r = run(verify_lamp(home))
+    assert r["restored_color_verified"] is False  # só ligada e brilho foram confirmados
+    assert r["restored_confirmed"] is True
 
 
 def test_explicit_mcp_error_is_failure(tmp_path):
@@ -465,40 +529,34 @@ def test_home_contract_conformance(tmp_path, criar):
     assert casa.lampada.ligada is True and casa.tomada.ligada is True
 
 
-# ---- Integração: motor real sobre McpHome (servidor MCP falso) --------------------------------
+# ---- Integração: McpHome (servidor MCP falso) --------------------------------------------------
 
 
-def test_engine_over_mcp_home_gesture_outage_and_recovery(tmp_path):
-    from homemind.contracts.eventos import ObjetoLevantado
-    from homemind.features.engine.engine import Engine, Estado, Tempos
-    from homemind.features.engine.eventlog import EventLog
-    from homemind.features.engine.rules import RulesStore
-
+def test_mcp_home_state_outage_and_recovery(tmp_path):
     async def cenario():
         home, mcp, _ = make(tmp_path)
-        regras = RulesStore(tmp_path / "rules.json")
-        regras.carregar()
-        engine = Engine(home, regras, EventLog(tmp_path / "e.jsonl", "mcp"), Tempos())
         await home._refrescar()
-        await engine.iniciar()
-        await engine.processar(ObjetoLevantado(classe="livro", hora=datetime.now(UTC)))
-        assert engine.estado == Estado.ATIVO
-        casa = engine.home_state().casa
+        casa = await home.estado()
+        assert casa.mcp_ok is True
+        assert await home.definir_lampada(True, "branco_quente", 40) is True
+        assert await home.definir_tomada(True) is True
+        casa = await home.estado()
         assert (casa.lampada.ligada, casa.lampada.brilho) == (True, 40)
         assert casa.tomada.ligada is True
 
         mcp.down = True  # MCP em baixo
-        res = await engine.desligar_tudo()
-        assert res.success is False and res.code == "mcp_unavailable"
-        assert res.devices.lampada == "unknown" and res.devices.tomada == "unknown"
         await home._refrescar()
-        assert engine.home_state().mcp_ok is False
+        casa = await home.estado()
+        assert casa.mcp_ok is False
 
         mcp.down = False  # recuperação
         await home._refrescar()
-        assert engine.home_state().mcp_ok is True
-        res = await engine.desligar_tudo()
-        assert res.success is True and res.code is None
+        casa = await home.estado()
+        assert casa.mcp_ok is True
+        assert await home.definir_lampada(False) is True
+        assert await home.definir_tomada(False) is True
+        casa = await home.estado()
+        assert casa.lampada.ligada is False and casa.tomada.ligada is False
         await home.parar()
 
     run(cenario())
@@ -675,3 +733,170 @@ def test_rule_write_failing_before_send_is_failed_not_unknown(tmp_path, monkeypa
     home._agora = lambda: now + timedelta(seconds=61)
     again = run(home.lampada_por_regra(True, decision=decision))
     assert again.outcome is WriteOutcome.confirmed and len(fake.writes()) == 1
+
+
+# --- leitura do alarme (SAFE-02 #115): só leitura, aditiva ----------------------------------
+
+
+class SecMcp(FakeMcp):
+    """FakeMcp + `get_home_security_status` (formato real: DISARMED observado; ARMED assumido)."""
+
+    def __init__(self, status=None, with_tool=True, **kw):
+        super().__init__(**kw)
+        self.status = status if status is not None else {"status": "DISARMED", "isAlarmed": False}
+        self.with_tool = with_tool
+        self.fail_status = False
+
+    async def list_tools(self):
+        res = await super().list_tools()
+        if self.with_tool:
+            res.tools.append(SimpleNamespace(name="get_home_security_status", inputSchema={}))
+        return res
+
+    async def call_tool(self, name, args):
+        if name == "get_home_security_status":
+            if self.fail_status:
+                raise TimeoutError("lento")
+            self.calls.append((name, args))
+            return SimpleNamespace(isError=False, structuredContent=self.status, content=[])
+        return await super().call_tool(name, args)
+
+
+class Listener:
+    def __init__(self):
+        self.events = []
+
+    def ingest(self, devices):
+        self.events.append(("devices", len(devices)))
+
+    def ingest_status(self, payload):
+        self.events.append(("status", payload))
+
+    def unavailable(self):
+        self.events.append(("unavailable", None))
+
+    def unavailable_status(self):
+        self.events.append(("unavailable_status", None))
+
+
+def test_alarm_listener_receives_devices_and_status_read_only(tmp_path):
+    home, mcp, _ = make(tmp_path, SecMcp())
+    home.seguranca = ls = Listener()
+    run(home._refrescar())
+    assert ("devices", 2) in ls.events
+    assert ("status", {"status": "DISARMED", "isAlarmed": False}) in ls.events
+    names = [n for n, _ in mcp.calls]
+    assert names.count("get_home_security_status") == 1 and mcp.writes() == []
+    for _ in range(5):  # sem polling agressivo: de ~30 s a ~30 s
+        run(home._refrescar())
+    assert [n for n, _ in mcp.calls].count("get_home_security_status") == 1
+    run(home._refrescar())
+    assert [n for n, _ in mcp.calls].count("get_home_security_status") == 2
+    run(home.parar())
+
+
+def test_alarm_tool_failure_or_absence_is_unknown_and_never_breaks_home(tmp_path, caplog):
+    home, mcp, _ = make(tmp_path, SecMcp(with_tool=False))
+    home.seguranca = ls = Listener()
+    run(home._refrescar())
+    assert run(home.estado()).mcp_ok and ("unavailable_status", None) in ls.events
+    assert "get_home_security_status" not in [
+        n for n, _ in mcp.calls
+    ]  # não suportada: nem se chama
+    run(home.parar())
+    home, mcp, _ = make(tmp_path, SecMcp())
+    mcp.fail_status = True
+    home.seguranca = ls = Listener()
+    run(home._refrescar())
+    assert run(home.estado()).mcp_ok and ("unavailable_status", None) in ls.events
+    assert "lento" not in caplog.text
+    mcp.down = True
+    run(home._refrescar())
+    assert ("unavailable", None) in ls.events
+    run(home.parar())
+
+
+def test_alarm_status_read_that_blocks_times_out_alone_and_poll_continues(tmp_path, monkeypatch):
+    from homemind.connectors import mcp_home as m
+
+    monkeypatch.setattr(m, "_READ_TIMEOUT_S", 0.5)
+    monkeypatch.setattr(m, "_SECURITY_READ_TIMEOUT_S", 0.05, raising=False)
+
+    class Blocking(SecMcp):
+        async def call_tool(self, name, args):
+            if name == "get_home_security_status":
+                await asyncio.sleep(30)  # bloqueia sem lançar exceção
+            return await super().call_tool(name, args)
+
+    home, mcp, _ = make(tmp_path, Blocking())
+    seen = []
+    home.sensores = SimpleNamespace(ingest=seen.append, unavailable=lambda: None)
+    home.seguranca = ls = Listener()
+    run(home._refrescar())
+    assert ("unavailable_status", None) in ls.events and ("unavailable", None) not in ls.events
+    assert run(home.estado()).mcp_ok and len(seen) == 1  # lâmpada/tomada/sensores intactos
+    assert mcp.writes() == []
+    run(home.parar())
+
+
+def test_alarm_listener_failure_does_not_affect_home(tmp_path):
+    home, mcp, _ = make(tmp_path, SecMcp())
+
+    def fail(*a):
+        raise RuntimeError("secret")
+
+    home.seguranca = SimpleNamespace(
+        ingest=fail, ingest_status=fail, unavailable=fail, unavailable_status=fail
+    )
+    run(home._refrescar())
+    assert run(home.estado()).mcp_ok
+    run(home.parar())
+
+
+def test_without_alarm_listener_behaviour_is_unchanged(tmp_path):
+    home, mcp, _ = make(tmp_path, SecMcp())
+    run(home._refrescar())
+    run(home._refrescar())
+    assert [n for n, _ in mcp.calls].count("get_home_devices") == 1  # só a descoberta
+    assert "get_home_security_status" not in [n for n, _ in mcp.calls]
+    run(home.parar())
+
+
+def test_sensors_listener_unchanged_when_alarm_listener_added(tmp_path):
+    home, mcp, _ = make(tmp_path, SecMcp())
+    seen = []
+    home.sensores = SimpleNamespace(ingest=seen.append, unavailable=lambda: None)
+    home.seguranca = Listener()
+    run(home._refrescar())
+    assert len(seen) == 1 and [n for n, _ in mcp.calls].count("get_home_devices") == 2
+    run(home.parar())
+
+
+def test_read_whitelist_widened_but_write_whitelist_unchanged(tmp_path):
+    from homemind.connectors import mcp_home as m
+
+    assert m._READ_TOOLS == {"get_home_devices", "get_device_details", "get_home_security_status"}
+    assert m._WRITABLE == {"lamp": {"power", "brightness", "color_rgb"}, "plug": {"power"}}
+    assert m.TOOL_UPDATE == "update_device_capabilities"
+    assert "patch_home_security_status" not in m._READ_TOOLS
+    # só a tomada e a lâmpada recebem escritas; nenhum corpo de segurança passa a validação
+    for body in (
+        {"type": "alarm", "value": "armed"},
+        {"type": "securityStatus", "value": "ARMED"},
+        {"status": "ARMED"},
+    ):
+        for role in ("lamp", "plug"):
+            assert not m._valid_change(role, body)
+
+
+def test_security_writes_stay_blocked_with_flag_and_grant(tmp_path):
+    home, mcp, _ = make(tmp_path, SecMcp(), writes=True)  # flag e grant ativos
+    home.seguranca = Listener()
+    run(home._refrescar())
+    assert (
+        run(home._escrever("lamp", [{"type": "alarm", "value": "armed"}], lambda d: True)) is False
+    )
+    assert run(home._escrever("plug", [{"status": "ARMED"}], lambda d: True)) is False
+    assert mcp.writes() == []
+    assert "patch_home_security_status" not in {n for n, _ in mcp.calls}
+    run(home.parar())

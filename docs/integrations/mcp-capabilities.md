@@ -20,10 +20,10 @@ executado.
 | `get_home_rooms` | sem parâmetros |
 | `get_home_scenarios` | sem parâmetros |
 | `get_home_security_alarm_history` | `size` e `page` obrigatórios; `startDate` e `endDate` inteiros opcionais |
-| `get_home_security_status` | sem parâmetros |
+| `get_home_security_status` | sem parâmetros. **Só leitura, permitida (SAFE-02 #115, decisão do utilizador, a rever por P1/P5/equipa: D-07/P-01).** Resposta real 2026-11-19: `{"status": "DISARMED", "isAlarmed": false}`; `ARMED` assumido |
 | `get_home_status_brief` | sem parâmetros |
 | `get_scenario` | `scenarioId` obrigatório |
-| `patch_home_security_status` | `body` obrigatório; altera estado de segurança e não é permitido pelo ObjectOS |
+| `patch_home_security_status` | `body` obrigatório; altera estado de segurança e não é permitido pela política atual da Conta Certa |
 | `patch_scenario_activation` | `scenarioId` obrigatório; estado/cenário opcional |
 | `post_execute_scenario` | `scenarioId` obrigatório |
 | `post_new_scenario` | objeto de cenário com triggers e start/end actions |
@@ -56,11 +56,11 @@ permitidas pelo conector:
 {"deviceId":"<descoberto em runtime>","body":{"type":"color_rgb","redValue":255,"greenValue":0,"blueValue":0}}
 ```
 
-O schema também anuncia `temperature`, mas o conector não permite essa operação. O ObjectOS não
+O schema também anuncia `temperature`, mas o conector não permite essa operação. A Conta Certa não
 usa ferramentas de alarme/segurança, cenários ou timers. Atualizações físicas continuam
 desativadas por `ENABLE_PHYSICAL_WRITES=false`. Além do flag, `McpHome` exige um grant temporário
-criado pelo operador (`make mcp-writes-on`, ver [mcp-demo.md](mcp-demo.md)), partilhado pelo motor e pelo
-`McpHome`; expirado ou revogado, todas as escritas são recusadas. A whitelist é exata:
+criado pelo operador (`make mcp-writes-on`, ver [mcp-demo.md](mcp-demo.md)); `McpHome` recusa
+escritas quando o grant expira ou é revogado. A whitelist é exata:
 `get_home_devices`, `get_device_details`, `update_device_capabilities`; lâmpada `power`,
 `brightness`, `color_rgb`; tomada só `power`. Os schemas são validados antes da primeira chamada.
 
@@ -84,7 +84,7 @@ Na resposta real da tomada (`get_device_details`), foram observadas as capabilit
 `power`, `todayConsumption` e `yesterdayConsumption`. `power` usa `availableValues: ["on",
 "off"]`. `instantPower` inclui um valor numérico e min/max, mas a resposta e o schema MCP não
 declaram unidade. A unidade foi **confirmada em W** por medição (ver «Consumo (`instantPower`, #12)»
-abaixo), mas o estado ObjectOS só converte o valor se `MCP_INSTANTPOWER_UNIT` estiver definida:
+abaixo), mas `McpHome` só converte o valor se `MCP_INSTANTPOWER_UNIT` estiver definida:
 sem ela `consumo_w` mantém-se `null` e o valor bruto não é apresentado como watts. A leitura é
 consultada em polling de 5 s e `ler_consumo()` apenas devolve o cache.
 
@@ -171,7 +171,7 @@ Inventário por `get_home_devices` (só leitura; sem IDs, nomes nem MACs). O kit
 | **Contacto** (`contactSensor`) | `sensorState` (`normal`/`alarm`), `tamperState`, `batteryStatus` (`low`/`medium`/`high`) | **REAL**, confirmado fisicamente | `SensorReading` `contact` (IMPLEMENTADO) | **IMPLEMENTADO** (`FakeKit`, MCP-05) |
 | **Clima** (`temperatureSensor`) | `temperatureValue` (min −50, max 60), `humidityValue` (0–100), `batteryLevel` (0–100) | **REAL** | `SensorReading` `temperature` + `humidity` (IMPLEMENTADO) | **IMPLEMENTADO** (`FakeKit`, MCP-05) |
 | **Fumo** (`smokeSensor`) | só `batteryStatus` (sem estado de alarme) | REAL (só bateria) | **Fora de âmbito** (decisão do utilizador: o detetor de fumo não é usado) | — |
-| **Gateway** (`gateway`) | `alarmState`, `tamperState`, `networkMode` (`ethernet`/`wifi`/`cellular`), `chargeState`, `batteryLevel`, `factoryReset` | REAL | Só estado, sem adaptador de decisão. **`factoryReset` nunca se escreve** | — |
+| **Gateway** (`gateway`) | `alarmState`, `tamperState`, `networkMode` (`ethernet`/`wifi`/`cellular`), `chargeState`, `batteryLevel`, `factoryReset` | REAL | Só leitura: `features/safety/panel_reader.py` (SAFE-02 #115; ligado ao `McpHome` por um ouvinte). Captura real 2026-11-19: `alarmState = "normal"` = estado de disparo, **não** armamento (lê-se `unknown`). **`factoryReset` nunca se escreve** | — |
 | Câmara, tomada, lâmpada | ver secções anteriores | REAL | `McpHome` (já implementado) | FakeHome |
 
 Todos os dispositivos de segurança (`categories` contém `security`: contacto, fumo e gateway) ficam **fora** do caminho de controlo do `McpHome` (`_find_devices` ignora-os); só se leem, sem escritas.
@@ -211,7 +211,7 @@ Todos os dispositivos de segurança (`categories` contém `security`: contacto, 
 
 ### Por confirmar
 
-Latência real abrir/fechar do contacto (teste cronometrado); período de reporte (batimento) do contacto e do clima: os limiares de `stale` do adaptador (2 h para os três) são **provisórios** e foram escolhidos para não marcar como `stale` um sensor saudável e parado; se o alarme de fumo aparece no `alarmState` do gateway (fora de âmbito).
+Latência real abrir/fechar do contacto (teste cronometrado); período de reporte (batimento) do contacto e do clima: os limiares de `stale` do adaptador (2 h para os três) são **provisórios** e foram escolhidos para não marcar como `stale` um sensor saudável e parado; se o alarme de fumo aparece no `alarmState` do gateway (fora de âmbito); **que valor tem `get_home_security_status` com o alarme armado** (a leitura real só viu `DISARMED`; `alarmState` do gateway = `normal`; ver `~/homemind-testes-manuais/seguranca-leitura-mcp/`).
 
 ## Simulador do kit (MCP-05) — **IMPLEMENTADO**, tudo **SIMULADO**
 
@@ -265,6 +265,23 @@ RESULTADO REAL, obtido com `get_home_devices` e `get_device_details` (nenhuma es
 
 Para ajudar a distinguir H1, quando uma escrita não é confirmada o `McpHome` acrescenta ao motivo o tempo sem contacto, por exemplo «estado final não corresponde ao pedido (dispositivo sem contactar a cloud há 14 min)». É só diagnóstico: nunca bloqueia nem repete escritas. **PRESSUPOSTO:** `lastCommunicationTime` reflete o último contacto do dispositivo com a cloud; confirmar com os mentores.
 
+### Escrita da lâmpada: a ordem dos comandos importa — **OBSERVADO** em 2026-11-18 (REAL)
+
+Três observações com o operador a olhar para a lâmpada (`workMode: colour`):
+
+| Sequência enviada | Resultado físico e na leitura |
+|---|---|
+| `power` → `color_rgb` vermelho → `brightness` 40 (verificação de 18/11) | Lâmpada vista vermelha; a cor antiga já era essa, por isso parecia certo (em 17/11 a mesma sequência não teve efeito físico, causa não apurada) |
+| `color_rgb` branco-azulado → `brightness` 1 → `power` (restauro de 18/11) | Cor azulada vista e depois **vermelho a 1 %** (leitura bruta `3,0,0`) |
+| `power` → `color_rgb` branco-azulado → `brightness` 40 (ensaio de 18/11) | Cor azulada vista e depois **vermelho a 40 %** (`102,0,0`) |
+| `brightness` 40 → `color_rgb` branco-azulado (ensaio de 18/11) | **Branco-azulado a 40 %** (`80,80,102`), visto pelo operador |
+
+**Conclusão (observada, 3 casos):** escrever `brightness` **depois** de `color_rgb` anula a cor e repõe a cor anterior; com `brightness` primeiro e a cor depois ficam as duas. H1 (lâmpada sem ligação) e a hipótese do «comando perdido» não são necessárias para explicar estes resultados; a lâmpada seguiu sempre o estado devolvido pela nuvem. **Não se sabe** se a cor antiga é guardada pela nuvem ou pela lâmpada.
+
+**Consequências (IMPLEMENTADO neste branch, validado só por testes com `FakeMcp`; falta repetir no kit real):**
+- `McpHome._escrever_lampada` e `mcp_verify.verify_lamp` (teste e restauro) enviam agora `brightness` **antes** de `color_rgb`.
+- `_rgb_confere` compara com a tolerância `_RGB_TOL = 3` sobre o RGB escalado pelo brilho; a brilho muito baixo qualquer cor passava (o restauro «confirmado» a 18/11 era um falso positivo). `cor_verificavel` devolve `False` quando o RGB escalado não excede `2 × _RGB_TOL` (brilho < ~2,4 % para 255): aí `_rgb_confere` nunca «confere», e as escritas só exigem ligada e brilho (`restored_color_verified: false` no `verify_lamp`; a cor vê-se a olho).
+
 ## Limites da evidência
 
 - Leituras de `get_home_devices` e `get_device_details` foram efetuadas. Escritas: ver a
@@ -273,5 +290,5 @@ Para ajudar a distinguir H1, quando uma escrita não é confirmada o `McpHome` a
   medição com carga de referência (ver «Consumo (`instantPower`, #12)»); o consumo em watts só se
   obtém com `MCP_INSTANTPOWER_UNIT=W`.
 - `get_home_devices` e `get_device_details` devolvem as mesmas capabilities (comparado em leitura).
-  O polling ObjectOS regista separadamente o instante da sua última leitura.
+  O runtime de energia regista separadamente o instante da última leitura MCP.
 - Latência observada: 1.ª chamada de cada sessão ~2 s, seguintes ~0,5–0,8 s.
