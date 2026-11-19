@@ -5,7 +5,7 @@ import {
 import type { components } from "../shared/api/schema";
 
 export type AppRole = components["schemas"]["MembershipRole"];
-export type SectionId = "home" | "house" | "bills" | "budget" | "notifications" | "assistant" | "diagnostics" | "settings";
+export type SectionId = "home" | "house" | "bills" | "budget" | "houseRules" | "notifications" | "assistant" | "diagnostics" | "settings";
 type NavIcon = typeof IconHome;
 export type NavPage = {
   path: string; label: string; section: SectionId; icon: NavIcon;
@@ -27,6 +27,7 @@ export const visiblePages = (role: AppRole | null): NavPage[] =>
 const hiddenRoutes: Record<string, readonly AppRole[]> = {
   "/notificacoes": ["tenant", "landlord"],
   "/definicoes": ["tenant", "landlord", "operator"],
+  "/regras": ["tenant"],
 };
 
 export const canSeePath = (role: AppRole | null, pathname: string): boolean => {
@@ -37,6 +38,7 @@ export const canSeePath = (role: AppRole | null, pathname: string): boolean => {
 
 export const activeNavPath = (pathname: string): string => {
   if (pathname === "/orcamento") return "/contas";
+  if (pathname === "/regras") return "/casa";
   if (pathname === "/aparelhos" || pathname === "/consumo") return pathname === "/consumo" ? "/" : "/casa";
   return pathname;
 };

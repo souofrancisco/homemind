@@ -17,6 +17,7 @@ import OriginBadge from "../components/common/OriginBadge";
 import Dashboard from "./DashboardPage";
 import AppliancesContent from "./AppliancesPage";
 import BudgetContent from "./BudgetPage";
+import HouseRulesContent from "./HouseRulesPage";
 import NotificationsContent from "./NotificationsPage";
 import AssistantPage from "./AssistantPage";
 import { getCameraStatus, listMcpTools, type CameraStatus, type McpTool } from "../services/diagnostics/api";
@@ -45,6 +46,7 @@ const screenLabels: Record<SectionId, string> = {
   notifications: "Notificações",
   assistant: "Assistente",
   budget: "Orçamento",
+  houseRules: "Regras da casa",
   diagnostics: "Diagnóstico",
   settings: "Definições",
 };
@@ -205,6 +207,17 @@ function HouseContent() {
         {hasAllowance && <Text size="sm" c="dimmed" mt="sm">O senhorio inclui {(allowanceWh / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 1 })} kWh por mês de aquecimento em cada quarto, pagos por todos.</Text>}
       </section>
       {role === "tenant" && <section aria-labelledby="appliances-title"><Title id="appliances-title" order={2} size={18} mb="sm">Aparelhos</Title><AppliancesContent /></section>}
+      {role === "tenant" && (
+        <Card p={{ base: "md", sm: "20px 28px" }}>
+          <Group justify="space-between" align="center" wrap="wrap">
+            <Stack gap={2}>
+              <Title order={2} size={18}>Regras da casa</Title>
+              <Text size="sm" c="dimmed">Regras que desligam uma tomada, propostas e votadas pelos moradores.</Text>
+            </Stack>
+            <Button component={Link} to="/regras" variant="default" mih={48} rightSection={<IconArrowRight size={16} aria-hidden="true" />}>Ver regras</Button>
+          </Group>
+        </Card>
+      )}
       {role === "operator" && <section aria-labelledby="appliances-title"><Title id="appliances-title" order={3} size="h4" mb="sm">Aparelhos</Title><NoData value={{ title: "Diagnóstico de dispositivos", detail: "O operador consulta o estado técnico autorizado na área Diagnóstico.", dependency: "Não são apresentados aparelhos pessoais." }} /></section>}
       {(role === "tenant" || role === "landlord") && (
         <HouseRulesCard householdId={session.house.id} canEdit={role === "tenant"} />
@@ -275,6 +288,12 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
       {role === "tenant" ? <Tabs defaultValue="month" styles={{ tab: { minHeight: 44 } }}><Tabs.List><Tabs.Tab value="month">Este mês</Tabs.Tab><Tabs.Tab value="receipts">Recibos</Tabs.Tab></Tabs.List>
         <Tabs.Panel value="month" pt="md"><BudgetContent /></Tabs.Panel><Tabs.Panel value="receipts" pt="md"><BillsContent /></Tabs.Panel></Tabs>
         : <BillsContent />}
+    </Stack>
+  );
+  if (section === "houseRules") return (
+    <Stack gap="xl">
+      <PageHeading title={screenLabels.houseRules} description="Regras que desligam uma tomada, propostas e votadas pelos moradores." />
+      <HouseRulesContent />
     </Stack>
   );
   if (section === "notifications") return (

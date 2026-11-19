@@ -24,7 +24,7 @@ export default function Shell() {
   const pages = visiblePages(role);
   const active = activeNavPath(pathname);
   const current = pages.find((page) => page.path === active);
-  const pageTitle = current?.label ?? (pathname === "/notificacoes" ? "Notificações" : pathname === "/definicoes" ? "Definições" : "Conta Certa");
+  const pageTitle = current?.label ?? (pathname === "/notificacoes" ? "Notificações" : pathname === "/definicoes" ? "Definições" : pathname === "/regras" ? "Regras da casa" : "Conta Certa");
   const [unread, setUnread] = useState<number | null>(null);
   const householdId = session.membership?.household_id;
 
@@ -100,6 +100,7 @@ export default function Shell() {
                   {role === "operator" && <Route path="/" element={<ContaCertaPage section="home" />} />}
                   <Route path="/notificacoes" element={canSeePath(role, pathname) ? <ContaCertaPage section="notifications" /> : <Navigate to="/" replace />} />
                   <Route path="/definicoes" element={canSeePath(role, pathname) ? <ContaCertaPage section="settings" /> : <Navigate to="/" replace />} />
+                  <Route path="/regras" element={canSeePath(role, pathname) ? <ContaCertaPage section="houseRules" /> : <Navigate to="/" replace />} />
                   <Route path="/consumo" element={<Navigate to="/" replace />} /><Route path="/orcamento" element={<Navigate to="/contas" replace />} />
                   <Route path="/aparelhos" element={<Navigate to="/casa" replace />} /><Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>}

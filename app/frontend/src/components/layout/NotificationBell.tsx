@@ -72,7 +72,8 @@ export default function NotificationBell({ householdId, unread, onChanged }: {
                   </div>
                   <Anchor component={Link} to="/notificacoes" fz={13} c="inherit" onClick={() => setOpened(false)}>Mais opções (É de outra pessoa)</Anchor>
                 </div>}
-                {!vote && n.status === "unread" && <Button variant="default" mih={40} mt={10} w="fit-content" loading={busy === n.id}
+                {!vote && n.can_respond && (n.status === "unread" || n.status === "read") && <Anchor component={Link} to="/notificacoes" fz={14} fw={600} c="inherit" mt={10} display="inline-block" onClick={() => setOpened(false)}>Responder na página</Anchor>}
+                {!vote && !n.can_respond && n.status === "unread" && <Button variant="default" mih={40} mt={10} w="fit-content" loading={busy === n.id}
                   onClick={() => void act(n.id, () => markNotificationRead(householdId, n.id))}>Marcar como lida</Button>}
                 <Text fz={12} c="dimmed" mt={8}>{when.format(new Date(n.created_at))}</Text>
               </article>

@@ -30,7 +30,7 @@ const theme = createTheme({
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <MantineProvider theme={theme} defaultColorScheme="light">
-      <Notifications position="top-center" />
+      <Notifications position="top-center" limit={3} autoClose={5000} />
       <BrowserRouter>
         <AuthProvider>
           <App />
