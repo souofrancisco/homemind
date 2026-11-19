@@ -36,3 +36,23 @@ def test_historico_da_conversa_existe_e_reutiliza_agent_message(spec):
     (limit,) = [p for p in op["parameters"] if p["name"] == "limit"]
     assert limit["schema"]["minimum"] == 1 and limit["schema"]["maximum"] == 100
     assert limit["schema"]["default"] == 50
+
+
+def test_ferramentas_novas_e_transparencia_no_contrato(spec):
+    schemas = spec["components"]["schemas"]
+    tools = schemas["AgentTool"]["enum"]
+    assert {
+        "top_appliances",
+        "consumption_change",
+        "explain_attribution",
+        "pending_confirmations",
+    } <= set(tools)
+    assert "interpreter" in schemas["AgentResponse"]["properties"]
+    assert {"llm", "rules"} <= set(
+        schemas["AgentResponse"]["properties"]["interpreter"]["anyOf"][0]["enum"]
+    )
+    assert "appliances" in schemas["AgentToolResult"]["properties"]
+    assert {"attribution_parts", "final", "pending", "pending_count"} <= set(
+        schemas["AgentToolResult"]["properties"]
+    )
+    assert "tool_results" in schemas["AgentResponse"]["properties"]

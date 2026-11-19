@@ -5,6 +5,7 @@ resposta e de estado vivem no contrato (`contracts/notification.py`); aqui só s
 `Notification`.
 """
 
+import unicodedata
 from datetime import date, datetime, timedelta
 from uuid import UUID, uuid5
 
@@ -71,12 +72,27 @@ def compose_confirmation(
     correlation_id: UUID,
     source_event_id: UUID,
     now: datetime,
+    likely_owner_name: str | None = None,
 ) -> Notification:
     """«De quem é esta conta?»: notificação da casa, só para quem pode responder."""
     subject = f"O {req.appliance_name}" if req.appliance_name else "Um aparelho"
     body = f"{subject} está ligado numa zona comum"
     if req.estimated_cost_cents is not None:
         body += f", cerca de {format_eur(req.estimated_cost_cents)} estimados"
+    if req.likely_owner_resident_id is not None and req.match_confidence is not None:
+        confidence = round(req.match_confidence * 100)
+        has_owner_in_name = bool(
+            likely_owner_name
+            and _normalise_name(likely_owner_name) in _normalise_name(req.appliance_name or "")
+        )
+        if likely_owner_name:
+            if has_owner_in_name:
+                body += f". Aparelho identificado a {confidence} %"
+            else:
+                body += (
+                    f". Parece ser do {likely_owner_name} (aparelho identificado a {confidence} %);"
+                    " confirma"
+                )
     if origin is Origin.simulated:
         body += _SIMULATED
     body += "."
@@ -104,6 +120,12 @@ def compose_confirmation(
         correlation_id=correlation_id,
         created_at=now,
     )
+
+
+def _normalise_name(value: str) -> str:
+    """Normalização para comparar nomes sem distinção de maiúsculas ou acentos."""
+    decomposed = unicodedata.normalize("NFKD", value.casefold())
+    return "".join(char for char in decomposed if not unicodedata.combining(char))
 
 
 def compose_budget_alert(

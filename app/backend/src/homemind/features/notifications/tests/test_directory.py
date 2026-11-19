@@ -42,6 +42,20 @@ def test_nao_membro_e_casa_inexistente(seeded):
     assert role(seeded, stable_id("household", "nao-existe"), fx.ANA) is None
 
 
+def test_resident_name_so_devolve_membro_da_casa(seeded):
+    def directory(conn):
+        return SqliteResidentDirectory(conn)
+
+    assert seeded.run_sync(lambda c: directory(c).resident_name(fx.HOUSEHOLD, fx.BRUNO)) == "Bruno"
+    assert seeded.run_sync(lambda c: directory(c).resident_name(HOUSE_B, fx.ANA)) is None
+    assert (
+        seeded.run_sync(
+            lambda c: directory(c).resident_name(fx.HOUSEHOLD, stable_id("resident", "nao"))
+        )
+        is None
+    )
+
+
 def test_membership_terminada_nao_conta(seeded):
     assert role(seeded, HOUSE_B, FRED) is None  # `ended` com `ends_on` passado
 
