@@ -70,6 +70,8 @@ histórico nem altera a votação D-32. Sem todas estas condições, os campos d
 
 Só se pergunta quando o custo estimado **do consumo** (utilização completa do aparelho) é ≥ `ask_threshold_cents` (omissão 0,50 €, configurável por casa em `HouseholdPolicy`); abaixo, sem custo estimável ou com a regra A, vai direto para a conta comum. A pergunta pode sair com o consumo ainda a decorrer, logo que passa o limiar (D-32).
 
+**Limite mensal (PROPOSTA, #248, v5.1 §6.2):** para consumos fora de quarto (zona comum ou localização desconhecida), enquanto o acumulado do **mês civil (fuso da casa)** do aparelho (por `appliance_id`; os não identificados contam juntos) for inferior a `BILLING_IGNORE_WH_MONTH` (omissão 5000 Wh = 5 kWh; 0 = desligado), não se pergunta nem se acusa: vai para a conta comum por igual (`equal_fallback`; o motivo «abaixo do limite mensal» fica só no registo, o contrato `Attribution` não tem campo para ele). Aplica-se em conjunto com o limiar de custo: só se pergunta se custo ≥ 0,50 € **e** acumulado ≥ limite. Os consumos de quarto não mudam. Um consumo a decorrer espera pelo fecho. Determinístico e idempotente na reentrega (D-19); a fatura continua a fechar a 100 %. A demo (`make demo-up`, `compose.demo-web.yaml`) usa `BILLING_IGNORE_WH_MONTH=0` para mostrar a pergunta numa sessão curta.
+
 ## Cálculo da fatura
 
 Ver o fluxograma em [event-flow.md](../architecture/event-flow.md). Resumo:

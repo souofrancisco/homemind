@@ -538,7 +538,7 @@ class McpHome:
             mcp_ok=False if self._simulated else self._mcp_ok,
             lampada=self._lampada,
             tomada=self._tomada.model_copy(update={"consumo_w": w, "consumo_lido_em": lido_em}),
-            atualizado_em=datetime.now(UTC),
+            atualizado_em=self._agora(),
             aviso=self._aviso,
         )
 

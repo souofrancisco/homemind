@@ -113,7 +113,10 @@ def test_endpoints_so_operador_na_casa_demo(app, client, monkeypatch):
     )
 
 
-def test_sessao_automatica_identifica_aquecedor_localiza_e_pergunta(app, client, now):
+def test_sessao_automatica_identifica_aquecedor_localiza_e_pergunta(app, client, now, monkeypatch):
+    monkeypatch.setattr(
+        "homemind.features.billing.attributor.ignore_wh_month", lambda: 0
+    )  # a demo mostra a pergunta
     start = now["value"]
     app.state.db.run_sync(lambda c: _seed_live_catalog(c, start - timedelta(minutes=1)))
     live = DemoLive(app.state.bus, clock=lambda: start, started_at=start)

@@ -5,7 +5,7 @@ continuam a ser cenários inventados, numa BD de teste isolada.
 """
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import UUID, uuid4
@@ -243,3 +243,38 @@ def test_settings_load_energy_household_from_environment(monkeypatch):
     assert Settings(_env_file=None).energy_household_id == house
     monkeypatch.delenv("ENERGY_HOUSEHOLD_ID")
     assert Settings(_env_file=None).energy_household_id is None
+
+
+def test_lampada_do_kit_gera_consumo_estimado_simulado(kit_setup, monkeypatch):
+    """#248 F3: estado da lâmpada lido pelo McpHome → sessão estimada nos eventos de domínio."""
+    ctx = kit_setup
+    now = {"t": datetime(2026, 11, 18, 20, tzinfo=UTC)}
+    monkeypatch.setattr(ctx.home, "_agora", lambda: now["t"])
+    ctx.run(ctx.home._refrescar())
+    attach(ctx)
+    bulb = ctx.kit._caps(ctx.kit.BULB)
+
+    def refresh(minutes):
+        now["t"] += timedelta(minutes=minutes)
+        ctx.run(ctx.home._refrescar())
+
+    bulb["power"]["value"] = "on"
+    bulb["brightness"]["value"] = 100
+    refresh(0)
+    refresh(60)  # 1 h a 100 %
+    bulb["brightness"]["value"] = 50
+    refresh(0)
+    refresh(120)  # 2 h a 50 %
+    bulb["power"]["value"] = "off"
+    refresh(0)
+    consumos = [e for e in events(ctx) if e.type.startswith("energy.consumption")]
+    assert [e.type for e in consumos] == [
+        "energy.consumption_detected",
+        "energy.consumption_closed",
+    ]
+    closed = consumos[-1].data
+    assert closed.energy_wh == 18  # 9 Wh + 9 Wh
+    assert closed.provenance.origin is Origin.simulated
+    assert closed.provenance.kind.value == "estimated"
+    lamp = next(r for r in devices(ctx) if r["external_ref"] == ctx.kit.BULB)
+    assert UUID(lamp["id"]) == closed.device_id and lamp["kind"] == "bulb"

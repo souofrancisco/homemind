@@ -19,7 +19,8 @@ AUTH := docker compose -p homemind-auth -f app/compose.yaml
 ENVFILE := $(if $(wildcard app/.env),--env-file ../.env)
 # DEMO=1: backend sobre a CÓPIA da base de demo (app/.demo-web), SIMULADO (FakeHome).
 DEMO_DB := $(abspath app/.demo-web/conta-certa-web.sqlite3)
-DEMO_ENV := $(if $(DEMO),PROFILE=demo HOME_BACKEND=fake DB_PATH=$(DEMO_DB))
+# BILLING_IGNORE_WH_MONTH=0: a demo curta tem de mostrar «De quem é esta conta?» (#248).
+DEMO_ENV := $(if $(DEMO),PROFILE=demo HOME_BACKEND=fake BILLING_IGNORE_WH_MONTH=0 DB_PATH=$(DEMO_DB))
 WEBDEMO := uv run --offline --project $(BACKEND) python -m homemind.demo.web
 
 .PHONY: help help-all setup auth-up backend frontend demo-up demo-reset down test lint contracts build check worktree demo-prepare demo-replay demo-verify

@@ -5,6 +5,7 @@ services:
     environment:
       PROFILE: demo
       HOME_BACKEND: fake
+      BILLING_IGNORE_WH_MONTH: "0"  # a demo curta mostra «De quem é esta conta?» (#248)
       DB_PATH: /srv/demo-web/conta-certa-web.sqlite3
     volumes:
       - ./.demo-web:/srv/demo-web

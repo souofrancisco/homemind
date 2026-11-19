@@ -14,11 +14,14 @@ from homemind.connectors.mcp_sensor_collector import SensorBinding, SensorCollec
 from homemind.contracts.appliance_catalog import ApplianceCatalog
 from homemind.contracts.common import Origin, new_id
 from homemind.contracts.devices import Device, DeviceKind, DeviceRole, DeviceSource, PowerUnit
-from homemind.contracts.home import Home
+from homemind.contracts.home import EstadoCasa, Home
 from homemind.contracts.sensors import SensorReading
 from homemind.core.config import Settings
 from homemind.core.db import Database
 from homemind.core.events import EventBus
+from homemind.features.energy.kit_actuators import lamp_device_id
+from homemind.features.energy.lamp import LampEstimator
+from homemind.features.energy.locate import locate
 
 log = logging.getLogger(__name__)
 
@@ -118,6 +121,59 @@ class _LazySensors:
             collector.unavailable()
 
 
+def _attach_lamp(
+    home: McpHome,
+    registration: _Registration,
+    bus: EventBus,
+    room_id: UUID | None,
+) -> None:
+    """Estimativa da lâmpada (9 W × tempo × brilho) a partir do estado que o `McpHome` já lê.
+    A lâmpada só se regista no catálogo quando liga pela primeira vez."""
+
+    def register() -> UUID:
+        ref = home.lamp_ref
+        if ref is None:
+            raise ValueError("lâmpada ainda não descoberta")
+        device = Device(
+            id=lamp_device_id(ref),
+            household_id=registration.household_id,
+            room_id=room_id,
+            name="Lâmpada do kit",
+            kind=DeviceKind.bulb,
+            source=DeviceSource.mcp,
+            external_ref=ref,
+        )
+        return registration.db.run_sync(
+            lambda c: registration.catalog.register_device(c, device)
+        ).id
+
+    def where(device_id: UUID):
+        return locate(
+            registration.db.run_sync(
+                lambda c: registration.catalog.device_location(
+                    c, registration.household_id, device_id
+                )
+            )
+        )
+
+    estimator = LampEstimator(
+        registration.household_id, register=register, locate=where, publish=bus.publish_threadsafe
+    )
+    previous = home.ao_estado
+
+    def listen(casa: EstadoCasa, mudou: bool) -> None:
+        if previous is not None:
+            previous(casa, mudou)
+        lamp = casa.lampada
+        origin = Origin.simulated if casa.backend == "fake" else Origin.real
+        try:
+            estimator.observe(lamp.ligada, lamp.brilho, casa.atualizado_em, origin)
+        except Exception as exc:  # nunca derruba o polling
+            log.warning("Estimativa da lâmpada falhou (%s)", type(exc).__name__)
+
+    home.ao_estado = listen
+
+
 async def attach_kit_collectors(
     home: Home,
     *,
@@ -150,3 +206,4 @@ async def attach_kit_collectors(
     unit = PowerUnit(settings.mcp_instantpower_unit or PowerUnit.unknown)
     home.coletor = _LazyEnergy(registration, bus, unit, clock)
     home.sensores = _LazySensors(registration, bus, clock)
+    _attach_lamp(home, registration, bus, settings.mcp_lamp_room_id)

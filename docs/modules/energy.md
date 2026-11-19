@@ -97,7 +97,7 @@ continuam fora da `main` até integração. Isso não implementa o pipeline P1 d
 | Localização | P1 observa `ConsumptionEvent.location`/`room_id`. `ApplianceOwnership.home_room_id` e `Device.room_id` são locais habituais/configurados, não prova da utilização efetiva. Uma tomada agregada pode não localizar uma carga individual | P0 |
 | Aprendizagem com confirmações | Atualiza `ApplianceSignature` (`origin=learned`) — **IMPLEMENTADO** (ENERGY-04) | P1 |
 | Aparelhos desconhecidos recorrentes (clustering) | Agrupar sessões semelhantes e perguntar uma vez — **IMPLEMENTADO** (ENERGY-04) | P2 |
-| Estimativa de lâmpada (9 W × tempo × brilho) | `provenance=estimated` | P2 |
+| Estimativa de lâmpada (9 W × tempo × brilho) | **IMPLEMENTADO, SIMULADO** (#248): `features/energy/lamp.py` (`LampEstimator`, constante `LAMP_WATTS = 9`) lê o estado da lâmpada que o `McpHome` já tem (ligada + brilho), abre uma sessão ao ligar e fecha-a ao desligar, e publica `energy.consumption_detected/closed` com `provenance=estimated` (origem `simulated` com o FakeKit). Brilho a mudar conta por troços; lâmpada indisponível fecha no último instante observado (marcada em `fechadas_sem_leitura`, nunca inventa tempo); a lâmpada regista-se no catálogo ao ligar pela primeira vez, na divisão `MCP_LAMP_ROOM_ID`; o atribuidor trata-a como qualquer consumo. Provado só com `pytest` e FakeKit; sem hardware. Limitações: precisão = intervalo de polling; o instante vem do relógio do `McpHome`, não do `lastCommunicationTime` da lâmpada | P2 |
 
 ## Collector MCP → `EnergyReading` (MCP-02) — **IMPLEMENTADO** (sem ligação à app)
 
