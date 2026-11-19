@@ -89,6 +89,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `presence.changed` | P2 | `PersonPresence` | P4, P3 | idem |
 | `presence.cue_recorded` (PROPOSTA) | P2 | `PresenceEvent` (Wi-Fi, manual, aparelho) | P2 | idem |
 | `presence.confirmation_needed` (PROPOSTA) | P2 | `PresenceConfirmationRequest` | P3 (`notifications.presence_check`, **IMPLEMENTADO**) | idem |
+| `presence.source_revoked` (**IMPLEMENTADO**, PRIV-03 #51, aditivo, D-37) | P2 | `PresenceSourceRevoked` (`resident_id`, `source`: só metadados, sem pistas) | faturação (descarta a cópia do morador) | imutável (categoria operacional) |
 | `presence.occupancy_changed` (PROPOSTA, **IMPLEMENTADO**, PRES-06) | P2 | `HouseOccupancy` (anónimo; só quando o estado muda; `likely_empty` = porta fiável a 0) | P2, P3, SAFE-02 (futuro) | idem |
 | `sensor.reading_recorded` (PROPOSTA) | P1 | `SensorReading` | P2 | idem |
 | `safety.alert_raised` (PROPOSTA) | P2 | `SafetyAlert` (o mesmo `id` volta com `status=resolved`) | P3 (`notifications.safety_alert`, **IMPLEMENTADO**); P3 (`agent.safety_suggestion`, **IMPLEMENTADO**, AGENT-03b: só propõe, uma `ProposedAction` por inquilino ativo; alerta resolvido → propostas pendentes `rejected`; em runtime real só dispara quando a `safety` tiver o resolvedor de aquecedores, ENERGY-03 #81; hoje só na demo SIMULADA e nos testes) | idem |

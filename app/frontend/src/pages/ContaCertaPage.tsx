@@ -14,6 +14,7 @@ import RoomAllowanceLine from "../components/billing/RoomAllowanceLine";
 import { listRoomAllowances, type RoomAllowanceView } from "../services/billing/allowances";
 import HouseRulesCard from "../components/billing/HouseRulesCard";
 import SecurityPanelCard from "../components/security/SecurityPanelCard";
+import PresenceConsentCard from "../components/presence/PresenceConsentCard";
 import OriginBadge from "../components/common/OriginBadge";
 import Dashboard from "./DashboardPage";
 import AppliancesContent from "./AppliancesPage";
@@ -313,7 +314,7 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
   );
   if (section === "settings") return (
     <Stack gap={24}>
-      <PageHeading title="Definições" description="A tua sessão e a aparência da app." />
+      <PageHeading title="Definições" description={role === "tenant" ? "A tua sessão, a privacidade e a aparência da app." : "A tua sessão e a aparência da app."} />
       <Card p={{ base: "md", sm: 28 }} maw={640}>
         <Stack gap={16}>
           <Title order={2} size={20}>A tua conta</Title>
@@ -329,6 +330,7 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
           <Button className="conta-btn-danger" variant="default" mih={48} onClick={() => void logout()} w="fit-content">Terminar sessão</Button>
         </Stack>
       </Card>
+      {role === "tenant" && session.membership && <PresenceConsentCard householdId={session.membership.household_id} membershipId={session.membership.id} />}
     </Stack>
   );
 }

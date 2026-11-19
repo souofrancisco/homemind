@@ -49,14 +49,23 @@ def cue(*, resident=fx.ANA, house=fx.HOUSEHOLD, source=PresenceSource.wifi):
     )
 
 
-def set_opt_in(db, resident, house, enabled):
-    db.run_sync(
-        lambda conn: conn.execute(
+def set_opt_in(db, resident, house, enabled, *, manual_source=True):
+    """Opt-in global; por omissão também liga a fonte `manual` (D-37: sem ela não há pista)."""
+
+    def run(conn):
+        conn.execute(
             "UPDATE membership SET presence_opt_in = ?"
             " WHERE household_id = ? AND resident_id = ?",
             (int(enabled), str(house), str(resident)),
         )
-    )
+        if enabled and manual_source:
+            conn.execute(
+                "INSERT OR REPLACE INTO presence_source_consent (household_id, resident_id,"
+                " source, enabled, text_version, updated_at) VALUES (?,?,'manual',1,'teste',?)",
+                (str(house), str(resident), NOW.isoformat()),
+            )
+
+    db.run_sync(run)
 
 
 def allow(db, event, **kwargs):
@@ -127,6 +136,20 @@ def test_record_cue_requires_database_transaction(db):
 def test_manual_requires_same_authenticated_resident(db):
     set_opt_in(db, fx.ANA, fx.HOUSEHOLD, True)
     assert not allow(db, cue(source=PresenceSource.manual), actor_resident_id=fx.BRUNO)
+    assert allow(db, cue(source=PresenceSource.manual), actor_resident_id=fx.ANA)
+
+
+def test_manual_needs_its_own_source_opt_in_besides_the_global_one(db):
+    """PRIV-03 #51: o opt-in global não chega; a fonte «manual» está desligada por omissão."""
+    set_opt_in(db, fx.ANA, fx.HOUSEHOLD, True, manual_source=False)
+    assert not allow(db, cue(source=PresenceSource.manual), actor_resident_id=fx.ANA)
+    recorded = db.run_sync(
+        lambda conn: record_individual_cue(
+            conn, cue(source=PresenceSource.manual), now=NOW, actor_resident_id=fx.ANA
+        )
+    )
+    assert recorded is False
+    set_opt_in(db, fx.ANA, fx.HOUSEHOLD, True)
     assert allow(db, cue(source=PresenceSource.manual), actor_resident_id=fx.ANA)
 
 

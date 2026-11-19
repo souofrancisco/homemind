@@ -842,7 +842,7 @@ def test_vote_events_carry_only_counts():
 
 def test_every_event_type_has_a_sample_and_roundtrips_json():
     samples = fx.event_samples()
-    assert {s.type for s in samples} == set(domain_events.EVENT_TYPES) and len(samples) == 32
+    assert {s.type for s in samples} == set(domain_events.EVENT_TYPES) and len(samples) == 33
     for s in samples:
         wire = s.model_dump_json()
         back = domain_events.domain_event_adapter.validate_json(wire)
@@ -856,6 +856,7 @@ def test_event_types_cover_the_documented_list():
         "energy.consumption_closed", "energy.identification_needed",
         "presence.door_crossed", "presence.changed",
         "presence.cue_recorded", "presence.confirmation_needed", "presence.occupancy_changed",
+        "presence.source_revoked",
         "sensor.reading_recorded", "safety.alert_raised", "safety.away_changed",
         "safety.security_changed", "safety.security_action",
         "billing.confirmation_needed", "billing.attribution_changed", "billing.bill_created",

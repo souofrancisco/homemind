@@ -288,6 +288,12 @@ def _people_with_data(conn: sqlite3.Connection) -> set[tuple[str, str]]:
         pairs.update(
             (r[0], r[1]) for r in conn.execute(f"SELECT household_id, resident_id FROM {table}")
         )  # noqa: S608
+    pairs.update(  # fontes ainda ligadas (mesmo sem outros dados): têm de se desligar com o opt-in
+        (r[0], r[1])
+        for r in conn.execute(
+            "SELECT household_id, resident_id FROM presence_source_consent WHERE enabled = 1"
+        )
+    )
     pairs.update(
         (r[0], r[1])
         for r in conn.execute(
@@ -321,6 +327,11 @@ def erase_resident(
         rows += conn.execute(  # noqa: S608 - nomes do esquema
             f"DELETE FROM {table} WHERE household_id = ? AND resident_id = ?", (hid, rid)
         ).rowcount
+    from homemind.contracts.presence import ConsentReason
+    from homemind.features.presence import consent  # local: consent importa este módulo
+
+    # as fontes ficam desligadas (um novo opt-in não as reativa em silêncio) e fica registado
+    consent.revoke_all_flags(conn, UUID(hid), UUID(rid), now, ConsentReason(reason))
     _log(conn, now, "erase", hid, rid, reason, {"events": len(ids), "rows": rows})
     return len(ids), rows
 

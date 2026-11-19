@@ -15,9 +15,11 @@ Dividir só por um subconjunto de moradores (2 de 4 em casa) fica PLANEADO: exig
 novo no contrato `Attribution`.
 
 Billing guarda uma cópia mínima dos eventos públicos de presença (não importa a feature) e
-apaga o que tem mais de `RETENTION`. Quem deixa de ter `presence_opt_in` em vigor (revogou ou saiu
-da casa) perde a cópia na primeira mensagem de presença seguinte da casa (PRIV-03): a promessa «os
-teus dados de presença são apagados» vale também aqui, sem esperar pelos 40 dias.
+apaga o que tem mais de `RETENTION`. Quem desliga uma fonte (PRIV-03 #51) perde a cópia dos
+seus estados logo (`presence.source_revoked`). Quem deixa de ter `presence_opt_in` em vigor
+(revogou ou saiu da casa) perde a cópia na primeira mensagem de presença seguinte da casa
+(PRIV-03): a promessa «os teus dados de presença são apagados» vale também aqui, sem esperar
+pelos 40 dias.
 """
 
 import sqlite3
@@ -123,7 +125,7 @@ def sole_occupant(
 
 # Nome PERMANENTE (chave de idempotência em `processed_event`).
 CONSUMER = "billing.presence"
-EVENT_TYPES = ("presence.changed", "presence.occupancy_changed")
+EVENT_TYPES = ("presence.changed", "presence.occupancy_changed", "presence.source_revoked")
 
 
 def handle(conn: sqlite3.Connection, stored: de.StoredEvent) -> list[de.DomainEvent]:
@@ -145,6 +147,14 @@ def handle(conn: sqlite3.Connection, stored: de.StoredEvent) -> list[de.DomainEv
         )
         _prune(conn, "billing_presence_state", "since", h, ev.ts, "resident_id")
         _purge_unconsented(conn, h)
+    elif isinstance(ev, de.PresenceSourceRevokedEvent):
+        # PRIV-03 #51: o morador desligou uma fonte; os estados que a cópia guardava podem vir
+        # dela e não se separam por fonte, por isso apagam-se todos os deste morador (o estado
+        # recalculado chega a seguir em `presence.changed`). Na dúvida, divide-se por todos.
+        conn.execute(
+            "DELETE FROM billing_presence_state WHERE household_id = ? AND resident_id = ?",
+            (h, str(ev.data.resident_id)),
+        )
     elif isinstance(ev, de.PresenceOccupancyChanged):
         o = ev.data
         conn.execute(
