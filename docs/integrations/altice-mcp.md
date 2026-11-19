@@ -16,7 +16,7 @@ Guia oficial de ligação da organização: [references/altice-mcp-guia-ligacao.
 
 - Ferramentas usadas: **só** `get_home_devices`, `get_device_details`, `update_device_capabilities`.
 - Dispositivos: **só** lâmpada (`power`, `brightness`, `color_rgb`) e tomada (`power`).
-- **Nunca escrever** alarme, segurança, cenários ou timers. Exceção só de **leitura** (SAFE-02 #115, decisão do utilizador, por rever pela equipa): `get_home_security_status`. As ferramentas `patch_home_security_status`, `post_new_scenario`, `patch_scenario_activation`, `post_execute_scenario`, `post_timer_device` existem no servidor mas **estão fora do âmbito** (decisão P-01 para as rever).
+- **Nunca escrever** alarme, segurança, cenários ou timers. Exceção só de **leitura** (SAFE-02 #115, decisão do utilizador, D-36: sem revisão de P1/P5/P3): `get_home_security_status`. As ferramentas `patch_home_security_status`, `post_new_scenario`, `patch_scenario_activation`, `post_execute_scenario`, `post_timer_device` existem no servidor mas **estão fora do âmbito** (decisão P-01 para as rever).
 - Escritas físicas: `ENABLE_PHYSICAL_WRITES=false` por omissão **e** grant temporário (`make mcp-writes-on`). Um agente não executa escritas físicas sem autorização explícita do utilizador nessa tarefa.
 - Escrita física confirmada **só** por releitura; uma escrita de resultado incerto **nunca** é repetida.
 - Segredos (`MCP_API_KEY`, tokens, URL RTSP) só em `app/.env` e `app/.mcp-auth/`. Nunca em logs, erros, testes, issues ou docs. IDs de dispositivos nunca em documentação.
