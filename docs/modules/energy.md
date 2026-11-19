@@ -111,6 +111,21 @@ Código: `connectors/mcp_energy.py` (`reading_from_device`, função pura) e `co
 - **Polling:** `MCP_POLL_SECONDS` (por omissão 5, mínimo 1) e backoff exponencial até `MCP_POLL_BACKOFF_MAX_S` (60) após falhas seguidas.
 - **Por fazer (PLANEADO):** montar o `EnergyCollector` no arranque da app com o barramento (`app.state.bus`), o `household_id` e o `device_id`. Ainda não existe tabela de dispositivos (HOUSE-03) nem rota para criar casas (HOUSE-01); o barramento recusa eventos de casas inexistentes. O `publish` injetado deve ser não bloqueante quando chamado no event loop.
 
+## Demo web viva — **IMPLEMENTADO**
+
+`features/demo_live` emite leituras a cada 5 segundos na cópia web, com origem `simulated`,
+base aproximada de 40 W e sessões de aquecedor (2040 W acima da base) ou chaleira
+(1820 W acima da base). O aquecedor inicia sozinho cerca de 60 segundos após o arranque
+e dura cerca de 180 segundos; a chaleira dura 155 segundos. No fim da sessão a tomada emite uma
+leitura em falta e volta à base, o que fecha o consumo de imediato (sem esperar os 10 min da
+pausa de termóstato): o pedido «De quem é esta conta?» surge cerca de 4 minutos após o arranque.
+A cópia contém um medidor `room_meter`
+SIMULADO na sala para provar localização `common`; não usa o `main_meter` agregado.
+`DEMO_LIVE` é verdadeira por omissão em perfil demo e pode ser desligada com
+`DEMO_LIVE=false`. `make demo-web-reset` reancora o cenário antes de apresentar.
+O emissor só funciona com `PROFILE=demo`, `HOME_BACKEND=fake` e uma casa demo; não acessa
+MCP nem executa escritas físicas. A interface identifica estas sessões como **SIMULADO**.
+
 ## Degraus e sessões ON/OFF (ENERGY-02) — **IMPLEMENTADO** (sem ligação à app)
 
 Código: `features/energy/steps.py` (`StepTracker`, puro) e `features/energy/consumer.py` (consumidor do barramento para `energy.reading_recorded`). Publica `energy.step_detected`, `energy.consumption_detected` e `energy.consumption_closed`. Valores **decididos pelo utilizador (17/11/2026)**:

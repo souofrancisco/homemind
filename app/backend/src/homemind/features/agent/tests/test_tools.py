@@ -30,6 +30,41 @@ def _registry(c=None, b=None, r=None):
     )
 
 
+class Attribution:
+    def explain_attribution(self, household_id, resident_id, period):
+        from homemind.contracts.agent_providers import (
+            AttributionPartValue,
+            AttributionValue,
+            ToolValue,
+        )
+        from homemind.features.agent.tests._fakes import SIMULATED_ESTIMATED
+
+        return AttributionValue(
+            ToolValue(None, 640, SIMULATED_ESTIMATED),
+            (AttributionPartValue("O teu quarto", 640, SIMULATED_ESTIMATED),),
+            False,
+        )
+
+
+class Confirmations:
+    def pending_confirmations(self, household_id, resident_id):
+        from datetime import datetime, timedelta
+
+        from homemind.contracts.agent_providers import (
+            ConfirmationsValue,
+            ConfirmationValue,
+        )
+        from homemind.features.agent.tests._fakes import SIMULATED_ESTIMATED
+
+        item = ConfirmationValue(
+            "Aquecedor do Bruno",
+            64,
+            datetime.now().astimezone() + timedelta(hours=1),
+            SIMULATED_ESTIMATED,
+        )
+        return ConfirmationsValue(4, (item, item, item))
+
+
 def test_specs_so_de_leitura():
     assert {s.tool for s in _registry().specs()} == set(AgentTool)
 
@@ -112,3 +147,30 @@ def test_sucesso_valida_como_resultado():
     rec = r.call("receipt", {}, ctx())
     assert rec.request is not None and rec.request.bill_id == BILL and rec.request.period is None
     assert rec.result.cost_cents == 18_750 and rec.period == "2026-11"
+
+
+def test_ferramentas_novas_tipadas_e_com_argumentos_validos():
+    r = ToolRegistry(
+        FakeConsumption(),
+        FakeBudget(),
+        FakeReceipt(),
+        attribution=Attribution(),
+        confirmations=Confirmations(),
+    )
+    explain = r.call("explain_attribution", {}, ctx())
+    assert explain.result.cost_cents == 640 and explain.result.final is False
+    assert explain.result.attribution_parts[0].amount_cents == 640
+    pending = r.call("pending_confirmations", {}, ctx())
+    assert pending.request.period is None
+    assert pending.result.pending_count == 4 and len(pending.result.pending) == 3
+    with pytest.raises(ToolRejected):
+        r.call("pending_confirmations", {"period": "2026-11"}, ctx())
+
+
+def test_senhorio_nao_consulta_novas_ferramentas():
+    spy = SpyProvider()
+    r = ToolRegistry(spy, spy, spy, attribution=spy, confirmations=spy)
+    for name in ("explain_attribution", "pending_confirmations"):
+        result = r.call(name, {}, ctx("landlord"))
+        assert result.result.error_code == "forbidden_role"
+    assert spy.calls == 0

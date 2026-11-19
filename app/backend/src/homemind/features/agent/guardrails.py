@@ -1,14 +1,8 @@
-"""Guarda-corpos: números inventados e pedidos de ação. Lógica pura."""
+"""Guarda-corpos de pedidos de ação. Lógica pura."""
 
 import re
 import unicodedata
-from decimal import Decimal, InvalidOperation
 
-# Espaço normal, NBSP e espaço fino como separadores de milhares ("1 234,56").
-_SPACES = "   "
-_NUMBER = re.compile(
-    rf"(?<!\w)(?:\d{{1,3}}(?:\.\d{{3}})+,\d+|\d+(?:[{_SPACES}]\d{{3}}(?!\d))*(?:[.,]\d+)?)"
-)
 # Pedidos de ação. Só imperativo, infinitivo e 2.ª pessoa («desliga», «desligar», «desligue»):
 # NUNCA particípios («desligada», «apagada», «ligada»), que descrevem estado e não pedem nada.
 # Alargar isto só faz o pedido ser tratado como ação (proposta ou recusa), nunca executá-lo; um
@@ -41,36 +35,6 @@ _QUESTION_START = re.compile(
 _POLITE = re.compile(
     r"^\W*(?:podes|pode|poderias|podias|consegues|queres|importas|faz favor|fazes favor)\b"
 )
-
-
-def _to_decimal(raw: str) -> Decimal | None:
-    s = re.sub(rf"[{_SPACES}]", "", raw)
-    if "," in s and "." in s:
-        if s.rfind(",") > s.rfind("."):  # 1.234,56
-            s = s.replace(".", "").replace(",", ".")
-        else:  # 1,234.56
-            s = s.replace(",", "")
-    else:
-        s = s.replace(",", ".")
-    try:
-        return Decimal(s)
-    except InvalidOperation:
-        return None
-
-
-def extract_numbers(text: str) -> list[tuple[str, Decimal]]:
-    """Números do texto como (texto original, valor). Vírgula ou ponto decimais, milhares."""
-    found = []
-    for m in _NUMBER.finditer(text):
-        value = _to_decimal(m.group())
-        if value is not None:
-            found.append((m.group(), value))
-    return found
-
-
-def invented_numbers(text: str, allowed: frozenset[Decimal]) -> list[str]:
-    """Números do texto que não estão em `allowed`. Os da pergunta do utilizador não contam."""
-    return [raw for raw, value in extract_numbers(text) if value not in allowed]
 
 
 def plain(text: str) -> str:

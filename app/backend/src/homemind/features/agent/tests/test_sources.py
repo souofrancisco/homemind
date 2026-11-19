@@ -84,6 +84,11 @@ class FakeReal:
         return self._bill
 
 
+class FakeAppliances:
+    def top_appliances(self, household_id, resident_id, period, limit=5):
+        return ToolValue(None, 100, SIM), []
+
+
 def value(prov: Provenance = REAL, wh: int = 4_321, cents: int = 1_234) -> ToolValue:
     return ToolValue(energy_wh=wh, cost_cents=cents, provenance=prov)
 
@@ -259,8 +264,7 @@ def test_llm_continua_a_usar_so_ferramentas(client, llm, register):
     register(ProviderSet(consumption=FakeReal(consumption=value())))
     llm.complete = FakeLLM(
         [
-            '{"tool": "consumption_summary", "args": {}}',
-            f'{{"answer": "Consumiste {format_kwh(4_321)}."}}',
+            '{"tools": [{"tool": "consumption_summary", "args": {}}]}',
         ]
     )
     body = ask(client, "sub-ana").json()
@@ -278,6 +282,11 @@ def test_ferramentas_sao_independentes():
     assert budget.result.cost_cents == 1_234 and not budget.result.provenance.simulated
     consumption = reg.call("consumption_summary", {}, ctx)  # sem registo → simulado
     assert consumption.result.provenance.simulated
+
+
+def test_aparelhos_simulados_sao_descartados_em_casa_real():
+    resolved = resolve(ProviderSet(appliances=FakeAppliances()), REAL_HOUSE, "real")
+    assert resolved[3].top_appliances(REAL_HOUSE, RITA, PERIOD) is None
 
 
 def test_excecao_nao_recua_para_o_simulado():

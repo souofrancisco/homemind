@@ -132,6 +132,27 @@ def test_e_minha_da_carla_regista_so_na_conta_da_carla(client, now):
         assert not titles & {"Registado na tua conta", "Dividido por todos"}
 
 
+def test_dica_de_dono_nao_preseleciona_o_voto_nem_chega_ao_senhorio(client, now):
+    now["value"] = TS + timedelta(minutes=1)
+    _publish_consumption(client, _sala_consumption())
+    n = _vote_notification(client)
+    assert "Parece ser do Bruno (aparelho identificado a 90 %); confirma (SIMULADO)." in n["body"]
+    assert not any(name in n["body"] for name in ("Ana", "Carla", "Diogo"))
+    assert not any(term in n["body"].casefold() for term in ("presença", "em casa", "fora"))
+    assert n["status"] == "unread" and n["can_respond"] is True
+    assert [a["id"] for a in n["actions"]] == ["mine", "everyone", "unknown", "other"]
+    assert _list(client, LANDLORD) == []
+
+    # Mesmo com a dica para Bruno, a decisão segue o voto explícito de Ana (D-32).
+    _respond(client, fx.ANA, n, "mine")
+    (info,) = _wait(
+        lambda: _by_title(client, SUB[fx.ANA], "Registado na tua conta"),
+        "atribuição à moradora que votou mine",
+    )
+    assert info["kind"] == "info"
+    assert _by_title(client, SUB[fx.BRUNO], "Registado na tua conta") == []
+
+
 def test_inconclusivo_expirado_divide_por_todos_a_cada_votante(client, now):
     now["value"] = TS + timedelta(minutes=1)
     _publish_consumption(client, _sala_consumption())
