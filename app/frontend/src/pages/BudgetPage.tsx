@@ -4,11 +4,16 @@ import { useEffect, useState } from "react";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { getMyBudget, setMyBudget, type BudgetStatus } from "../services/billing/budget";
 import BudgetLampProposal from "../components/billing/BudgetLampProposal";
+import OriginBadge from "../components/common/OriginBadge";
 
 const money = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" });
 // ALERT-06: a cor vem do servidor (`BudgetStatus.light`); a app só a mostra.
 const LIGHT_COLOR = { green: "green", amber: "yellow", red: "red" } as const;
 const eur = (c: number | null) => (c == null ? "Desconhecido" : money.format(c / 100));
+const monthName = (period: string) => {
+  const name = new Intl.DateTimeFormat("pt-PT", { month: "long", year: "numeric" }).format(new Date(`${period}-01T12:00:00`));
+  return name.charAt(0).toLocaleUpperCase("pt-PT") + name.slice(1);
+};
 
 function Figure({ label, cents, hint }: { label: string; cents: number | null; hint?: string }) {
   return <Stack gap={2}><Text size="xs" c="dimmed" tt="uppercase" fw={700}>{label}</Text><Text fw={700} size="lg">{eur(cents)}</Text>{hint && <Text size="xs" c="dimmed">{hint}</Text>}</Stack>;
@@ -46,13 +51,28 @@ export default function BudgetContent() {
     catch { /* erro já mostrado */ } finally { setBusy(false); }
   };
   const pct = s.pct;
+  const hasBudget = s.budget?.limit_cents != null;
+  // A ação vem primeiro: sem orçamento, o formulário abre a página; com orçamento, fica depois dos números.
+  const budgetForm = (
+    <Card withBorder radius="lg" p="lg">
+      <Stack gap="sm">
+        <Title order={3} size="h4">{hasBudget ? "Mudar o orçamento" : "Quanto queres gastar por mês?"}</Title>
+        <Text size="sm" c="dimmed">{hasBudget ? "Ao mudar, os avisos de 50 %, 80 % e 100 % recomeçam." : "Dizemos-te quando chegares a 50 %, 80 % e 100 %. Podes mudar quando quiseres."}</Text>
+        <Group align="end">
+          <NumberInput label="Orçamento mensal (€)" decimalScale={2} min={0} value={limit} onChange={setLimit} />
+          <Button disabled={limit === "" || Number(limit) <= 0} loading={busy} onClick={() => void save()}>{hasBudget ? "Mudar" : "Definir"}</Button>
+        </Group>
+      </Stack>
+    </Card>
+  );
   return (
     <Stack gap="md">
+      {!hasBudget && budgetForm}
       <BudgetLampProposal householdId={householdId} refreshKey={reload + (s.pct ?? 0)} />
       <Card withBorder radius="lg" p="lg">
         <Stack gap="md">
-          <Group justify="space-between"><Title order={3} size="h4">Mês {s.period}</Title>
-            <Badge variant="light" color={s.final ? "green" : "gray"}>{s.final ? "Valores da fatura fechada" : "Estimativa — ainda não é definitivo"}</Badge></Group>
+          <Group justify="space-between"><Title order={3} size="h4">{monthName(s.period)}</Title>
+            <Badge variant="light" color={s.final ? "green" : "gray"}>{s.final ? "Valores da fatura fechada" : "Estimado até ao fecho do mês"}</Badge></Group>
           {s.budget?.limit_cents != null ? (
             <>
               <Progress value={Math.min(pct ?? 0, 100)} color={s.light ? LIGHT_COLOR[s.light.light] : "gray"} aria-label="Percentagem do orçamento utilizada" />
@@ -72,20 +92,15 @@ export default function BudgetContent() {
             </Text>
           ) : <Text size="sm" c="dimmed">Ainda não há dados suficientes para prever o fim do mês (são precisos pelo menos 3 dias).</Text>)}
           <SimpleGrid cols={{ base: 2, sm: 4 }}>
-            <Figure label="Gasto" cents={s.spent_cents} />
-            <Figure label="Confirmado (meu)" cents={s.confirmed_cents} />
-            <Figure label="Parte comum" cents={s.shared_cents} hint="estimada" />
-            <Figure label="Fixo + resíduo" cents={s.base_cents} hint={s.base_cents == null ? "sem fatura anterior" : "estimado"} />
+            <Figure label="Até agora" cents={s.spent_cents} />
+            <Figure label="O teu quarto" cents={s.confirmed_cents} />
+            <Figure label="A tua parte das zonas comuns" cents={s.shared_cents} hint="estimada" />
+            <Figure label="Parte fixa da fatura" cents={s.base_cents} hint={s.base_cents == null ? "ainda sem fatura" : "estimada"} />
           </SimpleGrid>
-          {s.provenance && <Text size="xs" c="dimmed">{s.provenance.origin === "simulated" ? "SIMULADO" : "REAL"} · {s.provenance.kind === "measured" ? "medido" : s.provenance.kind === "estimated" ? "estimado" : "inferido"}. Os avisos chegam a 50 %, 80 % e 100 %.</Text>}
+          {s.provenance && <Group><OriginBadge origin={s.provenance.origin} kind={s.provenance.kind} demo={session.house?.source_kind === "demo"} /><Text size="xs" c="dimmed">Os avisos chegam a 50 %, 80 % e 100 %.</Text></Group>}
         </Stack>
       </Card>
-      <Card withBorder radius="lg" p="lg">
-        <Group align="end">
-          <NumberInput label="Orçamento mensal (€)" decimalScale={2} min={0} value={limit} onChange={setLimit} />
-          <Button disabled={limit === "" || Number(limit) <= 0} loading={busy} onClick={() => void save()}>{s.budget ? "Alterar (reinicia os avisos)" : "Definir"}</Button>
-        </Group>
-      </Card>
+      {s.budget?.limit_cents != null && budgetForm}
     </Stack>
   );
 }

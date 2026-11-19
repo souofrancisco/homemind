@@ -1,41 +1,42 @@
 import {
-  IconBell, IconBolt, IconBuildingCommunity, IconDeviceDesktopAnalytics,
-  IconHome, IconMessageCircle, IconPigMoney, IconPlug, IconReceipt, IconSettings,
+  IconBuildingCommunity, IconDeviceDesktopAnalytics, IconHome,
+  IconMessageCircle, IconReceipt,
 } from "@tabler/icons-react";
 import type { components } from "../shared/api/schema";
 
 export type AppRole = components["schemas"]["MembershipRole"];
-export type SectionId = "home" | "house" | "consumption" | "appliances" | "bills" | "budget" | "notifications" | "assistant" | "settings" | "diagnostics";
+export type SectionId = "home" | "house" | "bills" | "budget" | "notifications" | "assistant" | "diagnostics" | "settings";
 type NavIcon = typeof IconHome;
-
 export type NavPage = {
-  path: string;
-  label: string;
-  section: SectionId;
-  icon: NavIcon;
-  roles: readonly AppRole[];
-  mobile: boolean;
+  path: string; label: string; section: SectionId; icon: NavIcon;
+  roles: readonly AppRole[]; mobile: boolean;
 };
 
-// O papel vem exclusivamente de /api/me/context (membership verificada pelo backend).
-// Esta filtragem é apenas apresentação: os endpoints mantêm RBAC próprio.
+// A filtragem é apenas de apresentação; o backend continua a aplicar o RBAC.
 export const navPages: NavPage[] = [
-  { path: "/", label: "Início", section: "home", icon: IconHome, roles: ["tenant", "landlord", "operator"], mobile: true },
-  { path: "/casa", label: "A minha casa", section: "house", icon: IconBuildingCommunity, roles: ["tenant", "landlord", "operator"], mobile: true },
-  { path: "/consumo", label: "Consumo", section: "consumption", icon: IconBolt, roles: ["tenant", "landlord"], mobile: true },
-  { path: "/aparelhos", label: "Aparelhos", section: "appliances", icon: IconPlug, roles: ["tenant", "operator"], mobile: false },
-  { path: "/contas", label: "Contas e recibos", section: "bills", icon: IconReceipt, roles: ["tenant", "landlord"], mobile: true },
-  { path: "/orcamento", label: "Orçamento", section: "budget", icon: IconPigMoney, roles: ["tenant"], mobile: false },
-  { path: "/notificacoes", label: "Notificações", section: "notifications", icon: IconBell, roles: ["tenant", "landlord"], mobile: false },
-  { path: "/assistente", label: "Assistente", section: "assistant", icon: IconMessageCircle, roles: ["tenant"], mobile: false },
-  { path: "/diagnostico", label: "Diagnóstico", section: "diagnostics", icon: IconDeviceDesktopAnalytics, roles: ["operator"], mobile: false },
-  { path: "/definicoes", label: "Definições", section: "settings", icon: IconSettings, roles: ["tenant", "landlord", "operator"], mobile: false },
+  { path: "/", label: "Hoje", section: "home", icon: IconHome, roles: ["tenant", "landlord"], mobile: true },
+  { path: "/contas", label: "Contas", section: "bills", icon: IconReceipt, roles: ["tenant", "landlord"], mobile: true },
+  { path: "/casa", label: "Casa", section: "house", icon: IconBuildingCommunity, roles: ["tenant", "landlord", "operator"], mobile: true },
+  { path: "/assistente", label: "Assistente", section: "assistant", icon: IconMessageCircle, roles: ["tenant"], mobile: true },
+  { path: "/diagnostico", label: "Diagnóstico", section: "diagnostics", icon: IconDeviceDesktopAnalytics, roles: ["operator"], mobile: true },
 ];
 
 export const visiblePages = (role: AppRole | null): NavPage[] =>
   role ? navPages.filter((page) => page.roles.includes(role)) : [];
 
-export const canSeePath = (role: AppRole | null, pathname: string): boolean =>
-  visiblePages(role).some((page) => page.path === pathname);
+const hiddenRoutes: Record<string, readonly AppRole[]> = {
+  "/notificacoes": ["tenant", "landlord"],
+  "/definicoes": ["tenant", "landlord", "operator"],
+};
 
-export const activeNavPath = (pathname: string): string => pathname;
+export const canSeePath = (role: AppRole | null, pathname: string): boolean => {
+  if (!role) return false;
+  if (visiblePages(role).some((page) => page.path === pathname)) return true;
+  return hiddenRoutes[pathname]?.includes(role) ?? false;
+};
+
+export const activeNavPath = (pathname: string): string => {
+  if (pathname === "/orcamento") return "/contas";
+  if (pathname === "/aparelhos" || pathname === "/consumo") return pathname === "/consumo" ? "/" : "/casa";
+  return pathname;
+};

@@ -1,15 +1,15 @@
-import { Alert, Badge, Card, Group, Loader, Progress, Stack, Text, Title } from "@mantine/core";
-import { IconAlertCircle } from "@tabler/icons-react";
+import { Badge, Card, Group, Stack, Text } from "@mantine/core";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { usePolling } from "../hooks/usePolling";
 import { listAppliances, type ApplianceView } from "../services/appliances/api";
 import { getEnergyOverview, type ConsumptionSession, type MeterReading } from "../services/energy/api";
+import OriginBadge from "../components/common/OriginBadge";
 
 const STALE_MS = 5 * 60 * 1000;
-const when = new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "medium" });
-const kind = { measured: "medido", estimated: "estimado", inferred: "inferido" } as const;
-const origin = { real: "REAL", simulated: "SIMULADO" } as const;
-const where = { room: "quarto", common: "zona comum", unknown: "localização desconhecida" } as const;
+const clock = new Intl.DateTimeFormat("pt-PT", { hour: "2-digit", minute: "2-digit" });
+const day = new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit", year: "2-digit" });
+const when = new Intl.DateTimeFormat("pt-PT", { dateStyle: "medium", timeStyle: "short" });
+const where = { room: "Quarto", common: "Zona comum", unknown: "Local desconhecido" } as const;
 export const euro = (c: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(c / 100);
 
 export function useEnergy() {
@@ -20,17 +20,27 @@ export function useEnergy() {
   return { energy, appliances: apps.data ?? [] };
 }
 
+// Um cartão por tomada com leitura atual; as antigas (por exemplo, a tomada de um cenário que já
+// acabou) só aparecem se não houver nenhuma atual, e então só a mais recente.
+export function visibleMeters(meters: MeterReading[], now: string): MeterReading[] {
+  const age = (m: MeterReading) => new Date(now).getTime() - new Date(m.read_at).getTime();
+  const fresh = meters.filter((m) => m.status !== "stale" && age(m) <= STALE_MS);
+  if (fresh.length > 0) return fresh;
+  return [...meters].sort((a, b) => new Date(b.read_at).getTime() - new Date(a.read_at).getTime()).slice(0, 1);
+}
+
 export function MeterCard({ m, now }: { m: MeterReading; now: string }) {
+  const session = useHouseholdSession();
   const age = new Date(now).getTime() - new Date(m.read_at).getTime();
   const stale = m.status === "stale" || age > STALE_MS;
   return (
     <Card withBorder radius="lg" p="lg">
       <Stack gap={4}>
-        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Tomada medida (não é o total da casa)</Text>
+        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Agora, na tomada da sala</Text>
         <Text fz={32} fw={700}>{m.power_w == null ? "Sem dados" : `${Math.round(m.power_w)} W`}</Text>
         <Text size="sm" c="dimmed">Última leitura: {when.format(new Date(m.read_at))}</Text>
         <Group gap="xs">
-          <Badge variant="light" color={m.provenance.origin === "simulated" ? "orange" : "teal"}>{origin[m.provenance.origin]} · {kind[m.provenance.kind]}</Badge>
+          <OriginBadge origin={m.provenance.origin} kind={m.provenance.kind} demo={session.house?.source_kind === "demo"} />
           {stale && <Badge color="yellow" variant="light">Leitura antiga</Badge>}
           {m.status === "unit_unknown" && <Badge color="gray" variant="light">Unidade desconhecida</Badge>}
         </Group>
@@ -39,39 +49,25 @@ export function MeterCard({ m, now }: { m: MeterReading; now: string }) {
   );
 }
 
-export function SessionRow({ s, appliances, maxPeak }: { s: ConsumptionSession; appliances: ApplianceView[]; maxPeak: number }) {
+export function SessionRow({ s, appliances }: { s: ConsumptionSession; appliances: ApplianceView[] }) {
+  const session = useHouseholdSession();
   const app = s.appliance_id ? appliances.find((a) => a.id === s.appliance_id) : undefined;
+  const start = new Date(s.started_at);
+  const sameDay = start.toDateString() === new Date().toDateString();
+  const duration = s.ended_at ? Math.max(0, Math.round((new Date(s.ended_at).getTime() - start.getTime()) / 60000)) : null;
+  const confidence = s.confidence == null ? null : s.confidence >= 0.9 ? "quase certo" : s.confidence >= 0.7 ? "provável" : "possível";
+  const energy = s.energy_wh == null ? "Energia desconhecida" : `${(s.energy_wh / 1000).toLocaleString("pt-PT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kWh`;
   return (
     <Stack gap={4}>
       <Group justify="space-between" wrap="wrap">
-        <Text fw={600}>{s.appliance_id ? (app?.name ?? "Aparelho identificado") : "Consumo não identificado"}
-          {s.confidence != null && <Text span c="dimmed" size="sm"> · confiança {Math.round(s.confidence * 100)} %</Text>}</Text>
-        <Badge variant="light" color={s.status === "ongoing" ? "blue" : "gray"}>{s.status === "ongoing" ? "a decorrer" : "terminado"}</Badge>
+        <Text fw={600}>{s.appliance_id ? (app?.name ?? "Aparelho identificado") : "Não sei o que era"}</Text>
+        <Text size="sm" c="dimmed">{where[s.location]}</Text>
       </Group>
-      <Progress value={maxPeak > 0 ? (s.peak_w / maxPeak) * 100 : 0} aria-label={`Pico de ${Math.round(s.peak_w)} W`} />
-      <Text size="xs" c="dimmed">
-        {when.format(new Date(s.started_at))}{s.ended_at ? ` – ${when.format(new Date(s.ended_at))}` : ""} · pico {Math.round(s.peak_w)} W · {s.energy_wh == null ? "energia desconhecida" : `${(s.energy_wh / 1000).toFixed(2)} kWh`} · {where[s.location]} · custo {s.cost_cents == null ? "desconhecido" : euro(s.cost_cents)} · {origin[s.provenance.origin]} · {kind[s.provenance.kind]}
-      </Text>
-    </Stack>
-  );
-}
-
-export default function EnergyContent() {
-  const { energy, appliances } = useEnergy();
-  if (energy.loading) return <Group role="status"><Loader size="sm" /><Text>A carregar consumo…</Text></Group>;
-  const o = energy.data;
-  if (!o) return <Alert color="red" icon={<IconAlertCircle />} title="Não foi possível consultar o consumo">Sem ligação ao servidor.</Alert>;
-  const maxPeak = Math.max(0, ...o.sessions.map((s) => s.peak_w));
-  return (
-    <Stack gap="md">
-      {energy.offline && <Alert color="yellow" title="Sem ligação — a mostrar os últimos dados recebidos" />}
-      {o.meters.length === 0 ? <Text c="dimmed">Sem dados: ainda não há leituras de nenhuma tomada.</Text> : o.meters.map((m) => <MeterCard key={m.device_id} m={m} now={o.now} />)}
-      <Card withBorder radius="lg" p="lg">
-        <Stack gap="md">
-          <Title order={3} size="h4">Sessões de consumo recentes</Title>
-          {o.sessions.length === 0 ? <Text c="dimmed">Sem sessões detetadas.</Text> : o.sessions.map((s) => <SessionRow key={s.id} s={s} appliances={appliances} maxPeak={maxPeak} />)}
-        </Stack>
-      </Card>
+      <Text size="sm">{sameDay ? "Hoje" : day.format(start)}, {clock.format(start)}{duration == null ? "" : ` · ${duration} min`} · {energy}</Text>
+      <details><summary><Text span size="xs" c="dimmed">Ver detalhes</Text></summary><Stack gap={4} mt="xs">
+        <Text size="xs" c="dimmed">Pico {Math.round(s.peak_w).toLocaleString("pt-PT")} W · custo {s.cost_cents == null ? "desconhecido" : euro(s.cost_cents)} · {s.status === "ongoing" ? "Em curso" : "Terminada"}{confidence ? ` · ${confidence}` : ""}</Text>
+        <OriginBadge origin={s.provenance.origin} kind={s.provenance.kind} demo={session.house?.source_kind === "demo"} />
+      </Stack></details>
     </Stack>
   );
 }

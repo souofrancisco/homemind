@@ -1,8 +1,9 @@
-import { Alert, Badge, Button, Card, Group, Loader, Select, Stack, Text, Title } from "@mantine/core";
+import { Alert, Badge, Button, Card, Group, Loader, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 import { IconAlertCircle } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import ManualControls from "../components/notifications/ManualControls";
+import OriginBadge from "../components/common/OriginBadge";
 import { getMembers, type MemberView } from "../services/households/api";
 import {
   listNotifications, markNotificationRead, respondToNotification, type NotificationView,
@@ -22,9 +23,10 @@ const verdictLabel: Record<NonNullable<NotificationView["voting"]>["verdict"], s
 // A ação «É de outra pessoa» exige indicar a pessoa (contrato D-32): id fixado pelo backend.
 const OTHER = "other";
 
-function Card1({ n, householdId, members, onChange }: {
+export function NotificationCard({ n, householdId, members, onChange }: {
   n: NotificationView; householdId: string; members: MemberView[]; onChange: (v: NotificationView) => void;
 }) {
+  const session = useHouseholdSession();
   const [busy, setBusy] = useState(false);
   const [target, setTarget] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
@@ -38,14 +40,14 @@ function Card1({ n, householdId, members, onChange }: {
   const v = n.voting;
 
   return (
-    <Card withBorder radius="lg" p="lg" component="article" aria-label={n.title}>
+    <Card id={n.kind === "confirmation_request" ? `confirmation-vote-${n.id}` : undefined} withBorder radius="lg" p="lg" component="article" aria-label={n.title}>
       <Stack gap="sm">
         <Group justify="space-between" align="flex-start" wrap="wrap">
           <Title order={3} size="h4">{n.title}</Title>
           <Group gap="xs">
             <Badge color={severityColor[n.severity]} variant="light">{statusLabel[n.status]}</Badge>
             {n.kind === "presence_check" && <Badge color="indigo" variant="light">Presença</Badge>}
-            <Badge color={n.origin === "simulated" ? "orange" : "teal"} variant="light">{n.origin === "simulated" ? "SIMULADO" : "REAL"}</Badge>
+            <OriginBadge origin={n.origin} demo={session.house?.source_kind === "demo"} />
           </Group>
         </Group>
         <Text>{n.body}</Text>
@@ -57,15 +59,17 @@ function Card1({ n, householdId, members, onChange }: {
             {v.verdict !== "pending" && (v.pays_me ? " Esta utilização fica a teu cargo." : " Esta utilização não fica a teu cargo.")}
           </Alert>
         )}
+        {n.kind === "confirmation_request" && canAct && <Text size="sm" c="dimmed">O voto não se pode mudar. Se te enganares, podes contestar o recibo depois de o mês fechar.</Text>}
         <div role="status" aria-live="polite">{n.response && !v && <Text size="sm" c="dimmed">Respondeste {when.format(new Date(n.response.responded_at))}.</Text>}</div>
         {canAct && !picking && (
-          <Group gap="xs">
-            {n.actions.map((a) => (
-              <Button key={a.id} size="sm" aria-label={`${a.label}: ${n.title}`} loading={busy} variant={a.style === "primary" ? "filled" : "light"} color={a.style === "danger" ? "red" : undefined}
-                onClick={() => (a.id === OTHER ? setPicking(true) : void respond(a.id))}>{a.label}</Button>
-            ))}
-            {n.status === "unread" && <Button size="sm" variant="subtle" loading={busy} onClick={() => void act(() => markNotificationRead(householdId, n.id))}>Marcar como lida</Button>}
-          </Group>
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+            {n.actions.map((a) => {
+              const consequence: Record<string, string> = { mine: "Pagas tu. Decide logo.", everyone: "Dividido por todos os moradores.", other: "Escolhes quem. Para valer, metade dos moradores tem de concordar.", unknown: "Fica em aberto. Sem decisão em 24 h, divide-se por todos." };
+              return <Button key={a.id} size="md" fullWidth h="auto" mih={56} py="xs" justify="flex-start" styles={{ label: { whiteSpace: "normal", textAlign: "left" } }} aria-label={`${a.label}: ${n.title}`} loading={busy} variant={a.style === "primary" ? "filled" : "light"} color={a.style === "danger" ? "red" : undefined}
+                onClick={() => (a.id === OTHER ? setPicking(true) : void respond(a.id))}><Stack gap={2} align="flex-start"><span>{a.label}</span>{consequence[a.id] && <Text size="xs" inherit>{consequence[a.id]}</Text>}</Stack></Button>;
+            })}
+            {n.status === "unread" && n.kind !== "confirmation_request" && <Button size="md" mih={44} variant="subtle" loading={busy} onClick={() => void act(() => markNotificationRead(householdId, n.id))}>Marcar como lida</Button>}
+          </SimpleGrid>
         )}
         {canAct && picking && (
           <Group align="end">
@@ -127,7 +131,7 @@ export default function NotificationsContent() {
   const replace = (v: NotificationView) => setState({ ...cur, items: cur.items!.map((i) => (i.id === v.id ? v : i)) });
   return (
     <Stack gap="md">
-      {cur.items.map((n) => <Card1 key={n.id} n={n} householdId={householdId} members={cur.members} onChange={replace} />)}
+      {cur.items.map((n) => <NotificationCard key={n.id} n={n} householdId={householdId} members={cur.members} onChange={replace} />)}
       {tenant && <ManualControls householdId={householdId} />}
     </Stack>
   );

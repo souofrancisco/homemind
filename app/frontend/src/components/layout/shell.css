@@ -1,3 +1,6 @@
+:root[data-mantine-color-scheme="dark"] { --mantine-color-dimmed: #b8bec6; }
+:root[data-mantine-color-scheme="light"] { --mantine-color-dimmed: #495057; }
+.mantine-Notification-description { color: inherit; }
 .conta-skip-link {
   position: fixed;
   top: -80px;
@@ -5,7 +8,7 @@
   z-index: 1000;
   padding: 10px 14px;
   border-radius: 8px;
-  background: var(--mantine-primary-color-filled);
+  background: #364fc7;
   color: white;
   font-weight: 700;
 }
@@ -24,6 +27,17 @@
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+.conta-profile-button { min-height: 44px; padding: 4px 8px; border-radius: 8px; }
+.conta-demo-banner {
+  margin-bottom: var(--mantine-spacing-md);
+  padding: 10px 16px;
+  border: 1px solid #8a5a00;
+  border-radius: var(--mantine-radius-md);
+  background: #fff3bf;
+  color: #5f3b00;
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 700;
 }
 @media (prefers-reduced-motion: reduce) {
   .conta-skip-link { transition: none; }

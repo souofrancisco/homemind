@@ -89,7 +89,7 @@ export default function AssistantPage() {
         <Text size="sm" c="dimmed">Conversa privada</Text>
       </Group>
       <Alert color="indigo" variant="light" title="Como funciona">
-        O assistente só responde com números calculados pelo servidor. Pedidos de ação pedem a tua confirmação.
+        O assistente só responde com números calculados pela Conta Certa. Pedidos de ação pedem a tua confirmação.
       </Alert>
       <Card withBorder radius="lg" p={{ base: "sm", sm: "md" }}>
         <ScrollArea h={{ base: "52vh", sm: "58vh" }} type="auto" offsetScrollbars>

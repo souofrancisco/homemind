@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { LandlordContestations, TenantContest, type ContestTarget } from "../components/billing/Contestations";
 import ReceiptExplanationView, { type Own } from "../components/billing/ReceiptExplanationView";
+import OriginBadge from "../components/common/OriginBadge";
 import TariffCard from "../components/billing/TariffCard";
 import {
   createBill, finalizeBill, getBillSummary, getMyReceipt, getMyReceiptExplanation, listBills, previewBill, reviseBill,
@@ -16,12 +17,11 @@ const money = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR
 const eur = (cents: number) => money.format(cents / 100);
 const kwh = (wh: number) => `${(wh / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 2 })} kWh`;
 const day = (iso: string) => new Intl.DateTimeFormat("pt-PT", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${iso}T00:00:00Z`));
-const kindLabel = { measured: "medido", estimated: "estimado", inferred: "inferido" } as const;
-const originLabel = { real: "REAL", simulated: "SIMULADO" } as const;
 const statusLabel: Record<BillView["status"], string> = { draft: "Rascunho", finalized: "Finalizada", superseded: "Substituída" };
 
 function Provenance({ p }: { p: BillView["provenance"] }) {
-  return <Badge variant="light" color={p.origin === "simulated" ? "orange" : "teal"}>{originLabel[p.origin]} · {kindLabel[p.kind]}</Badge>;
+  const session = useHouseholdSession();
+  return <OriginBadge origin={p.origin} kind={p.kind} demo={session.house?.source_kind === "demo"} />;
 }
 
 const when = new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" });
@@ -59,7 +59,7 @@ function Receipt({ householdId, bill }: { householdId: string; bill: BillView })
         </Table.Tbody>
       </Table>
       <Group justify="space-between"><Text fw={700}>O teu total</Text><Text fw={700}>{eur(r.amount_cents)}</Text></Group>
-      <Text size="xs" c="dimmed">Fixa {eur(r.fixed_share_cents)} · resíduo comum {eur(r.residual_share_cents)} · individual {eur(r.individual_cents)}. Calculado no servidor.</Text>
+      <Text size="xs" c="dimmed">Parte fixa {eur(r.fixed_share_cents)} · parte comum {eur(r.residual_share_cents)} · só tua {eur(r.individual_cents)}.</Text>
       <Explanation householdId={householdId} billId={bill.id} onContest={canContest ? contest : undefined} />
       <TenantContest householdId={householdId} billId={bill.id} canContest={canContest} target={target} onClearTarget={() => setTarget(null)} />
     </Stack>
@@ -165,7 +165,7 @@ function BillForm({ householdId, origin, onCreated, revise, onCancel }: {
         </Group>
         {preview && (
           <Alert color="indigo" variant="light" title="Pré-visualização (nada foi gravado)">
-            {preview.days} dias · total {eur(preview.total_cents)} · fixo {eur(preview.fixed_cents)} · energia {eur(preview.energy_cents)} · {kwh(preview.total_wh)} · preço médio {(preview.price_millicents_per_kwh / 100000).toFixed(4)} €/kWh
+            {preview.days} dias · total {eur(preview.total_cents)} · fixo {eur(preview.fixed_cents)} · energia {eur(preview.energy_cents)} · {kwh(preview.total_wh)} · preço médio {(preview.price_millicents_per_kwh / 100000).toLocaleString("pt-PT", { minimumFractionDigits: 4, maximumFractionDigits: 4 })} €/kWh
           </Alert>
         )}
       </Stack>

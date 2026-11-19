@@ -4,8 +4,8 @@ import { setRoomAllowance, type RoomAllowanceView } from "../../services/billing
 
 // Plafond solidário de um quarto (BILL-03). O servidor decide quando a mudança vale (dia 1 do mês
 // seguinte); aqui só se mostra e, para o senhorio, se agenda.
-const kwh = (wh: number) => (wh / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 1 });
 const day = (iso: string) => new Intl.DateTimeFormat("pt-PT", { dateStyle: "long" }).format(new Date(`${iso}T12:00:00`));
+const kwh = (wh: number) => (wh / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 1 });
 
 export default function RoomAllowanceLine({ householdId, view, canEdit, onChange }: {
   householdId: string; view: RoomAllowanceView; canEdit: boolean; onChange: (v: RoomAllowanceView) => void;
@@ -22,9 +22,6 @@ export default function RoomAllowanceLine({ householdId, view, canEdit, onChange
   };
   return (
     <Stack gap={4}>
-      <Text size="xs" c={view.current_wh ? "teal" : "dimmed"}>
-        {view.current_wh ? `Plafond solidário: ${kwh(view.current_wh)} kWh/mês de aquecimento pagos por todos` : "Sem plafond solidário"}
-      </Text>
       {view.upcoming_from && view.upcoming_wh != null && (
         <Text size="xs" c="blue">A partir de {day(view.upcoming_from)}: {view.upcoming_wh ? `${kwh(view.upcoming_wh)} kWh/mês` : "sem plafond"}</Text>
       )}

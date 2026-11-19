@@ -146,7 +146,7 @@ ByteTrack, extra `visao`, mesmos pesos `yolo11{s,n}.pt`) → `ContadorPorta` →
 
 ## Ocupação e visitas (PRES-05 #109)
 
-**IMPLEMENTADO** (`occupancy.py` puro + `GET /api/presence/occupancy?household_id=`, só morador; senhorio e operador `403 forbidden_role`; cartão «Quem está em casa» em «A minha casa», com SIMULADO). Não grava nada: calcula-se em cada pedido a partir do registo `presence.door_crossed` das últimas 24 h e dos estados dos moradores.
+**IMPLEMENTADO** (`occupancy.py` puro + `GET /api/presence/occupancy?household_id=`, só morador; senhorio e operador `403 forbidden_role`). **O frontend já não mostra esta ocupação** (o cartão «Quem está em casa» foi retirado da página «Casa»); o endpoint mantém-se e fica disponível para quando houver um uso com sentido. Não grava nada: calcula-se em cada pedido a partir do registo `presence.door_crossed` das últimas 24 h e dos estados dos moradores.
 - **Contagem** = saldo da porta (entradas − saídas). Nunca negativa: uma saída sem entrada anterior (entrada perdida) reinicia o saldo a 0 e deixa a contagem *dessincronizada* (`uncertain`, `people_inside=null`) até haver nova prova coerente.
 - **Reconciliação** com os moradores em casa (telemóvel com opt-in, estado `in`): saldo da porta inferior ao número de moradores em casa, saldo > 20, câmara sem frames/em falha ou nenhuma passagem na janela → `uncertain`, sem número inventado.
 - **Visitas** = pessoas dentro − moradores em casa, **só** quando todos os moradores ativos têm opt-in e estado conhecido; senão `visitors=null`. Zero fiável na porta com nenhum telemóvel com opt-in em casa é `likely_empty` (PRES-06, abaixo).
