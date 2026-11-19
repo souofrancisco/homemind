@@ -733,3 +733,147 @@ def test_rule_write_failing_before_send_is_failed_not_unknown(tmp_path, monkeypa
     home._agora = lambda: now + timedelta(seconds=61)
     again = run(home.lampada_por_regra(True, decision=decision))
     assert again.outcome is WriteOutcome.confirmed and len(fake.writes()) == 1
+
+
+# --- leitura do alarme (SAFE-02 #115): só leitura, aditiva ----------------------------------
+
+
+class SecMcp(FakeMcp):
+    """FakeMcp + `get_home_security_status` (formato real: DISARMED observado; ARMED assumido)."""
+
+    def __init__(self, status=None, with_tool=True, **kw):
+        super().__init__(**kw)
+        self.status = status if status is not None else {"status": "DISARMED", "isAlarmed": False}
+        self.with_tool = with_tool
+        self.fail_status = False
+
+    async def list_tools(self):
+        res = await super().list_tools()
+        if self.with_tool:
+            res.tools.append(SimpleNamespace(name="get_home_security_status", inputSchema={}))
+        return res
+
+    async def call_tool(self, name, args):
+        if name == "get_home_security_status":
+            if self.fail_status:
+                raise TimeoutError("lento")
+            self.calls.append((name, args))
+            return SimpleNamespace(isError=False, structuredContent=self.status, content=[])
+        return await super().call_tool(name, args)
+
+
+class Listener:
+    def __init__(self):
+        self.events = []
+
+    def ingest(self, devices):
+        self.events.append(("devices", len(devices)))
+
+    def ingest_status(self, payload):
+        self.events.append(("status", payload))
+
+    def unavailable(self):
+        self.events.append(("unavailable", None))
+
+    def unavailable_status(self):
+        self.events.append(("unavailable_status", None))
+
+
+def test_alarm_listener_receives_devices_and_status_read_only(tmp_path):
+    home, mcp, _ = make(tmp_path, SecMcp())
+    home.seguranca = ls = Listener()
+    run(home._refrescar())
+    assert ("devices", 2) in ls.events
+    assert ("status", {"status": "DISARMED", "isAlarmed": False}) in ls.events
+    names = [n for n, _ in mcp.calls]
+    assert names.count("get_home_security_status") == 1 and mcp.writes() == []
+    for _ in range(5):  # sem polling agressivo: de ~30 s a ~30 s
+        run(home._refrescar())
+    assert [n for n, _ in mcp.calls].count("get_home_security_status") == 1
+    run(home._refrescar())
+    assert [n for n, _ in mcp.calls].count("get_home_security_status") == 2
+    run(home.parar())
+
+
+def test_alarm_tool_failure_or_absence_is_unknown_and_never_breaks_home(tmp_path, caplog):
+    home, mcp, _ = make(tmp_path, SecMcp(with_tool=False))
+    home.seguranca = ls = Listener()
+    run(home._refrescar())
+    assert run(home.estado()).mcp_ok and ("unavailable_status", None) in ls.events
+    assert "get_home_security_status" not in [
+        n for n, _ in mcp.calls
+    ]  # não suportada: nem se chama
+    run(home.parar())
+    home, mcp, _ = make(tmp_path, SecMcp())
+    mcp.fail_status = True
+    home.seguranca = ls = Listener()
+    run(home._refrescar())
+    assert run(home.estado()).mcp_ok and ("unavailable_status", None) in ls.events
+    assert "lento" not in caplog.text
+    mcp.down = True
+    run(home._refrescar())
+    assert ("unavailable", None) in ls.events
+    run(home.parar())
+
+
+def test_alarm_listener_failure_does_not_affect_home(tmp_path):
+    home, mcp, _ = make(tmp_path, SecMcp())
+
+    def fail(*a):
+        raise RuntimeError("secret")
+
+    home.seguranca = SimpleNamespace(
+        ingest=fail, ingest_status=fail, unavailable=fail, unavailable_status=fail
+    )
+    run(home._refrescar())
+    assert run(home.estado()).mcp_ok
+    run(home.parar())
+
+
+def test_without_alarm_listener_behaviour_is_unchanged(tmp_path):
+    home, mcp, _ = make(tmp_path, SecMcp())
+    run(home._refrescar())
+    run(home._refrescar())
+    assert [n for n, _ in mcp.calls].count("get_home_devices") == 1  # só a descoberta
+    assert "get_home_security_status" not in [n for n, _ in mcp.calls]
+    run(home.parar())
+
+
+def test_sensors_listener_unchanged_when_alarm_listener_added(tmp_path):
+    home, mcp, _ = make(tmp_path, SecMcp())
+    seen = []
+    home.sensores = SimpleNamespace(ingest=seen.append, unavailable=lambda: None)
+    home.seguranca = Listener()
+    run(home._refrescar())
+    assert len(seen) == 1 and [n for n, _ in mcp.calls].count("get_home_devices") == 2
+    run(home.parar())
+
+
+def test_read_whitelist_widened_but_write_whitelist_unchanged(tmp_path):
+    from homemind.connectors import mcp_home as m
+
+    assert m._READ_TOOLS == {"get_home_devices", "get_device_details", "get_home_security_status"}
+    assert m._WRITABLE == {"lamp": {"power", "brightness", "color_rgb"}, "plug": {"power"}}
+    assert m.TOOL_UPDATE == "update_device_capabilities"
+    assert "patch_home_security_status" not in m._READ_TOOLS
+    # só a tomada e a lâmpada recebem escritas; nenhum corpo de segurança passa a validação
+    for body in (
+        {"type": "alarm", "value": "armed"},
+        {"type": "securityStatus", "value": "ARMED"},
+        {"status": "ARMED"},
+    ):
+        for role in ("lamp", "plug"):
+            assert not m._valid_change(role, body)
+
+
+def test_security_writes_stay_blocked_with_flag_and_grant(tmp_path):
+    home, mcp, _ = make(tmp_path, SecMcp(), writes=True)  # flag e grant ativos
+    home.seguranca = Listener()
+    run(home._refrescar())
+    assert (
+        run(home._escrever("lamp", [{"type": "alarm", "value": "armed"}], lambda d: True)) is False
+    )
+    assert run(home._escrever("plug", [{"status": "ARMED"}], lambda d: True)) is False
+    assert mcp.writes() == []
+    assert "patch_home_security_status" not in {n for n, _ in mcp.calls}
+    run(home.parar())

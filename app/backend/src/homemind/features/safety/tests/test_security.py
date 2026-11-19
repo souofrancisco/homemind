@@ -202,10 +202,15 @@ def test_view_has_no_personal_data(db):
     assert "resident" not in pending and "decided_by" not in pending
 
 
-def test_contracts_only_accept_simulated_provenance():
+def test_panel_accepts_real_provenance_but_actions_stay_simulated():
     real = fx.SIM_INFERRED.model_copy(update={"origin": "real"})
-    with pytest.raises(ValueError):
-        SecurityPanelState(id=UUID(int=1), household_id=A, status=P_ARM, since=NOW, provenance=real)
+    # SAFE-02 leitura MCP: o estado do painel pode ser REAL (só leitura); as ações nunca
+    assert (
+        SecurityPanelState(
+            id=UUID(int=1), household_id=A, status=P_ARM, since=NOW, provenance=real
+        ).provenance.origin
+        == "real"
+    )
     with pytest.raises(ValueError):
         SecurityAction(
             id=UUID(int=1), household_id=A, kind=ARM, proposed_at=NOW,

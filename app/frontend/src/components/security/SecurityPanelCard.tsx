@@ -7,6 +7,7 @@ import { cancelSecurity, confirmSecurity, getSecurity, proposeSecurity, type Sec
 
 const dt = new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" });
 const STATUS = { armed: ["Armado (simulado)", "red"], disarmed: ["Desarmado (simulado)", "teal"], unknown: ["Sem leitura", "gray"] } as const;
+const STATUS_REAL = { armed: ["Armado (real)", "red"], disarmed: ["Desarmado (real)", "teal"], unknown: ["Sem leitura (real)", "gray"] } as const;
 const AWAY = { away: "Casa aparentemente vazia", home: "Há sinais de pessoas em casa", unknown: "Presença sem sinal fiável" } as const;
 
 /** SAFE-02: painel de segurança SIMULADO. Armar/desarmar são duas fases (proposta → confirmação) e só mudam o painel simulado. */
@@ -35,7 +36,8 @@ export default function SecurityPanelCard({ householdId }: { householdId: string
     );
   }
   const v = data;
-  const [label, color] = STATUS[v.panel_status];
+  const real = v.origin === "real";
+  const [label, color] = (real ? STATUS_REAL : STATUS)[v.panel_status];
   const propose = (kind: SecurityKind) => act(() => proposeSecurity(householdId, kind));
   return (
     <Card p={{ base: "md", sm: "20px 28px" }} aria-labelledby="security-title">
@@ -43,13 +45,16 @@ export default function SecurityPanelCard({ householdId }: { householdId: string
         <Group justify="space-between" wrap="wrap">
           <Title id="security-title" order={2} size={18}>Alarme da casa</Title>
           <Group gap="xs">
-            <Badge color="orange" variant="light">SIMULADO</Badge>
+            <Badge color={real ? "blue" : "orange"} variant="light">{real ? "REAL · só leitura" : "SIMULADO"}</Badge>
             {offline && <Badge color="gray" variant="light">Sem ligação: últimos dados</Badge>}
             <Badge color={color} variant="light">{label}</Badge>
           </Group>
         </Group>
         {!v.available ? (
-          <Text size="sm" c="dimmed">Esta casa não tem painel de segurança simulado. Armamento real não está disponível.</Text>
+          <>
+            <Text size="sm" c="dimmed">Esta casa não tem painel de segurança simulado. Armamento real não está disponível.</Text>
+            {real && <Text size="sm">{AWAY[v.away_status]}. {v.assessment_text}</Text>}
+          </>
         ) : (
           <>
             <Text size="sm">{AWAY[v.away_status]}. {v.assessment_text}</Text>

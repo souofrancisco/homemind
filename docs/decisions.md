@@ -81,7 +81,7 @@ Os PDFs continuam a mencionar Telegram; essa parte **não faz parte da arquitetu
 
 | ID | Questão | Quem decide | Antes de |
 |---|---|---|---|
-| P-01 | Estender o MCP a **leitura** de sensores de contacto/clima e/ou a segurança/cenários? (hoje proibido) | Equipa + mentores | Qualquer automação por sensores |
+| P-01 | Estender o MCP a **leitura** de sensores de contacto/clima e/ou a segurança/cenários? (hoje proibido). **Nota (SAFE-02 #115):** por decisão do utilizador a whitelist de LEITURA foi alargada a `get_home_security_status` (só leitura; escrita, `patch_home_security_status`, cenários e timers continuam proibidos); precisa de revisão P1/P5 e da equipa sobre D-07/P-01 | Equipa + mentores | Qualquer automação por sensores |
 | P-02 | **Proposta implementada (D-26), aguarda aprovação:** papéis na base de dados (`membership.role`) | Equipa | Antes de P1–P4 usarem as guardas |
 | ~~P-03~~ | **Resolvido (D-32).** Quem pode responder a um pedido de confirmação e como se contesta (primeira resposta vence?); omissão da regra da casa (`ask`), limiar (0,50 €) e prazo (24 h) | Equipa | C-P3-02, C-P4-01 |
 | P-04 | O que vê um inquilino dos outros (totais da casa/quartos vs mais)? | Equipa | UI de consumo |

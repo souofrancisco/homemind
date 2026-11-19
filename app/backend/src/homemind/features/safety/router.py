@@ -4,7 +4,9 @@ Rotas só para moradores (`Resource.security`): o senhorio e o operador recebem 
 membro da casa, 404 (`core/access.py`). O residente vem do token. Armar/desarmar são duas fases
 (proposta → confirmação humana) e só mudam o painel SIMULADO: nada chama MCP, conectores nem
 hardware (`ENABLE_PHYSICAL_WRITES` não é lido). Os eventos já estão no outbox; depois do COMMIT
-acorda-se o barramento (uma falha só atrasa a entrega). Sem MCP real (D-07/P-01, MCP-04).
+acorda-se o barramento (uma falha só atrasa a entrega). A leitura REAL do alarme
+(`app.state.security_panel`) é só de leitura e só alimenta a vista de uma casa real; armamento
+real: D-07/P-01, MCP-04.
 """
 
 import logging
@@ -25,10 +27,25 @@ from homemind.core.access import (
     Resource,
     require_access,
 )
+from homemind.core.config import get_settings
 from homemind.features.safety import security
+from homemind.features.safety.panel_reader import SecurityPanelCache
 from homemind.features.safety.service import SafetyService
 
 log = logging.getLogger(__name__)
+
+
+def _attach_panel_reader(state: State) -> SecurityPanelCache | None:
+    """Leitura REAL do alarme (só leitura): com o kit MCP e a casa configurada
+    (`ENERGY_HOUSEHOLD_ID`) entrega-se ao `McpHome` (publicado por `features/energy`, que arranca
+    antes) um ouvinte para o que ele já lê. Sem `McpHome` ou sem casa não há leitura (`unknown`)."""
+    home = getattr(state, "home", None)
+    household_id = get_settings().energy_household_id
+    if home is None or household_id is None or not hasattr(home, "seguranca"):
+        return None
+    reader = SecurityPanelCache(household_id)
+    home.seguranca = reader
+    return reader
 
 
 @asynccontextmanager
@@ -37,6 +54,7 @@ async def lifespan(app: FastAPI):
     service = SafetyService()
     service.attach(app.state.bus)
     app.state.safety = service
+    app.state.security_panel = _attach_panel_reader(app.state)
     log.info("safety: consumidor subscrito (janela+aquecedor aguarda ENERGY-03)")
     yield
 
@@ -93,7 +111,11 @@ async def get_security(
 ) -> security.SecurityView:
     away = _away(state, access.household_id)
     now = clock()
-    return await db.run(lambda c: security.get_view(c, access.household_id, away, now))
+    # Leitura REAL (só leitura) em memória, alimentada pelo polling do MCP; só conta numa casa
+    # real (a demo ignora-a). Nunca chama o MCP daqui.
+    reader = getattr(state, "security_panel", None)
+    real = reader.read(access.household_id, now) if reader is not None else None
+    return await db.run(lambda c: security.get_view(c, access.household_id, away, now, real))
 
 
 @router.post("/households/{household_id}/security/proposals", status_code=201)
