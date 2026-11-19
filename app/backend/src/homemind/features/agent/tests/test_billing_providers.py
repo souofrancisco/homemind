@@ -172,6 +172,9 @@ def test_explicar_atribuicao_provisorio_reconcilia_e_isola_morador(app, client):
         == value.total.cost_cents
         == summary.cost_cents
     )
+    # Linguagem do morador: sem «plafond» (pode nem existir) nem «resíduo» (termo do cálculo).
+    rotulos = " ".join(part.label for part in value.parts).lower()
+    assert "plafond" not in rotulos and "resíduo" not in rotulos
     other = provider.explain_attribution(fx.HOUSEHOLD, fx.BRUNO, "2026-11")
     other_summary = app.state.agent_providers.consumption.consumption_summary(
         fx.HOUSEHOLD, fx.BRUNO, "2026-11"

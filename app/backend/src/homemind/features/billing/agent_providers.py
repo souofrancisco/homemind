@@ -223,8 +223,8 @@ class BillingAgentProviders:
             parts = []
             for label, amount in (
                 ("Consumo atribuído a ti", spend.confirmed_cents),
-                ("Zonas comuns e plafond solidário", spend.shared_cents),
-                ("Parte fixa e resíduo estimados", spend.base_cents or 0),
+                ("Zonas comuns divididas por todos", spend.shared_cents),
+                ("Parte fixa estimada", spend.base_cents or 0),
             ):
                 if amount:
                     parts.append(AttributionPartValue(label, amount, spend.provenance))
