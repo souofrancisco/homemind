@@ -26,6 +26,7 @@ from homemind.contracts.notification import ConfirmationRequest
 
 SYSTEM = "billing"
 LIMIAR_CONFIANCA_DONO_PROVAVEL: Confidence = 0.8
+BELOW_MONTHLY_LIMIT = "abaixo do limite mensal"
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class Decision:
 
     attribution: Attribution | None = None
     confirmation: ConfirmationRequest | None = None
+    reason: str | None = None  # motivo da divisão por igual quando não é o limiar de custo
 
 
 def worth_asking(event: ConsumptionEvent, policy: HouseholdPolicy) -> bool:
@@ -54,9 +56,12 @@ def decide(
     now: datetime,
     sole_occupant: tuple[UUID, float, bool] | None = None,
     appliance_name: str | None = None,
+    below_monthly_limit: bool = False,
 ) -> Decision:
     """`room_resident`: quarto → morador ativo; `tenants`: inquilinos ativos (quem responde).
-    `sole_occupant` (regra C): (morador, confiança, prova simulada) se só ele estava em casa."""
+    `sole_occupant` (regra C): (morador, confiança, prova simulada) se só ele estava em casa.
+    `below_monthly_limit`: o acumulado do mês do aparelho, fora de quarto, está abaixo do limite
+    combinado (v5.1 §6.2): não se pergunta, vai para a conta comum por igual."""
     if event.status is ConsumptionStatus.discarded:
         return Decision()
     resident = room_resident.get(event.room_id) if event.location is LocationKind.room else None
@@ -75,6 +80,13 @@ def decide(
                 )
             )
         return Decision(_attribution(event, now, AttributionMethod.equal_fallback, None))
+    if worth_asking(event, policy) and tenants and below_monthly_limit:
+        if event.status is ConsumptionStatus.ongoing:
+            return Decision()  # o acumulado pode passar o limite; decide-se no fecho
+        return Decision(
+            _attribution(event, now, AttributionMethod.equal_fallback, None),
+            reason=BELOW_MONTHLY_LIMIT,
+        )
     if worth_asking(event, policy) and tenants:
         likely_owner = event.appliance_owner_resident_id
         match_confidence = event.match.confidence
