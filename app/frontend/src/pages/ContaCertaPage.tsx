@@ -18,6 +18,7 @@ import AppliancesContent from "./AppliancesPage";
 import EnergyContent from "./EnergyPage";
 import BudgetContent from "./BudgetPage";
 import NotificationsContent from "./NotificationsPage";
+import AssistantPage from "./AssistantPage";
 import { getCameraStatus, listMcpTools, type CameraStatus, type McpTool } from "../services/diagnostics/api";
 import { request } from "../services/api/client";
 
@@ -370,6 +371,7 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
       <NotificationsContent />
     </Stack>
   );
+  if (section === "assistant" && role === "tenant") return <AssistantPage />;
   if (section === "diagnostics") return (
     <Stack gap="xl">
       <PageHeading title={screenLabels.diagnostics} description="Estado técnico de leitura, disponível apenas para o papel de operador." />

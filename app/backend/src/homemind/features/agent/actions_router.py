@@ -101,6 +101,7 @@ async def reply_to_action_request(
             text=body,
             proposed_actions=proposed or [],
             created_at=now,
+            interpreter="rules",
         )
 
     if isinstance(parsed, Refusal):

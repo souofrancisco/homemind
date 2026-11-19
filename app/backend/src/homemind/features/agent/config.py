@@ -1,6 +1,7 @@
 """Configuração do assistente (env), local à feature."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings
 
@@ -17,6 +18,7 @@ class AgentSettings(BaseSettings):
     # P-06 (que dados de consumo podem sair para o LLM) está por decidir: desligado por omissão.
     # Sem isto a ligado, o assistente nunca chama o LLM, mesmo com `NVIDIA_API_KEY` definida.
     agent_llm_enabled: bool = False
+    agent_llm_scope: Literal["demo", "all"] = "demo"  # P-06: só a pergunta sai para o LLM
     # Ações propostas (AGENT-03). Os limites espelham `connectors/write_policy.RuleWriteLimits`
     # (MCP-04) sem a importar; aqui valem por dispositivo.
     agent_action_ttl_s: float = 600.0  # validade de uma proposta por confirmar

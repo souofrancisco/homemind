@@ -85,7 +85,7 @@ Os PDFs continuam a mencionar Telegram; essa parte **não faz parte da arquitetu
 | ~~P-03~~ | **Resolvido (D-32).** Quem pode responder a um pedido de confirmação e como se contesta (primeira resposta vence?); omissão da regra da casa (`ask`), limiar (0,50 €) e prazo (24 h) | Equipa | C-P3-02, C-P4-01 |
 | P-04 | O que vê um inquilino dos outros (totais da casa/quartos vs mais)? | Equipa | UI de consumo |
 | P-05 | **Proposta implementada (D-25, D-29), aguarda aprovação:** `sqlite3` da stdlib, migrações por nome, sem dependências novas | Equipa | Antes de P1–P4 criarem tabelas |
-| P-06 | Fornecedor de LLM para o assistente e que dados de consumo podem sair; consentimento | Equipa | C-P3-04 |
+| P-06 | **PROPOSTA:** modo tradutor; apenas a pergunta atual sai para a NVIDIA, sem resultados, identificadores, nomes ou histórico. `AGENT_LLM_SCOPE=demo` por omissão; `all` é opção explícita. Fornecedor e consentimento continuam por aprovar | Equipa | C-P3-04 |
 | P-07 | O «Desligar tudo» do ObjectOS mantém-se como ação manual? Para quem? | Equipa | C-P5-06 |
 | P-08 | Retenção de leituras e eventos (prazos com DPO). Mecanismos IMPLEMENTADOS (PRIV-04 telemetria; PRIV-03 presença, `PRESENCE_RETENTION_DAYS`=30 PROPOSTA); **prazos definitivos por decidir** | Equipa | Piloto |
 | ~~P-10~~ | **Resolvido (D-31).** O orçamento pessoal conta só consumo individual ou também a base fixa? (proposta: só o individual) | P4 + equipa | C-P4-04 |
