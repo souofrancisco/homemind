@@ -23,7 +23,7 @@ export default function RoomAllowanceLine({ householdId, view, canEdit, onChange
   return (
     <Stack gap={4}>
       {view.upcoming_from && view.upcoming_wh != null && (
-        <Text size="xs" c="blue">A partir de {day(view.upcoming_from)}: {view.upcoming_wh ? `${kwh(view.upcoming_wh)} kWh/mês` : "sem plafond"}</Text>
+        <Text size="xs" c="dimmed">A partir de {day(view.upcoming_from)}: {view.upcoming_wh ? `${kwh(view.upcoming_wh)} kWh/mês` : "sem plafond"}</Text>
       )}
       {canEdit && !editing && <Button size="compact-xs" variant="subtle" w="fit-content" onClick={() => setEditing(true)}>Mudar plafond</Button>}
       {canEdit && editing && (

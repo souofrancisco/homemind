@@ -37,7 +37,7 @@ export default function ActionCard({
       <Stack gap="xs">
         <Text fw={600}>{value.action.rationale}</Text>
         <Group gap="xs"><Text size="sm" c="dimmed">{value.device_name}</Text><OriginBadge origin={value.origin} demo={session.house?.source_kind === "demo"} /></Group>
-        {!proposed && <Alert color="blue" role="status">{value.message}</Alert>}
+        {!proposed && <Alert color="gray" variant="light" role="status">{value.message}</Alert>}
         {error && <Alert color="red" role="alert">Não foi possível confirmar o resultado. Tenta novamente.</Alert>}
         {proposed && <Group gap="sm">
           <Button size="sm" loading={busy} onClick={() => void decide("confirm")}>Confirmar</Button>

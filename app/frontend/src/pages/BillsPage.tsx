@@ -164,7 +164,7 @@ function BillForm({ householdId, origin, onCreated, revise, onCancel }: {
           {onCancel && <Button variant="subtle" onClick={onCancel}>Cancelar</Button>}
         </Group>
         {preview && (
-          <Alert color="indigo" variant="light" title="Pré-visualização (nada foi gravado)">
+          <Alert color="gray" variant="light" title="Pré-visualização (nada foi gravado)">
             {preview.days} dias · total {eur(preview.total_cents)} · fixo {eur(preview.fixed_cents)} · energia {eur(preview.energy_cents)} · {kwh(preview.total_wh)} · preço médio {(preview.price_millicents_per_kwh / 100000).toLocaleString("pt-PT", { minimumFractionDigits: 4, maximumFractionDigits: 4 })} €/kWh
           </Alert>
         )}

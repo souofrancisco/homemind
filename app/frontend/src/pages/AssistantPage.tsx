@@ -1,5 +1,4 @@
 import { Alert, Button, Card, Group, Loader, ScrollArea, Stack, Text, Textarea, Title } from "@mantine/core";
-import { IconSend } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import ActionCard from "../components/assistant/ActionCard";
 import MessageBubble from "../components/assistant/MessageBubble";
@@ -83,24 +82,21 @@ export default function AssistantPage() {
   }
 
   return (
-    <Stack gap="md" maw={900} mx="auto" w="100%">
-      <Group justify="space-between" align="center">
-        <Title order={2}>Assistente</Title>
-        <Text size="sm" c="dimmed">Conversa privada</Text>
-      </Group>
-      <Alert color="indigo" variant="light" title="Como funciona">
-        O assistente só responde com números calculados pela Conta Certa. Pedidos de ação pedem a tua confirmação.
-      </Alert>
-      <Card withBorder radius="lg" p={{ base: "sm", sm: "md" }}>
-        <ScrollArea h={{ base: "52vh", sm: "58vh" }} type="auto" offsetScrollbars>
+    <Stack gap={24} w="100%">
+      <div className="conta-page-head">
+        <Title order={1} className="conta-page-title">Assistente</Title>
+        <Text c="dimmed" fz={16} mt={6}>Só responde com números calculados pela Conta Certa. Pedidos de ação pedem a tua confirmação.</Text>
+      </div>
+      <Card p={{ base: "md", sm: "24px 28px" }}>
+        <ScrollArea h={{ base: "52vh", sm: "max(320px, calc(100dvh - 400px))" }} type="auto" offsetScrollbars>
           <Stack gap="sm" p="xs" aria-live="polite" aria-relevant="additions text">
             {loading && <Group role="status"><Loader size="sm" /><Text>A carregar a conversa…</Text></Group>}
             {error === "history" && <Alert color="red" role="alert" title="Não foi possível carregar a conversa">
               <Button size="xs" variant="light" color="red" onClick={() => void load()}>Tentar novamente</Button>
             </Alert>}
             {!loading && !error && messages.length === 0 && <Stack gap="xs" py="md">
-              <Text c="dimmed">Podes perguntar, por exemplo:</Text>
-              {SUGGESTIONS.map((suggestion) => <Button key={suggestion} variant="light" w="fit-content" onClick={() => void submit(suggestion)}>{suggestion}</Button>)}
+              <Text c="dimmed" size="sm">Podes perguntar, por exemplo:</Text>
+              <Group gap={10}>{SUGGESTIONS.map((suggestion) => <Button key={suggestion} variant="default" mih={44} fw={500} onClick={() => void submit(suggestion)}>{suggestion}</Button>)}</Group>
             </Stack>}
             {messages.map((message) => <MessageBubble key={message.id} message={message} />)}
             {actions.map((action) => <ActionCard key={action.action.id} householdId={householdId ?? ""} value={action} onChange={updateAction} />)}
@@ -112,7 +108,7 @@ export default function AssistantPage() {
           </Stack>
         </ScrollArea>
         <form onSubmit={onSubmit}>
-          <Group align="flex-end" mt="sm" wrap="nowrap">
+          <Group align="flex-end" mt="sm" wrap="nowrap" gap={12}>
             <Textarea
               aria-label="Escreve uma mensagem ao assistente"
               placeholder="Escreve a tua pergunta…"
@@ -125,9 +121,10 @@ export default function AssistantPage() {
               autosize
               disabled={loading || sending || !householdId}
               style={{ flex: 1 }}
+              styles={{ input: { borderRadius: 26, minHeight: 52, padding: "14px 22px", fontSize: 15 } }}
             />
-            <Button type="submit" aria-label="Enviar mensagem" disabled={!draft.trim() || loading || sending} loading={sending} px="sm">
-              <IconSend size={18} aria-hidden="true" />
+            <Button type="submit" aria-label="Enviar mensagem" disabled={!draft.trim() || loading || sending} loading={sending} mih={52} px={24} fw={700}>
+              Enviar
             </Button>
           </Group>
           <Text ta="right" size="xs" c="dimmed" mt={4}>{draft.length}/2000 · Enter envia; Shift+Enter cria uma linha</Text>

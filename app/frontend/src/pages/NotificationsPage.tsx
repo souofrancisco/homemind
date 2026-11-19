@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Card, Group, Loader, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { Alert, Badge, Button, Card, Group, Loader, Select, Stack, Text, Title } from "@mantine/core";
 import { IconAlertCircle } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
@@ -13,7 +13,7 @@ const when = new Intl.DateTimeFormat("pt-PT", { dateStyle: "medium", timeStyle: 
 const statusLabel: Record<NotificationView["status"], string> = {
   unread: "Por ler", read: "Lida", actioned: "Respondida", expired: "Expirada", dismissed: "Dispensada",
 };
-const severityColor = { info: "blue", warning: "orange", critical: "red" } as const;
+const severityColor = { info: "gray", warning: "orange", critical: "red" } as const;
 const verdictLabel: Record<NonNullable<NotificationView["voting"]>["verdict"], string> = {
   pending: "Votação em curso — ainda não há decisão",
   self_claimed: "Decidido: assumido por quem o usou",
@@ -38,22 +38,30 @@ export function NotificationCard({ n, householdId, members, onChange }: {
     act(() => respondToNotification(householdId, n.id, { action_id: actionId, target_resident_id: targetId ?? null }));
   const canAct = n.can_respond && (n.status === "unread" || n.status === "read");
   const v = n.voting;
+  const isVote = v?.verdict === "pending" && canAct;
 
   return (
-    <Card id={n.kind === "confirmation_request" ? `confirmation-vote-${n.id}` : undefined} withBorder radius="lg" p="lg" component="article" aria-label={n.title}>
+    <Card id={n.kind === "confirmation_request" ? `confirmation-vote-${n.id}` : undefined} p={{ base: "md", sm: 28 }} component="article" aria-label={n.title}>
+      <div className="conta-vote" data-vote={isVote ? "true" : "false"}>
       <Stack gap="sm">
-        <Group justify="space-between" align="flex-start" wrap="wrap">
-          <Title order={3} size="h4">{n.title}</Title>
-          <Group gap="xs">
-            <Badge color={severityColor[n.severity]} variant="light">{statusLabel[n.status]}</Badge>
-            {n.kind === "presence_check" && <Badge color="indigo" variant="light">Presença</Badge>}
-            <OriginBadge origin={n.origin} demo={session.house?.source_kind === "demo"} />
+        {isVote && v ? <>
+          <Group gap="xs"><Badge className="conta-pending-badge">Falta a tua resposta · {v.votes} de {v.eligible} já votaram</Badge>
+            <OriginBadge origin={n.origin} demo={session.house?.source_kind === "demo"} /></Group>
+          <Title order={3} className="conta-vote-title">{n.title}</Title>
+        </> : (
+          <Group justify="space-between" align="flex-start" wrap="wrap">
+            <Title order={3} size={18}>{n.title}</Title>
+            <Group gap="xs">
+              <Badge color={severityColor[n.severity]} variant="light">{statusLabel[n.status]}</Badge>
+              {n.kind === "presence_check" && <Badge color="gray" variant="light">Presença</Badge>}
+              <OriginBadge origin={n.origin} demo={session.house?.source_kind === "demo"} />
+            </Group>
           </Group>
-        </Group>
-        <Text>{n.body}</Text>
+        )}
+        <Text fz={isVote ? 16 : undefined} c={isVote ? "dimmed" : undefined}>{n.body}</Text>
         {n.kind === "presence_check" && <Text size="sm" c="dimmed">Sem câmara, a tua resposta é a forma de confirmar a presença. É uma pergunta, não uma acusação; só tu a vês.</Text>}
-        {v && (
-          <Alert color={v.verdict === "pending" ? "blue" : "gray"} variant="light" title={verdictLabel[v.verdict]}>
+        {v && !isVote && (
+          <Alert className={v.verdict === "pending" ? "conta-pending" : undefined} color={v.verdict === "pending" ? "orange" : "gray"} variant="light" title={verdictLabel[v.verdict]}>
             {v.votes} de {v.eligible} votos (decide-se com {v.votes_needed}).
             {v.my_vote ? " O teu voto está registado; podes vê-lo mas não alterá-lo." : ""}
             {v.verdict !== "pending" && (v.pays_me ? " Esta utilização fica a teu cargo." : " Esta utilização não fica a teu cargo.")}
@@ -61,32 +69,34 @@ export function NotificationCard({ n, householdId, members, onChange }: {
         )}
         {n.kind === "confirmation_request" && canAct && <Text size="sm" c="dimmed">O voto não se pode mudar. Se te enganares, podes contestar o recibo depois de o mês fechar.</Text>}
         <div role="status" aria-live="polite">{n.response && !v && <Text size="sm" c="dimmed">Respondeste {when.format(new Date(n.response.responded_at))}.</Text>}</div>
-        {canAct && !picking && (
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+        <Text size="xs" c="dimmed">{n.scope === "personal" ? "Pessoal" : "Da casa"} · {when.format(new Date(n.created_at))}{n.expires_at && n.status !== "expired" ? ` · responder até ${when.format(new Date(n.expires_at))}` : ""}</Text>
+      </Stack>
+      {canAct && <Stack gap="xs" w="100%">
+        {!picking && (
+          <div className="conta-vote-actions">
             {n.actions.map((a) => {
               const consequence: Record<string, string> = { mine: "Pagas tu. Decide logo.", everyone: "Dividido por todos os moradores.", other: "Escolhes quem. Para valer, metade dos moradores tem de concordar.", unknown: "Fica em aberto. Sem decisão em 24 h, divide-se por todos." };
-              return <Button key={a.id} size="md" fullWidth h="auto" mih={56} py="xs" justify="flex-start" styles={{ label: { whiteSpace: "normal", textAlign: "left" } }} aria-label={`${a.label}: ${n.title}`} loading={busy} variant={a.style === "primary" ? "filled" : "light"} color={a.style === "danger" ? "red" : undefined}
-                onClick={() => (a.id === OTHER ? setPicking(true) : void respond(a.id))}><Stack gap={2} align="flex-start"><span>{a.label}</span>{consequence[a.id] && <Text size="xs" inherit>{consequence[a.id]}</Text>}</Stack></Button>;
+              const emphasized = a.style === "primary";
+              return <Button key={a.id} className={emphasized || a.id === OTHER ? "conta-vote-wide" : undefined} size="md" fullWidth mih={emphasized ? 52 : 48} fw={emphasized ? 700 : 600}
+                title={consequence[a.id]} aria-label={consequence[a.id] ? `${a.label}. ${consequence[a.id]}` : `${a.label}: ${n.title}`} loading={busy}
+                variant={emphasized ? "filled" : "default"} color={a.style === "danger" ? "red" : undefined}
+                onClick={() => (a.id === OTHER ? setPicking(true) : void respond(a.id))}>{a.label}</Button>;
             })}
-            {n.status === "unread" && n.kind !== "confirmation_request" && <Button size="md" mih={44} variant="subtle" loading={busy} onClick={() => void act(() => markNotificationRead(householdId, n.id))}>Marcar como lida</Button>}
-          </SimpleGrid>
+            {n.status === "unread" && n.kind !== "confirmation_request" && <Button size="md" mih={48} variant="default" loading={busy} onClick={() => void act(() => markNotificationRead(householdId, n.id))}>Marcar como lida</Button>}
+          </div>
         )}
-        {canAct && picking && (
+        {picking && (
           <Group align="end">
             <Select label="De quem é?" placeholder="Escolhe uma pessoa" data={members.map((m) => ({ value: m.resident_id, label: m.display_name }))} value={target} onChange={setTarget} />
             <Button disabled={!target} loading={busy} onClick={() => void respond(OTHER, target ?? undefined)}>Confirmar</Button>
             <Button variant="subtle" onClick={() => setPicking(false)}>Cancelar</Button>
           </Group>
         )}
-        {!canAct && n.status === "expired" && (
-          <Text size="sm" c="dimmed">
-            {n.kind === "confirmation_request"
-              ? "O prazo terminou; sem resposta, a utilização divide-se por todos."
-              : "O prazo terminou sem resposta; nada foi executado."}
-          </Text>
-        )}
-        <Text size="xs" c="dimmed">{n.scope === "personal" ? "Pessoal" : "Da casa"} · {when.format(new Date(n.created_at))}{n.expires_at && n.status !== "expired" ? ` · responder até ${when.format(new Date(n.expires_at))}` : ""}</Text>
-      </Stack>
+      </Stack>}
+      {!canAct && n.status === "expired" && <Text size="sm" c="dimmed">{n.kind === "confirmation_request"
+        ? "O prazo terminou; sem resposta, a utilização divide-se por todos."
+        : "O prazo terminou sem resposta; nada foi executado."}</Text>}
+      </div>
     </Card>
   );
 }

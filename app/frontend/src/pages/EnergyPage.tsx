@@ -1,4 +1,5 @@
 import { Badge, Card, Group, Stack, Text } from "@mantine/core";
+import type { ReactNode } from "react";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
 import { usePolling } from "../hooks/usePolling";
 import { listAppliances, type ApplianceView } from "../services/appliances/api";
@@ -29,23 +30,40 @@ export function visibleMeters(meters: MeterReading[], now: string): MeterReading
   return [...meters].sort((a, b) => new Date(b.read_at).getTime() - new Date(a.read_at).getTime()).slice(0, 1);
 }
 
+/** Cartão de número grande: legenda (14 px), valor (40 px, negrito) e nota (13 px). */
+export function StatCard({ label, value, caption, small, className, children }: {
+  label: string; value: string; caption?: ReactNode; small?: boolean; className?: string; children?: ReactNode;
+}) {
+  return (
+    <Card className={className} p={{ base: "md", sm: 24 }} component="section" aria-label={label}>
+      <Text size="sm" c="dimmed">{label}</Text>
+      <Text className="conta-number" fz={small ? 26 : { base: 30, sm: 40 }} fw={700} lh={1} mt={6}>{value}</Text>
+      {children}
+      {caption && <Text size="xs" c="dimmed" mt={8} fz={13}>{caption}</Text>}
+    </Card>
+  );
+}
+
+function ago(readAt: string, now: string) {
+  const s = Math.max(0, Math.round((new Date(now).getTime() - new Date(readAt).getTime()) / 1000));
+  if (s < 60) return `há ${s} segundo${s === 1 ? "" : "s"}`;
+  if (s < 3600) return `há ${Math.round(s / 60)} min`;
+  return when.format(new Date(readAt));
+}
+
 export function MeterCard({ m, now }: { m: MeterReading; now: string }) {
   const session = useHouseholdSession();
   const age = new Date(now).getTime() - new Date(m.read_at).getTime();
   const stale = m.status === "stale" || age > STALE_MS;
   return (
-    <Card withBorder radius="lg" p="lg">
-      <Stack gap={4}>
-        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Agora, na tomada da sala</Text>
-        <Text fz={32} fw={700}>{m.power_w == null ? "Sem dados" : `${Math.round(m.power_w)} W`}</Text>
-        <Text size="sm" c="dimmed">Última leitura: {when.format(new Date(m.read_at))}</Text>
-        <Group gap="xs">
-          <OriginBadge origin={m.provenance.origin} kind={m.provenance.kind} demo={session.house?.source_kind === "demo"} />
-          {stale && <Badge color="yellow" variant="light">Leitura antiga</Badge>}
-          {m.status === "unit_unknown" && <Badge color="gray" variant="light">Unidade desconhecida</Badge>}
-        </Group>
-      </Stack>
-    </Card>
+    <StatCard label="Agora, na tomada da sala" value={m.power_w == null ? "Sem dados" : `${Math.round(m.power_w)} W`} small={m.power_w == null}
+      caption={ago(m.read_at, now)}>
+      <Group gap="xs" mt={8}>
+        <OriginBadge origin={m.provenance.origin} kind={m.provenance.kind} demo={session.house?.source_kind === "demo"} />
+        {stale && <Badge color="yellow" variant="light">Leitura antiga</Badge>}
+        {m.status === "unit_unknown" && <Badge color="gray" variant="light">Unidade desconhecida</Badge>}
+      </Group>
+    </StatCard>
   );
 }
 
@@ -57,17 +75,19 @@ export function SessionRow({ s, appliances }: { s: ConsumptionSession; appliance
   const duration = s.ended_at ? Math.max(0, Math.round((new Date(s.ended_at).getTime() - start.getTime()) / 60000)) : null;
   const confidence = s.confidence == null ? null : s.confidence >= 0.9 ? "quase certo" : s.confidence >= 0.7 ? "provável" : "possível";
   const energy = s.energy_wh == null ? "Energia desconhecida" : `${(s.energy_wh / 1000).toLocaleString("pt-PT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kWh`;
+  const unidentified = s.appliance_id == null;
   return (
-    <Stack gap={4}>
-      <Group justify="space-between" wrap="wrap">
-        <Text fw={600}>{s.appliance_id ? (app?.name ?? "Aparelho identificado") : "Não sei o que era"}</Text>
-        <Text size="sm" c="dimmed">{where[s.location]}</Text>
-      </Group>
-      <Text size="sm">{sameDay ? "Hoje" : day.format(start)}, {clock.format(start)}{duration == null ? "" : ` · ${duration} min`} · {energy}</Text>
-      <details><summary><Text span size="xs" c="dimmed">Ver detalhes</Text></summary><Stack gap={4} mt="xs">
+    <div className="conta-row-wrap">
+      <div className="conta-row">
+        <b className="conta-row-name">{unidentified ? "Não sei o que era" : (app?.name ?? "Aparelho identificado")}</b>
+        <span className="conta-row-when">{sameDay ? "Hoje" : day.format(start)}, {clock.format(start)}{duration == null ? "" : ` · ${duration} min`}</span>
+        <span className="conta-row-energy">{energy}</span>
+        <span className={unidentified ? "conta-row-state conta-row-state-pending" : "conta-row-state"}>{unidentified ? `${where[s.location]} · por identificar` : where[s.location]}</span>
+      </div>
+      <details className="conta-row-details"><summary><Text span size="xs" c="dimmed">Ver detalhes</Text></summary><Stack gap={4} mt="xs">
         <Text size="xs" c="dimmed">Pico {Math.round(s.peak_w).toLocaleString("pt-PT")} W · custo {s.cost_cents == null ? "desconhecido" : euro(s.cost_cents)} · {s.status === "ongoing" ? "Em curso" : "Terminada"}{confidence ? ` · ${confidence}` : ""}</Text>
         <OriginBadge origin={s.provenance.origin} kind={s.provenance.kind} demo={session.house?.source_kind === "demo"} />
       </Stack></details>
-    </Stack>
+    </div>
   );
 }

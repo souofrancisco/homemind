@@ -1,9 +1,9 @@
 import { notifications } from "@mantine/notifications";
 import {
   Alert, Badge, Button, Card, Divider, Group, Loader, SimpleGrid, Tabs,
-  Stack, Text, ThemeIcon, Title,
+  Stack, Text, ThemeIcon, Title, useComputedColorScheme, useMantineColorScheme,
 } from "@mantine/core";
-import { IconAlertCircle, IconArrowRight, IconBuildingCommunity, IconInfoCircle } from "@tabler/icons-react";
+import { IconAlertCircle, IconArrowRight, IconInfoCircle } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { AppRole, SectionId } from "../app/routes";
@@ -27,7 +27,7 @@ function NoData({ value }: { value: Placeholder }) {
   return (
     <Card withBorder radius="lg" p={{ base: "lg", sm: "xl" }}>
       <Stack align="start" gap="md">
-        <ThemeIcon size={48} radius="xl" color="indigo" variant="light"><IconInfoCircle size={25} aria-hidden="true" /></ThemeIcon>
+        <ThemeIcon size={48} radius="xl" color="gray" variant="light"><IconInfoCircle size={25} aria-hidden="true" /></ThemeIcon>
         <Badge color="gray" variant="light">{value.badge ?? "Por integrar"}</Badge>
         <Title order={3} size="h3">{value.title}</Title>
         <Text c="dimmed" maw={650}>{value.detail}</Text>
@@ -50,7 +50,7 @@ const screenLabels: Record<SectionId, string> = {
 };
 
 function PageHeading({ title, description }: { title: string; description?: string }) {
-  return <Stack gap={5}><Title order={2}>{title}</Title>{description && <Text c="dimmed" size="md">{description}</Text>}</Stack>;
+  return <div className="conta-page-head"><Title order={1} className="conta-page-title">{title}</Title>{description && <Text c="dimmed" fz={16} mt={6}>{description}</Text>}</div>;
 }
 
 type LoadState<T> = { key: string; value: T | null; status: "loading" | "ready" | "error" };
@@ -169,37 +169,29 @@ function HouseContent() {
   const allowanceWh = Math.max(0, ...session.rooms.map((room) => allowances[room.id]?.current_wh ?? room.included_wh ?? 0));
   const hasAllowance = allowanceWh > 0;
   return (
-    <Stack gap="lg">
-      <Card withBorder radius="lg" p="lg">
-        <Group justify="space-between" align="flex-start" wrap="wrap">
-          <Stack gap="xs">
+    <Stack gap={24}>
+      <Card p={{ base: "md", sm: "24px 28px" }}>
+        <Group justify="space-between" align="center" wrap="wrap">
+          <Stack gap={4}>
             <Text c="dimmed" size="sm">Casa selecionada</Text>
-            <Title order={3}>{session.house.name}</Title>
-            <Text size="sm" c="dimmed">Fuso horário: {session.house.timezone}</Text>
+            <Title order={2} fz={26} lh={1.15} className="conta-number">{session.house.name}</Title>
+            <Text size="sm" c="dimmed">Fuso horário: {session.house.timezone}{role === "tenant" && ownRoom ? ` · O teu quarto: ${ownRoom.name}` : ""}</Text>
           </Stack>
-          <Badge color={session.house.source_kind === "demo" ? "#a63c00" : "gray"} variant={session.house.source_kind === "demo" ? "filled" : "light"} size="lg">
-            {session.house.source_kind === "demo" ? "Casa de demonstração" : "Registo de produção"}
-          </Badge>
+          {session.house.source_kind === "demo"
+            ? <Badge className="conta-demo-badge">Casa de demonstração</Badge>
+            : <Badge>Registo de produção</Badge>}
         </Group>
       </Card>
-      {role === "tenant" && (
-        <Card withBorder radius="lg" p="lg">
-          <Text size="sm" c="dimmed">O teu quarto</Text>
-          <Text fw={700} size="lg">{ownRoom?.name ?? "Informação de quarto indisponível"}</Text>
-          <Text c="dimmed" size="sm">O quarto que tens no contrato.</Text>
-        </Card>
-      )}
       <section aria-labelledby="room-list-title">
-        <Title id="room-list-title" order={3} size="h4" mb="sm">Divisões da casa</Title>
+        <Title id="room-list-title" order={2} size={18} mb="sm">Divisões da casa</Title>
         {session.rooms.length ? (
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing={16}>
             {session.rooms.map((room) => (
-              <Card key={room.id} withBorder radius="lg" p="lg">
+              <Card key={room.id} radius={16} p="16px 20px">
                 <Group gap="sm" wrap="nowrap">
-                  <ThemeIcon radius="xl" variant="light" color="indigo"><IconBuildingCommunity size={18} aria-hidden="true" /></ThemeIcon>
                   <Stack gap={3}>
-                    <Text fw={600}>{room.name}</Text>
-                    <Text size="xs" c="dimmed">{room.kind === "common" ? "Zona comum" : "Quarto"}</Text>
+                    <Text fw={700} fz={16}>{room.name}</Text>
+                    <Text size="xs" c="dimmed" fz={13}>{room.id === membership?.room_id ? "O teu quarto" : room.kind === "common" ? "Zona comum" : "Quarto"}</Text>
                     {householdId && allowances[room.id] ? (
                       <RoomAllowanceLine householdId={householdId} view={allowances[room.id]} canEdit={role === "landlord"}
                         onChange={(v) => setAllowances((all) => ({ ...all, [v.room_id]: v }))} />
@@ -212,13 +204,13 @@ function HouseContent() {
         ) : <Text c="dimmed">Ainda não existem divisões registadas nesta casa.</Text>}
         {hasAllowance && <Text size="sm" c="dimmed" mt="sm">O senhorio inclui {(allowanceWh / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 1 })} kWh por mês de aquecimento em cada quarto, pagos por todos.</Text>}
       </section>
-      {role === "tenant" && <section aria-labelledby="appliances-title"><Title id="appliances-title" order={3} size="h4" mb="sm">Aparelhos</Title><AppliancesContent /></section>}
+      {role === "tenant" && <section aria-labelledby="appliances-title"><Title id="appliances-title" order={2} size={18} mb="sm">Aparelhos</Title><AppliancesContent /></section>}
       {role === "operator" && <section aria-labelledby="appliances-title"><Title id="appliances-title" order={3} size="h4" mb="sm">Aparelhos</Title><NoData value={{ title: "Diagnóstico de dispositivos", detail: "O operador consulta o estado técnico autorizado na área Diagnóstico.", dependency: "Não são apresentados aparelhos pessoais." }} /></section>}
       {(role === "tenant" || role === "landlord") && (
         <HouseRulesCard householdId={session.house.id} canEdit={role === "tenant"} />
       )}
       {role === "landlord" && (
-        <Alert color="blue" variant="light">
+        <Alert color="gray" variant="light">
           A vista de senhorio limita-se à gestão e aos totais autorizados. Não inclui presença, horários nem aparelhos pessoais dos moradores.
         </Alert>
       )}
@@ -234,7 +226,7 @@ function HomeContent({ role }: { role: AppRole }) {
       <PageHeading title={landlord ? "Hoje" : "Diagnóstico"} description={
         landlord ? "A tua casa num relance." : "Acompanha a configuração técnica sem aceder a consumos pessoais."
       } />
-      <Card radius="lg" p={{ base: "lg", sm: "xl" }} bg="var(--mantine-primary-color-light)">
+      <Card radius="lg" p={{ base: "lg", sm: "xl" }}>
         <Group justify="space-between" align="center" wrap="wrap">
           <Stack gap="xs">
             <Title order={3}>{session.house?.name ?? "A tua casa"}</Title>
@@ -251,7 +243,7 @@ function HomeContent({ role }: { role: AppRole }) {
           </Group>
         </Group>
       </Card>
-      <Alert color="indigo" variant="light" icon={<IconInfoCircle aria-hidden="true" />}>
+      <Alert color="gray" variant="light" icon={<IconInfoCircle aria-hidden="true" />}>
         {landlord ? "Esta vista nunca mostra presença ou hábitos pessoais dos moradores." : "A vista técnica não permite consultar contas ou dados privados."}
       </Alert>
     </Stack>
@@ -262,17 +254,19 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
   const { logout } = useAuth();
   const session = useHouseholdSession();
   const role = session.membership?.role;
+  const { setColorScheme } = useMantineColorScheme();
+  const scheme = useComputedColorScheme("light");
   if (!role) return null;
   if (section === "home" && role === "tenant") return (
     <Stack gap="xl">
-      <PageHeading title={session.residentName ? `Olá, ${session.residentName}` : "Hoje"} description="" />
+      <div className="conta-greeting"><PageHeading title={session.residentName ? `Olá, ${session.residentName}` : "Hoje"} description="" /></div>
       <Dashboard />
     </Stack>
   );
   if (section === "home") return <HomeContent role={role} />;
   if (section === "house") return (
-    <Stack gap="xl">
-      <PageHeading title="Casa" description="Divisões e informações da casa associada à tua conta." />
+    <Stack gap={24}>
+      <PageHeading title="Casa" description="Divisões e aparelhos da tua casa." />
       <HouseContent />
     </Stack>
   );
@@ -297,17 +291,21 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
     </Stack>
   );
   if (section === "settings") return (
-    <Stack gap="xl" maw={760}>
-      <PageHeading title="Definições" description="A tua sessão e o contexto de acesso." />
-      <Card withBorder p="lg" radius="lg">
-        <Stack gap="xs">
-          <Title order={3} size="h4">A tua conta</Title>
-          <Text>{session.residentName ?? "Utilizador autenticado"}</Text>
-          <Text c="dimmed" size="sm">
-            Papel atual: {role === "tenant" ? "Morador" : role === "landlord" ? "Senhorio" : "Operador"}
-          </Text>
-          <Text c="dimmed" size="sm">Entraste como {role === "tenant" ? "morador" : role === "landlord" ? "senhorio" : "operador"} da {session.house?.name ?? "casa"}.</Text>
-          <Button color="red" variant="light" onClick={() => void logout()} mt="md" w="fit-content">Terminar sessão</Button>
+    <Stack gap={24}>
+      <PageHeading title="Definições" description="A tua sessão e a aparência da app." />
+      <Card p={{ base: "md", sm: 28 }} maw={640}>
+        <Stack gap={16}>
+          <Title order={2} size={20}>A tua conta</Title>
+          <Text fz={16}>{session.residentName ?? "Utilizador autenticado"}</Text>
+          <Text c="dimmed" size="sm">{session.house?.name ?? "Casa"}</Text>
+          <div className="conta-divider-top">
+            <Text c="dimmed" size="sm" mb="xs">Tema</Text>
+            <Group gap="xs">
+              <Button mih={44} variant={scheme === "light" ? "filled" : "default"} aria-pressed={scheme === "light"} onClick={() => setColorScheme("light")}>Claro</Button>
+              <Button mih={44} variant={scheme === "dark" ? "filled" : "default"} aria-pressed={scheme === "dark"} onClick={() => setColorScheme("dark")}>Escuro</Button>
+            </Group>
+          </div>
+          <Button className="conta-btn-danger" variant="default" mih={48} onClick={() => void logout()} w="fit-content">Terminar sessão</Button>
         </Stack>
       </Card>
     </Stack>
