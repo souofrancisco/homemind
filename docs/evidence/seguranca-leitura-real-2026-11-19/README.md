@@ -4,7 +4,7 @@ Backend com `HOME_BACKEND=mcp`, `ENABLE_PHYSICAL_WRITES=false`, sem grant, sem l
 
 | Verificação | Resultado |
 |---|---|
-| Cartão «Alarme da casa» (ana, Casa) | PASS: «REAL · só leitura», «Desarmado (real)», sem «Propor armar/desarmar» ([imagem](01-casa-alarme-real-so-leitura.png)) |
+| Cartão «Alarme da casa» (ana, Casa) | PASS: «REAL · só leitura», «Desarmado (real)», sem «Propor armar/desarmar» (texto da página lido no browser; sem captura de imagem) |
 | `GET …/security` | PASS: `origin=real`, `panel_status=disarmed`, `available=false`, `can_arm=false`, `can_disarm=false`, `pending=null` |
 | Proposta forçada por API | PASS (recusada, HTTP 400); nada foi executado |
 | Poll de `get_home_devices` e `get_home_security_status` | PASS por inferência: a leitura chegou à app e o log do backend não tem erros, avisos nem tracebacks; o log a INFO não regista cada chamada MCP |
