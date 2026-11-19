@@ -40,7 +40,7 @@ A API ativa está em [api-implementada.md](api-implementada.md). Entidades e est
 
 ## 3. Matriz de contratos
 
-Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), `household.py`, `devices.py`, `energy.py`, `presence.py`, `sensors.py`, `safety.py`, `billing.py`, `notification.py`, `agent.py`, `domain_events.py`, `api.py` (erros e `OPENAPI_MODELS`), `fixtures.py` (determinísticas). Na BASE-04 foram removidos `simulacao.py` e os modelos de deteção/keypoints de `visao.py`; `eventos.py` e `visao.py` mantêm apenas os tipos ainda necessários à ponte preservada. `regras.py` permanece por ser referenciado pelos tipos antigos do frontend, que esta tarefa não altera.
+Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), `household.py`, `devices.py`, `energy.py`, `presence.py`, `sensors.py`, `safety.py`, `billing.py`, `notification.py`, `agent.py`, `agent_providers.py` (**PROPOSTA #157, item 15**), `domain_events.py`, `api.py` (erros e `OPENAPI_MODELS`), `fixtures.py` (determinísticas). Na BASE-04 foram removidos `simulacao.py` e os modelos de deteção/keypoints de `visao.py`; `eventos.py` e `visao.py` mantêm apenas os tipos ainda necessários à ponte preservada. `regras.py` permanece por ser referenciado pelos tipos antigos do frontend, que esta tarefa não altera.
 
 | Contrato | Produtor (dono) | Consumidores | Persistência | Testes | Pendente |
 |---|---|---|---|---|---|
@@ -54,14 +54,24 @@ Módulo `contracts/`: `common.py` (tipos, `Provenance`, `Audit`, `cost_cents`), 
 | `PresenceEvent(source=appliance)`, `PresenceMeIn`, `PresenceConfirmationRequest`, `HouseOccupancy`, `PresenceDevice`/`PresenceDeviceView`, `CameraStatus` (**PROPOSTA**, D-31) | P2 | P3 (pedido), app (DTOs), P2 | PLANEADA (P2) | modelos + fixtures | Tolerância; retenção (P-20) |
 | `SensorReading` (contacto, fumo, temperatura, humidade; `unknown` sem valor) (**PROPOSTA**, D-31) | P1 (MCP-03) | P2 (SAFE) | PLANEADA (P1) | modelos | Capacidades reais do kit (MCP-03) |
 | `SafetyAlert` (janela aberta + aquecimento, fumo) (**PROPOSTA**, D-31) | P2 | P3 (→ `Notification` e, AGENT-03b, `ProposedAction`: consumidores **IMPLEMENTADOS**) | PLANEADA (P2) | modelos | Autorização do senhorio para fumo |
+| `AwayState` (estado AWAY simulado, SAFE-02 #115) (**PROPOSTA**, a rever por P5 e P3) | P2 | P3 (notificação/ação: **PLANEADO**, fora desta PR) | **IMPLEMENTADA** (SIMULADA) | modelos | Acordo de P5/P3; armamento real exige MCP-04 |
 | `Attribution` (+`supersede`) | P4 | P3, agente | PLANEADA: índice único parcial `(consumption_event_id) WHERE status='active'` | modelos + cenário | — |
 | `ElectricityBill`, `BillAllocation` (+`validate_allocations`) | P4 | UI, agente, P3 | PLANEADA (P4) | fixtures A/B/C exatas | Entrada da fatura (manual vs LLM) |
 | `Budget`, `BudgetThreshold`, `Contestation` | P4 | P3 | PLANEADA (P4) | modelos | P-10 (individual vs fixa) |
 | `Notification`, `NotificationView`, `NotificationAction/Response/Preferences`, `ConfirmationRequest` | P3 (pedido: P4) | UI, P4 | **IMPLEMENTADA** (`0300_notifications_core.sql`: `notification`, `notification_read`, `notification_preferences`; *compare-and-set* sobre o estado e a versão/n.º de votos) | modelos + cenário + `notifications/tests` | D-32 (votação nas confirmações) |
 | `ProposedAction`, `ActionConfirmation`, `ActionExecutionResult` | P3 (execução: P1) | P3, `notifications` | **IMPLEMENTADA** (`0310_agent_actions.sql`: `agent_action`, com a confirmação e o resultado em JSON, e `agent_action_log` *append-only* como auditoria; AGENT-03 #112). Executor real **PLANEADO** (P1); na casa demo só SIMULADO | modelos + `agent/tests` | P-06 (LLM e dados) |
 | `AgentMessage` | P3 | app (DTO) | **IMPLEMENTADA** (`0311_agent_messages.sql`: `agent_message`, por residente; retenção 50 mensagens / 30 dias, P-25; nunca enviada ao LLM, P-06; #111) | `agent/tests/test_history.py` | `AgentMessage` sem `resident_id` (desejado: só o próprio lê) |
-| `AgentToolRequest/Result`, `AutomationRule` | P3 (execução: P1) | P3 | PLANEADA (P3); as ferramentas não persistem resultados; `AutomationRule` é AGENT-04. **SAFE-04 (#117), contrato PROPOSTO (D-35):** `actions` só «desligar tomada» (`power=False`; sem lâmpada), `AutomationVote` e `rule_approval_outcome` (maioria absoluta, distinta da D-32), eventos `automation.vote_decided` e `automation.status_changed`. Persistência, votação e rotas IMPLEMENTADAS (onda 2, `features/automations`); motor PLANEADO (onda 3) | modelos (`test_contracts_foundation`) | P-06 (LLM e dados); D-35 |
-| `DomainEvent` (29 tipos), `StoredEvent` | cada módulo | cada módulo | **IMPLEMENTADA** (`domain_event`) | `test_events`, cenário | — |
+| `AgentToolRequest/Result`, `AgentResponse.interpreter`, `AutomationRule` | P3 | P3 | **IMPLEMENTADO no código; ADITIVO PROPOSTO para aprovação P5**: ferramentas `top_appliances`, `consumption_change`, `explain_attribution`, `pending_confirmations`; parcelas explicadas, proveniência, estado final/provisório e resumos de pedidos; intérprete `llm`/`rules`. `AutomationRule` é AGENT-04. **SAFE-04 (#117), contrato PROPOSTO (D-35):** `actions` só «desligar tomada» (`power=False`; sem lâmpada), `AutomationVote` e `rule_approval_outcome` (maioria absoluta, distinta da D-32), eventos `automation.vote_decided` e `automation.status_changed`. Persistência, votação e rotas IMPLEMENTADAS (onda 2, `features/automations`); motor PLANEADO (onda 3) | modelos + `agent/tests` | aprovação P5; P-06; D-35 |
+| `ToolValue`, `ApplianceValue`, `AttributionPartValue`, `AttributionValue`, `ConfirmationValue`, `ConfirmationsValue`, providers e `ProviderSet` | P5 | composição billing/notifications → agent | **PROPOSTA** aditiva em `contracts/agent_providers.py`; interfaces em contratos para não haver importação entre features; campos opcionais do `ProviderSet` | `billing/tests`, `notifications/tests` e `agent/tests` | aprovação P5 |
+| `DomainEvent` (30 tipos), `StoredEvent` | cada módulo | cada módulo | **IMPLEMENTADA** (`domain_event`) | `test_events`, cenário | — |
+
+**APP-03 #96 / P-18 — aditivo PROPOSTA a aprovar pela P5:** `ConfirmationRequest` acrescenta
+`likely_owner_resident_id: UUID | None = None` e `match_confidence: Confidence | None = None`.
+Os dois campos são conjuntos ou ambos `None`; o dono provável tem de constar em
+`eligible_resident_ids`. Billing só os preenche para aparelho identificado com confiança ≥ 0,8
+e dono declarado que seja inquilino ativo. O texto da notificação só mostra o nome se o diretório
+confirmar que o morador é membro ativo. A dica é inferencial e não altera D-32. Esta proposta não
+autoriza expor propriedade de terceiros na API de aparelhos.
 
 ## 4. Eventos de domínio
 
@@ -81,6 +91,7 @@ Envelope (`EventBase`): `id` (UUID, estável), `schema_version` (=1), `type`, `t
 | `presence.occupancy_changed` (PROPOSTA, **IMPLEMENTADO**, PRES-06) | P2 | `HouseOccupancy` (anónimo; só quando o estado muda; `likely_empty` = porta fiável a 0) | P2, P3, SAFE-02 (futuro) | idem |
 | `sensor.reading_recorded` (PROPOSTA) | P1 | `SensorReading` | P2 | idem |
 | `safety.alert_raised` (PROPOSTA) | P2 | `SafetyAlert` (o mesmo `id` volta com `status=resolved`) | P3 (`notifications.safety_alert`, **IMPLEMENTADO**); P3 (`agent.safety_suggestion`, **IMPLEMENTADO**, AGENT-03b: só propõe, uma `ProposedAction` por inquilino ativo; alerta resolvido → propostas pendentes `rejected`; em runtime real só dispara quando a `safety` tiver o resolvedor de aquecedores, ENERGY-03 #81; hoje só na demo SIMULADA e nos testes) | idem |
+| `safety.away_changed` (PROPOSTA, SAFE-02) | P2 | `AwayState` (`away`/`home`/`unknown`; só quando muda; `arm_proposed` só em `away`, `executed` sempre falso, proveniência sempre simulada) | Sem consumidores (notificação e alerta de entrada **PLANEADOS**); o senhorio nunca o vê | idem |
 | `billing.confirmation_needed` | P4 | `ConfirmationRequest` | P3 (consumidor `notifications.confirmation_needed`, **IMPLEMENTADO**) | idem |
 | `billing.attribution_changed` | P4 | `Attribution` | P3 (`notifications.attribution_changed`, **IMPLEMENTADO**), P4 | idem |
 | `billing.bill_created` / `bill_finalized` | P4 | `BillRef` | P3, UI | idem |
@@ -196,7 +207,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 
 | Método | Rota | Papéis | Notas |
 |---|---|---|---|
-| `POST` | `/api/households/{household_id}/agent/messages` | T | **IMPLEMENTADO** (parcial). `{ "text": "…" }` → `AgentResponse`. Dados **SIMULADOS** da casa demo (as outras casas não têm dados); LLM desligado por omissão (`AGENT_LLM_ENABLED`). Um pedido de ação («desliga a luz») devolve `proposed_actions` com uma `ProposedAction` por confirmar (AGENT-03); nunca executa nada. A troca fica no histórico do próprio residente. Caminho por casa; revisão P5 |
+| `POST` | `/api/households/{household_id}/agent/messages` | T | **IMPLEMENTADO** (modo tradutor e cinco ferramentas). `{ "text": "…" }` → `AgentResponse`, incluindo `interpreter` (aditivo **PROPOSTO P5**). LLM desligado por omissão e `AGENT_LLM_SCOPE=demo`; a resposta é escrita por moldes em código. Um pedido de ação («desliga a luz») continua a gerar `proposed_actions` com confirmação (AGENT-03). Histórico só para a app. Caminho por casa; revisão P5 |
 | `GET` | `/api/households/{household_id}/agent/messages?limit` | T | **IMPLEMENTADO** (#111). `[AgentMessage]` (`limit` 1..100, omissão 50), do mais antigo para o mais recente; só o histórico do **próprio** residente (nunca o de outro nem de outra casa). Dados pessoais com retenção curta (50 mensagens, 30 dias, P-25); **nunca** enviado ao LLM (P-06). Revisão P5 |
 | `GET` | `/api/households/{id}/agent/actions[/{aid}]` · `POST …/agent/actions/{aid}/confirm` · `…/reject` | T | **IMPLEMENTADO** (AGENT-03; ver `api-implementada.md`). Só no `confirm` uma ação é executada, no máximo uma vez; na casa demo o executor é SIMULADO. O executor real (hardware) é **PLANEADO** (P1). Caminho por casa (substitui o `/api/agent/actions/{id}/…` proposto); revisão P5 |
 | `GET` `POST` | `/api/households/{id}/automations` | T | **IMPLEMENTADO** (SAFE-04). `GET`: `[AutomationView]` (uma votação fora de prazo resolve-se aqui, rejeitada). `POST` (201): `{name, trigger, target_device_id}` → regra `proposed`; só tomada conhecida da casa, no alvo e no `trigger.device_id` (lâmpada ou outra casa: 400 `invalid_target`); o proponente vota a favor; 409 `too_many_open` à 4.ª aberta. Só contagens, nunca quem votou o quê; o residente vem do token; senhorio/operador 403, fora da casa 404 |

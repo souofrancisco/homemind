@@ -18,7 +18,9 @@ import AppliancesContent from "./AppliancesPage";
 import EnergyContent from "./EnergyPage";
 import BudgetContent from "./BudgetPage";
 import NotificationsContent from "./NotificationsPage";
+import AssistantPage from "./AssistantPage";
 import { getCameraStatus, listMcpTools, type CameraStatus, type McpTool } from "../services/diagnostics/api";
+import { request } from "../services/api/client";
 
 type Placeholder = { title: string; detail: string; dependency: string; badge?: string };
 const placeholders: Record<"consumption" | "appliances" | "notifications" | "assistant" | "diagnostics", Placeholder> = {
@@ -133,10 +135,26 @@ function DiagnosticCard<T>({
 }
 
 function DiagnosticsContent() {
-  const householdId = useHouseholdSession().membership?.household_id;
+  const session = useHouseholdSession();
+  const householdId = session.membership?.household_id;
+  const [starting, setStarting] = useState<"heater" | "kettle" | null>(null);
   const tools = useHouseholdData<McpTool[]>(householdId, listMcpTools);
   const camera = useHouseholdData<CameraStatus>(householdId, getCameraStatus);
   return <Stack gap="md">
+    {session.house?.source_kind === "demo" && <Card withBorder radius="lg" p="lg">
+      <Stack gap="sm">
+        <Group justify="space-between"><Title order={4}>Simulador da demo</Title><Badge color="yellow">SIMULADO</Badge></Group>
+        <Text size="sm" c="dimmed">Publica uma sessão simulada na tomada da extensão da sala.</Text>
+        <Group>
+          <Button loading={starting === "heater"} disabled={starting !== null} onClick={async () => {
+            setStarting("heater"); try { await request("/api/demo/live/heater", { method: "POST" }); } finally { setStarting(null); }
+          }}>Aquecedor</Button>
+          <Button variant="light" loading={starting === "kettle"} disabled={starting !== null} onClick={async () => {
+            setStarting("kettle"); try { await request("/api/demo/live/kettle", { method: "POST" }); } finally { setStarting(null); }
+          }}>Chaleira</Button>
+        </Group>
+      </Stack>
+    </Card>}
     <DiagnosticCard title="Ligação MCP" {...tools}>
       {(value) => <Text>{value.length} ferramentas anunciadas pela API de diagnóstico.</Text>}
     </DiagnosticCard>
@@ -353,6 +371,7 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
       <NotificationsContent />
     </Stack>
   );
+  if (section === "assistant" && role === "tenant") return <AssistantPage />;
   if (section === "diagnostics") return (
     <Stack gap="xl">
       <PageHeading title={screenLabels.diagnostics} description="Estado técnico de leitura, disponível apenas para o papel de operador." />

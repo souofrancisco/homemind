@@ -16,6 +16,7 @@ import logging
 import sqlite3
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -23,6 +24,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from pydantic import ValidationError
 
+from homemind.contracts.agent_providers import ProviderSet
 from homemind.contracts.common import ContractModel
 from homemind.contracts.notification import (
     AlreadyRespondedError,
@@ -48,6 +50,7 @@ from homemind.core.access import (
     require_access,
 )
 from homemind.core.events import append_event
+from homemind.features.notifications.agent_providers import NotificationAgentProviders
 from homemind.features.notifications.config import get_notification_settings
 from homemind.features.notifications.directory import SqliteResidentDirectory
 from homemind.features.notifications.handlers import CONSUMERS
@@ -71,6 +74,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Um só relógio: o do consumidor é o mesmo que as rotas usam (o override de `get_clock`
     # nos testes também vale aqui; em produção é o relógio real).
     clock = app.dependency_overrides.get(get_clock, get_clock)()
+    existing = getattr(app.state, "agent_providers", None)
+    if not isinstance(existing, ProviderSet):
+        existing = ProviderSet()
+    app.state.agent_providers = replace(
+        existing, confirmations=NotificationAgentProviders(app.state.db, clock)
+    )
     for consumer, make_handler, types in CONSUMERS:
         app.state.bus.subscribe(consumer, make_handler(clock), types)
     sweep_s = get_notification_settings().notifications_expiry_sweep_s
