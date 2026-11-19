@@ -29,7 +29,8 @@ export function useHouseAutomations(householdId: string | undefined) {
     setBusy(id);
     try {
       await run();
-      notifications.show({ color: "green", title: "Feito", message: done });
+      notifications.clean();
+      notifications.show({ color: "green", title: "Feito", message: done, autoClose: 4000 });
     } catch { /* o cliente já mostrou o motivo do servidor */ }
     finally { setBusy(null); reload(); }
   }, [reload]);
@@ -48,7 +49,8 @@ export function useHouseAutomations(householdId: string | undefined) {
       setBusy("new");
       try {
         await proposeAutomation(householdId!, body);
-        notifications.show({ color: "green", title: "Proposta criada", message: "Ficou registada com o teu voto a favor." });
+        notifications.clean();
+        notifications.show({ color: "green", title: "Proposta criada", message: "Ficou registada com o teu voto a favor.", autoClose: 4000 });
         return true;
       } catch { return false; }
       finally { setBusy(null); reload(); }

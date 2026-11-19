@@ -19,6 +19,7 @@ export default function RuleCard({ rule, tapName, busy, onVote, onSuspend, onRea
   const pending = rule.vote_open;
   const reactivating = pending && rule.status === "disabled";
   const [confirming, { open, close }] = useDisclosure(false);
+  const [reopening, { open: openReactivate, close: closeReactivate }] = useDisclosure(false);
   return (
     <Card withBorder radius="lg" p="lg">
       <Stack gap="sm">
@@ -49,7 +50,7 @@ export default function RuleCard({ rule, tapName, busy, onVote, onSuspend, onRea
           </>
         )}
         {rule.status === "active" && <Button w="fit-content" variant="light" color="red" loading={busy} onClick={open}>Suspender</Button>}
-        {rule.status === "disabled" && !pending && <Button w="fit-content" variant="light" loading={busy} onClick={onReactivate}>Reativar (abre nova votação)</Button>}
+        {rule.status === "disabled" && !pending && <Button w="fit-content" variant="light" loading={busy} onClick={openReactivate}>Reativar (abre nova votação)</Button>}
       </Stack>
       <Modal opened={confirming} onClose={close} title="Suspender regra" centered>
         <Stack gap="md">
@@ -57,6 +58,15 @@ export default function RuleCard({ rule, tapName, busy, onVote, onSuspend, onRea
           <Group justify="flex-end">
             <Button variant="default" onClick={close}>Cancelar</Button>
             <Button color="red" onClick={() => { close(); onSuspend(); }}>Suspender</Button>
+          </Group>
+        </Stack>
+      </Modal>
+      <Modal opened={reopening} onClose={closeReactivate} title="Reativar regra" centered>
+        <Stack gap="md">
+          <Text size="sm">Reativar «{rule.name}» abre uma nova votação de 24 h e notifica a casa. A regra só volta a desligar a tomada se a maioria votar a favor; até lá continua suspensa. Conta para o teu limite de 3 votações abertas.</Text>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={closeReactivate}>Cancelar</Button>
+            <Button onClick={() => { closeReactivate(); onReactivate(); }}>Abrir votação</Button>
           </Group>
         </Stack>
       </Modal>
