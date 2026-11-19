@@ -110,6 +110,7 @@ def prepare() -> str:
             )
             dst.execute("INSERT INTO demo_web_marker VALUES (1, ?)", (WEB_MARKER,))
             _seed_live_catalog(dst, now - timedelta(minutes=175))
+            _seed_history(dst, now - timedelta(minutes=175))
             dst.commit()
         os.chmod(tmp, 0o666)
         os.replace(tmp, path)
@@ -192,6 +193,13 @@ def _seed_live_catalog(conn: sqlite3.Connection, at: datetime) -> None:
             plug_id,
             at + timedelta(microseconds=1),
         )
+
+
+def _seed_history(conn: sqlite3.Connection, at: datetime) -> None:
+    """Acrescenta à cópia web dados históricos determinísticos, todos SIMULADOS."""
+    from homemind.demo.web_seed import seed_history
+
+    seed_history(conn, at)
 
 
 def link(username: str, sub: str) -> None:
