@@ -105,20 +105,15 @@ class SecurityPanelStatus(StrEnum):
 
 
 class SecurityPanelState(ContractModel):
-    """Estado do painel de segurança SIMULADO (SAFE-02, PROPOSTA). Só existe fonte simulada:
-    não há leitura real do alarme (MCP-04/SAFE-04 PLANEADOS, D-07/P-01). Anónimo."""
+    """Estado do painel de segurança (SAFE-02, PROPOSTA). Fonte SIMULADA (painel da demo) ou REAL
+    só de leitura (`connectors/mcp_security.py`; nunca persistida como evento). Armamento real
+    não existe (MCP-04/SAFE-04 PLANEADOS, D-07/P-01). Anónimo."""
 
     id: UUID
     household_id: UUID
     status: SecurityPanelStatus
     since: UtcDatetime
     provenance: Provenance
-
-    @model_validator(mode="after")
-    def _simulated_only(self) -> Self:
-        if not self.provenance.simulated:
-            raise ValueError("o painel de segurança só tem fonte SIMULADA (sem leitura real)")
-        return self
 
 
 class SecurityActionKind(StrEnum):

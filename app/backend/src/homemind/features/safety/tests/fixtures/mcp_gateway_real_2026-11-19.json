@@ -1,0 +1,26 @@
+{
+  "_nota": "REAL, sanitizado, 2026-11-19, uma leitura SO DE LEITURA de get_home_devices (alarme em repouso). Ids, nomes, divisao e lastCommunicationTime removidos. NAO prova o formato de alarme armado/desarmado: alarmState=normal e o estado de disparo.",
+  "devices": [
+    {
+      "id": "gw-sanitized",
+      "type": "gateway",
+      "categories": ["security"],
+      "capabilities": [
+        {"type": "chargeState", "value": true},
+        {"type": "batteryLevel", "value": 100, "min": 0, "max": 100},
+        {"type": "alarmState", "value": "normal"},
+        {"type": "factoryReset", "value": false},
+        {"type": "networkMode", "value": "wifi"},
+        {"type": "tamperState", "value": "normal"}
+      ]
+    },
+    {"id": "smoke-sanitized", "type": "smokeSensor", "categories": ["security"],
+     "capabilities": [{"type": "batteryStatus", "value": "high"}]},
+    {"id": "contact-sanitized", "type": "contactSensor", "categories": ["security"],
+     "capabilities": [
+        {"type": "sensorState", "value": "alarm"},
+        {"type": "batteryStatus", "value": "high"},
+        {"type": "tamperState", "value": "normal"}
+     ]}
+  ]
+}

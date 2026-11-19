@@ -4,7 +4,9 @@ Rotas só para moradores (`Resource.security`): o senhorio e o operador recebem 
 membro da casa, 404 (`core/access.py`). O residente vem do token. Armar/desarmar são duas fases
 (proposta → confirmação humana) e só mudam o painel SIMULADO: nada chama MCP, conectores nem
 hardware (`ENABLE_PHYSICAL_WRITES` não é lido). Os eventos já estão no outbox; depois do COMMIT
-acorda-se o barramento (uma falha só atrasa a entrega). Sem MCP real (D-07/P-01, MCP-04).
+acorda-se o barramento (uma falha só atrasa a entrega). A leitura REAL do alarme
+(`app.state.security_panel`) é só de leitura e só alimenta a vista de uma casa real; armamento
+real: D-07/P-01, MCP-04.
 """
 
 import logging
@@ -93,7 +95,11 @@ async def get_security(
 ) -> security.SecurityView:
     away = _away(state, access.household_id)
     now = clock()
-    return await db.run(lambda c: security.get_view(c, access.household_id, away, now))
+    # Leitura REAL (só leitura) em memória, alimentada pelo polling do MCP; só conta numa casa
+    # real (a demo ignora-a). Nunca chama o MCP daqui.
+    reader = getattr(state, "security_panel", None)
+    real = reader.read(access.household_id, now) if reader is not None else None
+    return await db.run(lambda c: security.get_view(c, access.household_id, away, now, real))
 
 
 @router.post("/households/{household_id}/security/proposals", status_code=201)

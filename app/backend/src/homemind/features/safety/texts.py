@@ -46,3 +46,16 @@ ASSESSMENT_TEXT = {
         "sem leitura não é dado como armado nem desarmado."
     ),
 }
+
+# Casa real (SAFE-02, leitura MCP só de leitura): sem propostas nem armamento.
+REAL_NOTICE = (
+    "REAL, só leitura: o estado do alarme vem do MCP e só serve para comparar com a presença. "
+    "A app não arma nem desarma o alarme e não substitui um alarme certificado. "
+    "«Sem leitura» é o normal enquanto o formato do MCP não for confirmado."
+)
+REAL_ASSESSMENT_TEXT = {
+    k: v.replace("painel simulado", "alarme").replace(
+        " Podes propor armar (só simulado, com a tua confirmação).", ""
+    )
+    for k, v in ASSESSMENT_TEXT.items()
+}

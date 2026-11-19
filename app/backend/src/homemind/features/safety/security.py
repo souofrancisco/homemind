@@ -2,9 +2,10 @@
 app. Síncrono sobre SQLite (`db.run`); nunca toca em MCP, conectores nem hardware.
 
 Invariantes (todos testados):
-- só existe fonte SIMULADA do painel (D-07/P-01: leitura/armamento real = MCP-04, PLANEADO). O
-  estado vem do último `safety.security_changed` da casa; sem leitura é `unknown`, nunca se assume
-  armado nem desarmado; numa casa real o painel está indisponível e nada se propõe;
+- o painel SIMULADO (casa demo) vem do último `safety.security_changed`; numa casa real só há uma
+  leitura REAL de LEITURA (`real`, do `SecurityPanelCache` do MCP) que alimenta `assess` e nunca
+  propõe nada (armamento real = MCP-04, PLANEADO, D-07/P-01). Sem leitura é `unknown`, nunca se
+  assume armado nem desarmado;
 - armar/desarmar são duas fases: uma proposta (`safety.security_action`, `proposed`, caduca em 10
   min) e uma confirmação humana explícita de um morador (`confirmed`) que só muda o painel
   SIMULADO. `executed` é sempre falso: o resultado é sempre rotulado SIMULADO;
@@ -43,7 +44,13 @@ from homemind.contracts.safety import (
     SecurityPanelStatus,
 )
 from homemind.core.events import append_event, load_events
-from homemind.features.safety.texts import ASSESSMENT_TEXT, PANEL_RESULT, SECURITY_NOTICE
+from homemind.features.safety.texts import (
+    ASSESSMENT_TEXT,
+    PANEL_RESULT,
+    REAL_ASSESSMENT_TEXT,
+    REAL_NOTICE,
+    SECURITY_NOTICE,
+)
 
 PROPOSAL_TTL = timedelta(minutes=10)
 SIM = Provenance(origin=Origin.simulated, kind=ValueKind.inferred)
@@ -89,8 +96,8 @@ class SecurityActionView(ContractModel):
 
 
 class SecurityView(ContractModel):
-    available: bool  # false numa casa real: não há painel real
-    origin: Literal["simulated"] = "simulated"
+    available: bool  # false numa casa real: sem painel simulado nem armamento real
+    origin: Literal["simulated", "real"] = "simulated"  # real: casa real, painel só de leitura
     panel_status: SecurityPanelStatus
     panel_since: UtcDatetime | None
     away_status: AwayStatus
@@ -156,19 +163,22 @@ def _view(
     away: AwayStatus,
     now: datetime,
     last_result: str | None = None,
+    real: SecurityPanelState | None = None,
 ) -> SecurityView:
     available = _available(conn, household_id)
-    panel = _panel(conn, household_id) if available else None
+    # casa demo: só o painel simulado, a leitura real nunca é usada; casa real: só a leitura
+    panel = _panel(conn, household_id) if available else real
     status = panel.status if panel else SecurityPanelStatus.unknown
     pending = _pending(_actions(conn, household_id), now) if available else None
     a = assess(away, status)
     return SecurityView(
         available=available,
         panel_status=status,
-        panel_since=panel.since if panel else None,
+        panel_since=panel.since if panel and status is not SecurityPanelStatus.unknown else None,
         away_status=away,
         assessment=a,
-        assessment_text=ASSESSMENT_TEXT[a.value],
+        origin="simulated" if available else "real",
+        assessment_text=(ASSESSMENT_TEXT if available else REAL_ASSESSMENT_TEXT)[a.value],
         pending=SecurityActionView(
             **pending.model_dump(include=set(SecurityActionView.model_fields))
         )
@@ -176,14 +186,19 @@ def _view(
         else None,
         can_arm=available and pending is None and status is not SecurityPanelStatus.armed,
         can_disarm=available and pending is None and status is not SecurityPanelStatus.disarmed,
+        notice=SECURITY_NOTICE if available else REAL_NOTICE,
         last_result=last_result,
     )
 
 
 def get_view(
-    conn: sqlite3.Connection, household_id: UUID, away: AwayStatus, now: datetime
+    conn: sqlite3.Connection,
+    household_id: UUID,
+    away: AwayStatus,
+    now: datetime,
+    real: SecurityPanelState | None = None,
 ) -> SecurityView:
-    return _view(conn, household_id, away, now)
+    return _view(conn, household_id, away, now, real=real)
 
 
 # escrita ------------------------------------------------------------------------------------
