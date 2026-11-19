@@ -213,3 +213,22 @@ def log(
             code,
         ),
     )  # fmt: skip
+
+
+def active_rules(
+    conn: sqlite3.Connection, household_id: UUID
+) -> list[tuple[AutomationRule, datetime]]:
+    """Regras que o motor pode executar: `active`, aprovadas e sem votação aberta, com o instante
+    da última ativação (do log). Sem ativação registada, a regra não conta."""
+    rows = conn.execute(
+        "SELECT r.json, (SELECT max(l.at) FROM automation_log l WHERE l.rule_id = r.id"
+        " AND l.to_status = 'active') AS active_since FROM automation_rule r"
+        " WHERE r.household_id = ? AND r.status = 'active' AND r.vote_open = 0"
+        " AND r.approved_by_resident_id IS NOT NULL ORDER BY r.proposed_at, r.rowid",
+        (str(household_id),),
+    ).fetchall()
+    return [
+        (AutomationRule.model_validate_json(r["json"]), datetime.fromisoformat(r["active_since"]))
+        for r in rows
+        if r["active_since"] is not None
+    ]

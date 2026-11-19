@@ -2,16 +2,18 @@
 
 Só inquilinos (`Resource.automation`): o senhorio e o operador recebem 403 e quem não é membro da
 casa, 404 (padrão de `core/access.py`). O residente vem sempre do token; uma regra de outra casa
-é 404. Nenhuma rota executa nada: o motor é PLANEADO. A resposta é a `AutomationView` (só
-contagens, nunca quem votou o quê). Os eventos já estão no outbox; depois do COMMIT acorda-se o
-barramento (uma falha só atrasa a entrega).
+é 404. Nenhuma rota executa nada (o motor, `runner.py`, liga-se ao barramento no lifespan). A
+resposta é a `AutomationView` (só contagens, nunca quem votou o quê). Os eventos já estão no
+outbox; depois do COMMIT acorda-se o barramento (uma falha só atrasa a entrega).
 """
 
 import logging
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from pydantic import ValidationError
 from starlette.datastructures import State
 
@@ -26,8 +28,11 @@ from homemind.core.access import (
     require_access,
 )
 from homemind.core.db import Database
+from homemind.features.agent.config import get_agent_settings
 from homemind.features.agent.devices import select_directory
 from homemind.features.automations import service
+from homemind.features.automations.engine import AutomationEngine
+from homemind.features.automations.runner import AutomationRunner
 from homemind.features.automations.service import (
     AutomationProposeIn,
     AutomationStatusIn,
@@ -39,7 +44,30 @@ from homemind.features.automations.service import (
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api", tags=["automations"])
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Liga o motor ao barramento (só desliga tomadas; casa de demonstração = só o simulado)."""
+    settings = get_agent_settings()
+    runner = AutomationRunner(
+        app.state,
+        clock=lambda: datetime.now(UTC),
+        engine=AutomationEngine(
+            device_cooldown_s=settings.agent_action_cooldown_s,
+            lockout_s=settings.agent_action_lockout_s,
+        ),
+        timeout_s=settings.agent_action_timeout_s,
+    )
+    runner.attach(app.state.bus)
+    app.state.automations_runner = runner
+    log.info("automations: motor subscrito (executor simulado na demo; real só com a P1/MCP-04)")
+    try:
+        yield
+    finally:
+        await runner.close()
+
+
+router = APIRouter(prefix="/api", tags=["automations"], lifespan=lifespan)
 
 ReadAccess = Annotated[
     HouseholdAccess, Depends(require_access(Resource.automation, Operation.read))
