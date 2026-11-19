@@ -106,7 +106,8 @@ class SecurityPanelStatus(StrEnum):
 
 class SecurityPanelState(ContractModel):
     """Estado do painel de segurança (SAFE-02, PROPOSTA). Fonte SIMULADA (painel da demo) ou REAL
-    só de leitura (`connectors/mcp_security.py`; nunca persistida como evento). Armamento real
+    só de leitura (`features/safety/panel_reader.py`, alimentado pelo ouvinte `seguranca` de
+    `connectors/mcp_home.py`; nunca persistida como evento). Armamento real
     não existe (MCP-04/SAFE-04 PLANEADOS, D-07/P-01). Anónimo."""
 
     id: UUID

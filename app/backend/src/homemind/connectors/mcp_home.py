@@ -53,6 +53,7 @@ _CLOSE_TIMEOUT_S = 5
 _WRITE_TIMEOUT_S = 14
 _READBACK_RETRIES = 5
 _READBACK_GAP_S = 0.5
+_SECURITY_READ_TIMEOUT_S = 3  # < _READ_TIMEOUT_S: o alarme lento não cancela o ciclo de poll
 _SECURITY_EVERY_POLLS = 6  # estado do alarme de ~30 s a ~30 s (a leitura caduca aos 90 s)
 _INVENTORY_EVERY_POLLS = 12  # volta a descobrir dispositivos de ~60 s a ~60 s
 _STALE_S = 30  # leitura de consumo mais antiga que isto deixa de ser devolvida
@@ -693,7 +694,9 @@ class McpHome:
             if not self._tem_estado_seguranca:
                 self.seguranca.unavailable_status()
                 return
-            result = await session.call_tool(TOOL_SECURITY_STATUS, {})
+            result = await asyncio.wait_for(
+                session.call_tool(TOOL_SECURITY_STATUS, {}), _SECURITY_READ_TIMEOUT_S
+            )
             self.seguranca.ingest_status(_payload(result))
         except Exception as erro:  # noqa: BLE001 - só o tipo vai para o log
             log.warning("estado do alarme indisponível (%s)", type(erro).__name__)

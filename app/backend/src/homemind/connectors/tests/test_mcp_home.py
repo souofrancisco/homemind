@@ -816,6 +816,29 @@ def test_alarm_tool_failure_or_absence_is_unknown_and_never_breaks_home(tmp_path
     run(home.parar())
 
 
+def test_alarm_status_read_that_blocks_times_out_alone_and_poll_continues(tmp_path, monkeypatch):
+    from homemind.connectors import mcp_home as m
+
+    monkeypatch.setattr(m, "_READ_TIMEOUT_S", 0.5)
+    monkeypatch.setattr(m, "_SECURITY_READ_TIMEOUT_S", 0.05, raising=False)
+
+    class Blocking(SecMcp):
+        async def call_tool(self, name, args):
+            if name == "get_home_security_status":
+                await asyncio.sleep(30)  # bloqueia sem lançar exceção
+            return await super().call_tool(name, args)
+
+    home, mcp, _ = make(tmp_path, Blocking())
+    seen = []
+    home.sensores = SimpleNamespace(ingest=seen.append, unavailable=lambda: None)
+    home.seguranca = ls = Listener()
+    run(home._refrescar())
+    assert ("unavailable_status", None) in ls.events and ("unavailable", None) not in ls.events
+    assert run(home.estado()).mcp_ok and len(seen) == 1  # lâmpada/tomada/sensores intactos
+    assert mcp.writes() == []
+    run(home.parar())
+
+
 def test_alarm_listener_failure_does_not_affect_home(tmp_path):
     home, mcp, _ = make(tmp_path, SecMcp())
 
