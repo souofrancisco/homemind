@@ -431,3 +431,28 @@ def test_mcphome_over_simulator_reports_fake_backend_never_real():
     estado = asyncio.run(read(sim))
     assert estado.backend == "fake"
     assert estado.mcp_ok is False
+
+
+def test_tomada_offline_nao_devolve_consumo_antigo_como_atual(setup):
+    """#248 F1: sem `lastCommunicationTime` novo, o consumo deixa de ser «atual»."""
+    s = setup
+    s.kit.set_load(2000)
+    s.run(s.home._refrescar())
+    assert s.run(s.home.estado()).tomada.consumo_w == 2000.0
+    s.kit.device_offline(s.kit.PLUG)
+    s.clock.advance(600)
+    s.run(s.home._refrescar())
+    tomada = s.run(s.home.estado()).tomada
+    assert tomada.consumo_w is None
+    assert tomada.consumo_lido_em is None
+
+
+def test_tomada_viva_com_carga_constante_nao_passa_a_none(setup):
+    s = setup
+    s.kit.set_load(2000)
+    for _ in range(10):
+        s.clock.advance(10)
+        s.run(s.home._refrescar())
+        tomada = s.run(s.home.estado()).tomada
+        assert tomada.consumo_w == 2000.0
+        assert (s.clock() - tomada.consumo_lido_em).total_seconds() <= 30
