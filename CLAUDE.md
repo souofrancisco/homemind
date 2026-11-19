@@ -25,7 +25,7 @@ P1 `brunovieira88` MCP/energia/aparelhos · P2 `1Mii` visão/presença · P3 `Ra
 2. `make worktree b=feat/<n>-<nome>` (a partir de `origin/main`); copiar `app/.env`. Nunca trabalhar no worktree de outro agente.
 3. Implementar só o pedido, no estilo existente; sem dependências, abstrações ou funcionalidades extra. Atualizar o documento correspondente no mesmo PR.
 4. Testar: `make check` (lint + pytest + OpenAPI→TS + build); `make demo-up` + browser para UI. Lógica pura com fakes e relógio simulado; nunca hardware, rede, LLM ou MCP real em `pytest`. Bug corrigido traz teste que falha sem a correção. Hardware valida-se à mão ([guia](docs/development/guia-validacao-manual.md)); nunca marcar PASS o que não foi executado.
-5. PR pequeno para `main` com: o que mudou, testes realmente corridos, limitações. **Nunca push direto para `main`**, nem merge por agentes. Sem CI ativa: não a reativar nem alterar.
+5. PR pequeno para `main` com: o que mudou, testes realmente corridos, limitações. **Nunca push direto para `main`**, nem merge por agentes. Sem CI ativa: não a reativar nem alterar o workflow `CI` (`ci.yml`). Exceção: os workflows de documentação `pr-docs.yml` e `publish-docs.yml` estão ativos (website em `docs/`, ver [`docs/README.md`](docs/README.md)).
 6. Codex: delegar só trabalho independente e sem ficheiros em comum ([`docs/ai-workflow.md`](docs/ai-workflow.md)); rever sempre o *diff*; no máximo duas rondas.
 7. Não repetir `graphify`: orientar uma vez com `graphify query`, atualizar no fim (`graphify update .`).
 

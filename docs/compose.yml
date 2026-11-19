@@ -1,0 +1,14 @@
+# Só pré-visualização local da documentação. O GitHub Pages não usa este ficheiro.
+# Porta 8100 no anfitrião: a 8000 é a da API (make backend).
+name: homemind-docs
+services:
+  docs:
+    build:
+      context: ..
+      dockerfile: docs/Dockerfile
+    ports:
+      - "8100:8000"
+    volumes:
+      - ./mkdocs.yml:/docs/mkdocs.yml:ro
+      - ./content:/docs/content:ro
+      - ./requirements.txt:/docs/requirements.txt:ro

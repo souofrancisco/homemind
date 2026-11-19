@@ -1,0 +1,121 @@
+/* Paleta Conta Certa: verde-azulado (contas claras) com acento âmbar (aviso).
+   Sem fontes externas: usa a pilha de sistema. */
+
+:root {
+  --md-text-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --md-code-font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Modo claro */
+[data-md-color-scheme="default"][data-md-color-primary] {
+  --md-primary-fg-color: #0f5257;
+  --md-primary-fg-color--light: #2b7479;
+  --md-primary-fg-color--dark: #0a3b3f;
+  --md-primary-bg-color: #f3faf8;
+  --md-accent-fg-color: #9a5b00;             /* âmbar escuro: contraste ≥ 5:1 */
+  --md-default-bg-color: #fbfcfb;
+  --md-default-fg-color: #1d2a2b;
+  --md-default-fg-color--light: #46575a;
+  --md-typeset-a-color: #0b5f65;
+  --md-footer-bg-color: #0a3b3f;
+}
+
+/* Modo escuro */
+[data-md-color-scheme="slate"][data-md-color-primary] {
+  --md-hue: 185;
+  --md-primary-fg-color: #123c40;
+  --md-primary-fg-color--light: #2b7479;
+  --md-primary-fg-color--dark: #0b2b2e;
+  --md-primary-bg-color: #e4f3f0;
+  --md-accent-fg-color: #f0b35a;
+  --md-default-bg-color: #14201f;
+  --md-default-fg-color: #e3eeec;
+  --md-default-fg-color--light: #b7c9c6;
+  --md-typeset-a-color: #6fd3c8;
+  --md-footer-bg-color: #0d1817;
+}
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  font-weight: 700;
+  color: var(--md-default-fg-color);
+}
+
+/* Sem sombras fortes: cartões planos com contorno */
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid > .card {
+  box-shadow: none;
+  border: 0.05rem solid var(--md-default-fg-color--lightest);
+  border-radius: 0.2rem;
+}
+.md-typeset .grid.cards > ul > li:hover {
+  box-shadow: none;
+  border-color: var(--md-accent-fg-color);
+}
+
+.md-header,
+.md-tabs {
+  box-shadow: none;
+}
+
+/* ---- Página inicial ---- */
+[data-md-color-scheme="default"] {
+  --cc-surface: #eaf4f1;
+  --cc-line: #cfe2dd;
+}
+[data-md-color-scheme="slate"] {
+  --cc-surface: #1b2c2b;
+  --cc-line: #2c4442;
+}
+
+.md-content__inner:has(.hero) {
+  max-width: 62rem;
+  margin-inline: auto;
+}
+.md-content__inner:has(.hero) > h1:first-child { display: none; }
+.md-content__inner:has(.hero)::before { display: none; }
+
+.hero {
+  margin: 0 -0.8rem 2rem;
+  padding: clamp(1.8rem, 5vw, 3.5rem) clamp(1rem, 4vw, 3rem);
+  background: var(--cc-surface);
+  border: 0.05rem solid var(--cc-line);
+  border-radius: 0.3rem;
+}
+.hero__eyebrow {
+  margin: 0 0 0.8rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--md-accent-fg-color);
+}
+.md-typeset .hero h1 {
+  margin: 0 0 1rem;
+  font-size: clamp(1.7rem, 4.6vw, 2.6rem);
+  line-height: 1.15;
+}
+.hero__lead {
+  max-width: 40rem;
+  font-size: 0.95rem;
+  color: var(--md-default-fg-color--light);
+}
+
+/* Etiquetas de estado (IMPLEMENTADO / PLANEADO / PROPOSTA) */
+.estado {
+  display: inline-block;
+  padding: 0 0.45em;
+  border: 0.05rem solid currentColor;
+  border-radius: 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.estado--ok { color: #1b6b3a; }
+.estado--plan { color: #7a5200; }
+.estado--prop { color: #5a4a8a; }
+[data-md-color-scheme="slate"] .estado--ok { color: #7fdc9e; }
+[data-md-color-scheme="slate"] .estado--plan { color: #f0b35a; }
+[data-md-color-scheme="slate"] .estado--prop { color: #b8a9f0; }

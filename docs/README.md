@@ -4,6 +4,10 @@
 
 Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home).
 
+## Website público
+
+O site (<https://souofrancisco.github.io/homemind/>) é gerado por MkDocs a partir de **`docs/content/`**, apenas com conteúdo adequado a publicação; o resto de `docs/` (evidência, arquivo, referências, planos, superpowers) **não é publicado**. Cada página publicada resume um documento canónico daqui e indica-o: atualizar primeiro o canónico. Configuração: `docs/mkdocs.yml`, `docs/requirements.txt`; pré-visualização: `docs/compose.yml` (porta 8100); workflows: `.github/workflows/pr-docs.yml` e `publish-docs.yml`. Como correr, validar e publicar: [content/desenvolvimento/website.md](content/desenvolvimento/website.md).
+
 ## Por onde começar
 
 | Sou… | Ler por esta ordem |

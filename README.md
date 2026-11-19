@@ -59,8 +59,22 @@ Monorepo `app/`: **FastAPI + SQLite + barramento de eventos** (Python 3.12, Pyda
 
 Como trabalhamos (issue → worktree → PR; Claude Code e Codex): [`CLAUDE.md`](CLAUDE.md) e [`docs/ai-workflow.md`](docs/ai-workflow.md). Índice da documentação: [`docs/README.md`](docs/README.md).
 
+## Website / Documentação
+
+Documentação publicada (MkDocs + Material) em **<https://souofrancisco.github.io/homemind/>**. O conteúdo público vive em `docs/content/`; os restantes ficheiros de `docs/` (evidência, arquivo, referências, planos) **não são publicados**.
+
+```bash
+docker compose -f docs/compose.yml up docs      # pré-visualização em http://localhost:8100
+# sem Docker: python -m pip install -r docs/requirements.txt && mkdocs serve -f docs/mkdocs.yml
+mkdocs build -f docs/mkdocs.yml --strict        # validação (a mesma do CI)
+```
+
+- **PR para `main`:** `pr-docs.yml` corre `mkdocs build --strict` (check «MkDocs strict») e não publica.
+- **Push para `main`** que altere `docs/content/**`, `docs/mkdocs.yml`, `docs/requirements.txt` ou o workflow (ou execução manual): `publish-docs.yml` constrói o site e publica-o no GitHub Pages (ambiente `github-pages`).
+- **Manter:** alterar primeiro o documento canónico em `docs/`, depois a página publicada (cada uma indica a sua «Fonte canónica»). O site é **público**: nunca segredos, dados pessoais nem informação operacional sensível. Detalhes: [`docs/content/desenvolvimento/website.md`](docs/content/desenvolvimento/website.md).
+
 ## Limitações conhecidas
 
 - Tudo na demo é **SIMULADO**; nada foi validado com hardware real nesta fase.
 - O código ObjectOS (motor de regras e gestos) foi removido na BASE-04 (#74); o histórico está em [`docs/architecture/migration.md`](docs/architecture/migration.md).
-- Sem CI ativa (GitHub Actions desligado); a verificação é `make check` local.
+- Sem CI geral ativa (o workflow `CI` está desativado); a verificação é `make check` local. Só os workflows de documentação (`pr-docs.yml`, `publish-docs.yml`) estão ativos.

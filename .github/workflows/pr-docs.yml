@@ -1,0 +1,30 @@
+name: PR Docs
+
+# Sem filtro de caminhos: o job «MkDocs strict» corre em todos os PR para main (é barato)
+# e nunca fica pendente por o workflow ter sido filtrado. Não publica nada.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-docs-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: MkDocs strict
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+      - run: python -m pip install -r docs/requirements.txt
+      - run: mkdocs build -f docs/mkdocs.yml --strict
+        env:
+          NO_MKDOCS_2_WARNING: "true"

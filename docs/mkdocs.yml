@@ -1,0 +1,105 @@
+site_name: Conta Certa
+site_description: Cada um paga o que usa. A casa trata do resto. Aveiro Tech City Hackathon 2026, Desafio 3, Altice Labs.
+site_url: https://souofrancisco.github.io/homemind/
+repo_url: https://github.com/souofrancisco/homemind
+repo_name: souofrancisco/homemind
+edit_uri: ""
+
+docs_dir: content
+# Fora do repositório, para um build local não deixar uma pasta site/ na árvore.
+# O GitHub Pages substitui-o com --site-dir no runner.
+site_dir: /tmp/homemind-docs-site
+
+copyright: Conta Certa · Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+theme:
+  name: material
+  language: pt
+  # Sem Google Fonts: evita pedidos a terceiros (ver stylesheets/extra.css).
+  font: false
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Mudar para o modo escuro
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Mudar para o modo claro
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - content.code.copy
+
+plugins:
+  - search:
+      lang: pt
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  generator: false
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Início: index.md
+  - Produto:
+      - produto/index.md
+      - Visão e objetivos: produto/visao.md
+      - Funcionalidades: produto/funcionalidades.md
+      - Personas: produto/personas.md
+      - MVP: produto/mvp.md
+      - Limitações conhecidas: produto/limitacoes.md
+  - Arquitetura:
+      - arquitetura/index.md
+      - Stack tecnológico: arquitetura/stack.md
+      - Backend e frontend: arquitetura/backend-frontend.md
+      - Autenticação e autorização: arquitetura/autenticacao.md
+      - Modelos e contratos: arquitetura/contratos.md
+      - Integrações com dispositivos: arquitetura/integracoes.md
+  - Desenvolvimento:
+      - desenvolvimento/index.md
+      - Configuração local: desenvolvimento/configuracao.md
+      - Comandos Makefile: desenvolvimento/makefile.md
+      - Estrutura do repositório: desenvolvimento/estrutura.md
+      - Testes: desenvolvimento/testes.md
+      - Workflow: desenvolvimento/workflow.md
+      - Este website: desenvolvimento/website.md
+  - Demonstração:
+      - demo/index.md
+      - Percurso da aplicação: demo/percurso.md
+      - Funcionalidades verificadas: demo/verificado.md
+      - Real, estimado e simulado: demo/proveniencia.md
+  - Equipa: equipa/index.md
+  - Progresso: progresso/index.md

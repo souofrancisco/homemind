@@ -68,7 +68,7 @@ Não há testes unitários hoje (**IMPLEMENTADO**: `eslint`, `tsc -b`, `vite bui
 | Compose (`app/compose.yaml`, com `compose.mcp.yaml`) | `config -q` sem erros |
 | `make smoke` (stack completa, Authentik) | **Não executado** nesta tarefa (sem alterações a Docker, arranque ou proxy) |
 | MCP real, câmara, escritas físicas | **Não executados** (fora do âmbito; ver [guia-validacao-manual.md](guia-validacao-manual.md)) |
-| CI (`.github/workflows/ci.yml`) | Corre `make check` em PR e push para `main`; `main` **sem proteção** de branch (a convenção é PR por issue, CLAUDE.md) |
+| CI (`.github/workflows/ci.yml`) | Corre `make check` em PR e push para `main`; `main` **sem proteção** de branch (a convenção é PR por issue, CLAUDE.md). O workflow `CI` está desativado no GitHub; só `pr-docs.yml` (`mkdocs build --strict`) e `publish-docs.yml` estão ativos |
 | `.gitignore` | Cobre `.env*`, `app/.mcp-auth/`, `.venv/`, `node_modules/`, `graphify-out/` |
 | Falhas conhecidas | Nenhuma de teste. Pendente: `docs/` ainda tem apontadores nos caminhos antigos (P-13) |
 
