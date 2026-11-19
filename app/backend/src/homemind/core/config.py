@@ -109,6 +109,11 @@ class Settings(BaseSettings):
     # menos de 2 dias: a fusão lê 48 h e a ocupação 24 h.
     presence_retention_days: int = 30
     # --- fim P2 — presença ---
+    # BILL-02 / v5.1 §6.2: consumos fora de quarto cujo acumulado no mês civil (fuso da casa),
+    # por aparelho, é inferior a isto (Wh) não geram a pergunta «De quem é esta conta?»: vão
+    # para a conta comum por igual. PROPOSTA (5000 = 5 kWh/mês), por validar com a equipa.
+    # 0 = desligado (só vale o limiar de custo da casa).
+    billing_ignore_wh_month: int = Field(default=5000, ge=0)
 
     # --- P2 — visão de presença (extra opcional `visao`) ---
     visao_pasta_modelos: str = "data/modelos"  # pesos .pt (ignorados pelo Git; ver pesos.py)

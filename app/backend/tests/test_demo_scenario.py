@@ -121,7 +121,8 @@ def test_energy_inputs_have_no_nilm_labels_or_resident_identity():
     assert all("resident_id" not in reading.model_dump() for reading in readings)
 
 
-def test_real_energy_consumer_processes_simulated_demo_readings(store):
+def test_real_energy_consumer_processes_simulated_demo_readings(store, monkeypatch):
+    monkeypatch.setattr(attributor, "ignore_wh_month", lambda: 0)  # a demo mostra a pergunta
     store.prepare()
     db = Database(store.path)
     db.open()

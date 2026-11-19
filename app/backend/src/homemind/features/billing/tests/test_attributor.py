@@ -256,3 +256,71 @@ def test_run_expiry_grava_e_publica(app):
         ]
     )
     assert n == 1 and [e.id for e in publicados] == [esperado] and gravados == [str(esperado)]
+
+
+# --- limite mensal por aparelho (#248 F4, v5.1 §6.2; PROPOSTA 5 kWh/mês) ---
+
+
+def _outro(n, days=0, wh=4000, **over):
+    """Consumo `n` (id próprio) `days` dias depois do T0; 4 kWh = 0,64 € (acima de 0,50 €)."""
+    c = _consumo(wh=wh, **over)
+    return replace(
+        c,
+        id=stable_id("consumption", f"limite-{n}"),
+        started_at=c.started_at + timedelta(days=days),
+        ended_at=c.ended_at + timedelta(days=days),
+    )
+
+
+def test_abaixo_do_limite_mensal_nao_pergunta_nem_acusa(app):
+    [ev] = _handle(app, _evento(_outro(1)))
+    a = _ativa(app, _outro(1).id)
+    assert isinstance(ev, de.BillingAttributionChanged)
+    assert a.target_type is AttributionTarget.common
+    assert a.method is AttributionMethod.equal_fallback
+    assert _pedido(app, _outro(1).id) is None
+
+
+def test_acumulado_do_mes_passa_o_limite_e_volta_a_perguntar(app):
+    _handle(app, _evento(_outro(1)))
+    [ev] = _handle(app, _evento(_outro(2, days=1), ts=TS + timedelta(days=1)), seq=2)
+    assert isinstance(ev, de.BillingConfirmationNeeded)  # 4 + 4 kWh >= 5 kWh
+
+
+def test_limite_e_por_aparelho_e_nao_identificado_conta_junto(app):
+    _handle(app, _evento(_outro(1)))
+    chaleira = ApplianceMatch(appliance_id=fx.KETTLE, confidence=0.9, candidates=[])
+    [ev] = _handle(
+        app, _evento(_outro(2, days=1, match=chaleira, appliance_owner_resident_id=None)), seq=2
+    )
+    assert isinstance(ev, de.BillingAttributionChanged)  # outro aparelho: começa do zero
+    nada = ApplianceMatch(appliance_id=None, confidence=None, candidates=[])
+    sem_dono = {"match": nada, "appliance_owner_resident_id": None}
+    _handle(app, _evento(_outro(3, days=2, **sem_dono)), seq=3)
+    [ev] = _handle(app, _evento(_outro(4, days=3, **sem_dono)), seq=4)
+    assert isinstance(ev, de.BillingConfirmationNeeded)  # os não identificados somam juntos
+
+
+def test_limite_e_do_mes_civil_no_fuso_da_casa(app):
+    _handle(app, _evento(_outro(1, days=-30)))  # outubro
+    [ev] = _handle(app, _evento(_outro(2)), seq=2)
+    assert isinstance(ev, de.BillingAttributionChanged)
+
+
+def test_limite_mensal_desligado_com_zero(app, monkeypatch):
+    monkeypatch.setattr(attributor, "ignore_wh_month", lambda: 0)
+    [ev] = _handle(app, _evento(_outro(1)))
+    assert isinstance(ev, de.BillingConfirmationNeeded)
+
+
+def test_limite_mensal_nao_afeta_quartos(app):
+    c = _outro(1, location=LocationKind.room, room_id=fx.ROOM_ANA)
+    _handle(app, _evento(c))
+    assert _ativa(app, c.id).method is AttributionMethod.room_rule
+
+
+def test_limite_mensal_idempotente_na_reentrega(app):
+    ev = _evento(_outro(1))
+    assert len(_handle(app, ev)) == 1
+    assert _handle(app, ev, seq=2) == []
+    assert _ativa(app, _outro(1).id).target_type is AttributionTarget.common

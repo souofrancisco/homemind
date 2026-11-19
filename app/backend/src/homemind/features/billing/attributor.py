@@ -22,8 +22,9 @@ Síncrono e determinístico (datas dos próprios eventos): reprocessar o histór
 resultado, e os ids derivados tornam os eventos de seguimento idempotentes. Nada se apaga.
 """
 
+import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -51,10 +52,12 @@ from homemind.contracts.energy import (
 )
 from homemind.contracts.household import CommonAreaRule
 from homemind.contracts.notification import ConfirmationVerdict, RefType
+from homemind.core.config import get_settings
 from homemind.features.billing import presence_rule, rules, tariff
-from homemind.features.billing.attribution import SYSTEM, decide
+from homemind.features.billing.attribution import SYSTEM, decide, worth_asking
 
 # Nome PERMANENTE (chave de idempotência em `processed_event`): renomear reprocessa tudo.
+log = logging.getLogger(__name__)
 CONSUMER = "billing.attributor"
 EVENT_TYPES = (
     "energy.consumption_detected",
@@ -102,15 +105,25 @@ def _on_consumption(
             consumption.ended_at,
         )
         sole = (found.resident_id, found.confidence, found.simulated) if found else None
+    costed = with_cost_estimate(conn, consumption)
+    below = (
+        costed.location is not LocationKind.room
+        and policy.common_area_rule is CommonAreaRule.ask
+        and worth_asking(costed, policy)
+        and below_monthly_limit(conn, costed)
+    )
     decision = decide(
-        with_cost_estimate(conn, consumption),
+        costed,
         policy,
         {room: r for r, room in tenants if room is not None},
         [r for r, _ in tenants],
         ev.ts,
         sole,
         _appliance_name(conn, consumption),
+        below,
     )
+    if decision.reason is not None:
+        log.info("consumo %s para a conta comum: %s", cid, decision.reason)
     if decision.attribution is not None:
         return [_record(conn, decision.attribution, ev.correlation_id)]
     if decision.confirmation is not None:
@@ -131,6 +144,48 @@ def _on_consumption(
             )
         ]
     return []
+
+
+def ignore_wh_month() -> int:
+    return get_settings().billing_ignore_wh_month
+
+
+def below_monthly_limit(conn: sqlite3.Connection, c: ConsumptionEvent) -> bool:
+    """Acumulado do mês civil (fuso da casa) do aparelho de `c` < limite combinado (v5.1 §6.2).
+
+    Por `appliance_id`; os não identificados contam juntos. Só consumos fora de quarto, sem os
+    descartados; inclui `c` (já guardado). Determinístico: depende só do que está guardado."""
+    limit = ignore_wh_month()
+    if limit <= 0:
+        return False
+    tz = ZoneInfo(
+        conn.execute(
+            "SELECT timezone FROM household WHERE id = ?", (str(c.household_id),)
+        ).fetchone()["timezone"]
+    )
+    start = c.started_at.astimezone(tz)
+    month = (start.year, start.month)
+    rows = conn.execute(
+        "SELECT json FROM billing_consumption WHERE household_id = ? AND started_at >= ?"
+        " AND started_at <= ?",
+        (
+            str(c.household_id),
+            (c.started_at - timedelta(days=32)).isoformat(),
+            (c.started_at + timedelta(days=32)).isoformat(),
+        ),
+    ).fetchall()
+    total = 0.0
+    for row in rows:
+        o = locate(conn, ConsumptionEvent.model_validate_json(row["json"]))
+        began = o.started_at.astimezone(tz)
+        if (
+            o.location is not LocationKind.room
+            and o.status is not ConsumptionStatus.discarded
+            and o.match.appliance_id == c.match.appliance_id
+            and (began.year, began.month) == month
+        ):
+            total += o.energy_wh or 0.0
+    return total < limit
 
 
 def _appliance_name(conn: sqlite3.Connection, consumption: ConsumptionEvent) -> str | None:

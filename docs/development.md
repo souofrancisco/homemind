@@ -39,7 +39,7 @@ A base de demo é `app/.demo-web/` (cópia da original `app/.demo-data/`, que nu
 
 ## `app/.env`
 
-Nada é obrigatório: `app/.env.example` arranca em FakeHome (SIMULADO). Secções (todas comentadas no ficheiro): motor (`HOME_BACKEND`, `PROFILE`), vídeo/visão, MCP Altice (`MCP_*`, `ENABLE_PHYSICAL_WRITES`), presença, portas, Authentik (`AUTHENTIK_*`, só dev), assistente (`AGENT_*`). Nunca commitar `app/.env` nem `app/.mcp-auth/`.
+Nada é obrigatório: `app/.env.example` arranca em FakeHome (SIMULADO). Secções (todas comentadas no ficheiro): motor (`HOME_BACKEND`, `PROFILE`), vídeo/visão, MCP Altice (`MCP_*`, `ENABLE_PHYSICAL_WRITES`), presença, faturação (`BILLING_IGNORE_WH_MONTH`, PROPOSTA), portas, Authentik (`AUTHENTIK_*`, só dev), assistente (`AGENT_*`). Nunca commitar `app/.env` nem `app/.mcp-auth/`.
 
 ## Comandos
 

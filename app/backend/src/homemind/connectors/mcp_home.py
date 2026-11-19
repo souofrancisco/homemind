@@ -56,7 +56,7 @@ _READBACK_GAP_S = 0.5
 _SECURITY_READ_TIMEOUT_S = 3  # < _READ_TIMEOUT_S: o alarme lento não cancela o ciclo de poll
 _SECURITY_EVERY_POLLS = 6  # estado do alarme de ~30 s a ~30 s (a leitura caduca aos 90 s)
 _INVENTORY_EVERY_POLLS = 12  # volta a descobrir dispositivos de ~60 s a ~60 s
-_STALE_S = 30  # leitura de consumo mais antiga que isto deixa de ser devolvida
+_STALE_S = 90  # consumo observado há mais disto deixa de ser devolvido (= `stale` do coletor)
 _POWER = {"on": True, "off": False}  # qualquer outro valor = desconhecido
 _SEM_CONTACTO_MIN = 5  # só diagnóstico na mensagem de falha; nunca bloqueia escritas
 _RGB_TOL = 3  # arredondamentos do brilho; o RGB devolvido vem escalado por ele
@@ -521,7 +521,7 @@ class McpHome:
         )
 
     def _consumo_atual(self) -> tuple[float | None, datetime | None]:
-        agora = datetime.now(UTC)
+        agora = self._agora()
         if (
             self._mcp_ok
             and self._consumo_w is not None
@@ -538,7 +538,7 @@ class McpHome:
             mcp_ok=False if self._simulated else self._mcp_ok,
             lampada=self._lampada,
             tomada=self._tomada.model_copy(update={"consumo_w": w, "consumo_lido_em": lido_em}),
-            atualizado_em=datetime.now(UTC),
+            atualizado_em=self._agora(),
             aviso=self._aviso,
         )
 
@@ -716,13 +716,17 @@ class McpHome:
                     log.exception("falha no coletor (%s)", type(erro).__name__, exc_info=False)
             self._tomada = EstadoTomada(ligada=_power(plug))
             self._consumo_w = _plug_consumption(plug, self._settings.mcp_instantpower_unit)
-            self._consumo_em = datetime.now(UTC)
+            # Instante observado pelo dispositivo; sem ele, o do poll (como o coletor).
+            from homemind.connectors.mcp_energy import observed_at_from_device  # ciclo
+
+            agora = self._agora()
+            self._consumo_em = observed_at_from_device(plug, agora) or agora
             if self._consumo_w is None and self._aviso is None:
                 self._aviso = (
                     "Unidade de instantPower não declarada (MCP_INSTANTPOWER_UNIT); "
                     "consumo em W desconhecido."
                 )
-        self._lido_em = datetime.now(UTC)
+        self._lido_em = self._agora()
 
     # ---- escritas --------------------------------------------------------------------------
     def _recusar(self, motivo: str) -> bool:
