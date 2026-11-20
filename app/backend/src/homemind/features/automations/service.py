@@ -420,7 +420,7 @@ def propose(
     repo.log(conn, rule.id, now, "voted", by=resident_id, approve=True)
     out, n = _outcome(conn, row, expired=False)
     events += (event,)
-    if out.decided:  # maioria já atingida (ex.: 1 morador)
+    if out.decided:  # todos já votaram a favor (ex.: 1 morador)
         events += _close(conn, row, out, n, now, by=resident_id, expired=False)
     fresh = repo.get_row(conn, household_id, rule.id)
     assert fresh is not None
@@ -454,6 +454,7 @@ def _propose_personal(
         approved_by_resident_id=owner,
         scope=AutomationScope.personal,
         owner_resident_id=owner,
+        room_id=room,
     )
     names = ", ".join(dict.fromkeys(plugs[a.target_device_id] for a in rule.actions))
     repo.insert_personal(conn, rule, origin=origin.value, device_name=names, now=now)

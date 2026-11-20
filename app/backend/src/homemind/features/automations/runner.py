@@ -59,6 +59,7 @@ from homemind.contracts.agent import (
     ActionExecutionResult,
     ActionStatus,
     AutomationRule,
+    AutomationScope,
     DeviceCapability,
     DeviceCommand,
     ExecutionStatus,
@@ -263,11 +264,8 @@ class AutomationRunner:
             or row["status"] != "active"
             or row["vote_open"]
             or row["approved_by_resident_id"] is None
-            or (
-                row["scope"] == "personal"  # o dono que saiu da casa já não tem regras a correr
-                and UUID(row["owner_resident_id"])
-                not in repo.active_tenants(conn, f.household_id, self.clock())
-            )
+            # uma individual só corre com o dono na casa e no quarto onde a criou
+            or not repo.personal_runs(conn, repo.rule_of(row), self.clock())
         ):
             return None
         return repo.rule_of(row), Origin(row["origin"]), house["source_kind"]
@@ -296,7 +294,11 @@ class AutomationRunner:
             command=DeviceCommand(
                 target_device_id=f.device_id, capability=DeviceCapability.power, power=False
             ),
-            rationale=f"Regra «{rule.name}» aprovada por votação dos moradores"[:300],
+            rationale=(
+                f"Regra «{rule.name}» aprovada por votação dos moradores"
+                if rule.scope is AutomationScope.house
+                else f"Regra individual «{rule.name}» criada pelo dono"
+            )[:300],
             status=ActionStatus.confirmed,  # a votação é a confirmação humana
             proposed_at=now,
             expires_at=now + timedelta(seconds=self.action_ttl_s),

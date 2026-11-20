@@ -615,6 +615,20 @@ def test_individual_de_quem_saiu_da_casa_deixa_de_estar_ativa_para_o_motor(db):
     assert left == {house_rule}  # a da casa continua; a individual do dono que saiu, não
 
 
+def test_individual_de_quem_mudou_de_quarto_deixa_de_correr(db):
+    """A tomada do quarto antigo passa a ser de outra pessoa: a regra individual pára."""
+    rule = personal(db).view.id
+    stored = db.run_sync(lambda c: repo.get_row(c, A, rule))
+    assert repo.rule_of(stored).room_id == fx.ROOM_ANA  # o quarto fica guardado na criação
+    db.run_sync(
+        lambda c: c.execute(
+            "UPDATE membership SET room_id = ? WHERE household_id = ? AND resident_id = ?",
+            (str(fx.ROOM_SALA), str(A), str(fx.ANA)),
+        )
+    )
+    assert rule not in {r.id for r, _ in db.run_sync(lambda c: repo.active_rules(c, A, NOW))}
+
+
 def test_regra_antiga_sem_scope_le_se_como_regra_da_casa(db):
     rule = propose(db).view.id
     old = row(db, rule)["json"]

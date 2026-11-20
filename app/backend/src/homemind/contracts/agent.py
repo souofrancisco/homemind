@@ -324,6 +324,9 @@ class AutomationRule(ContractModel):
     # Predefinição `house`: o JSON de regras antigas (sem `scope`) continua a ser uma regra da casa.
     scope: AutomationScope = AutomationScope.house
     owner_resident_id: UUID | None = None  # só nas individuais (= o autor)
+    # Só nas individuais: o quarto do dono quando a criou. Se o dono mudar de quarto, a regra
+    # deixa de correr (a tomada do quarto antigo passa a ser de outra pessoa).
+    room_id: UUID | None = None
 
     @model_validator(mode="after")
     def _coherent(self) -> Self:
@@ -332,8 +335,8 @@ class AutomationRule(ContractModel):
         if self.scope is AutomationScope.personal:
             if self.owner_resident_id != self.created_by_resident_id:
                 raise ValueError("regra individual: o dono é quem a cria")
-        elif self.owner_resident_id is not None:
-            raise ValueError("regra da casa não tem dono")
+        elif self.owner_resident_id is not None or self.room_id is not None:
+            raise ValueError("regra da casa não tem dono nem quarto")
         if self.source is AutomationSource.natural_language and not self.nl_text:
             raise ValueError("origem em linguagem natural exige nl_text")
         if any(

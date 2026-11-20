@@ -292,7 +292,7 @@ def active_rules(
 ) -> list[tuple[AutomationRule, datetime]]:
     """Regras que o motor pode executar: `active`, aprovadas e sem votação aberta, com o instante
     da última ativação (do log). Sem ativação registada, a regra não conta. Uma individual só
-    conta enquanto o dono for inquilino ativo da casa em `now`."""
+    conta enquanto o dono for inquilino ativo da casa em `now` e estiver no quarto onde a criou."""
     rows = conn.execute(
         "SELECT r.json, (SELECT max(l.at) FROM automation_log l WHERE l.rule_id = r.id"
         " AND l.to_status = 'active') AS active_since FROM automation_rule r"
@@ -306,8 +306,22 @@ def active_rules(
         for r in rows
         if r["active_since"] is not None
     ]
-    return [
-        (rule, since)
-        for rule, since in found
-        if rule.scope is AutomationScope.house or rule.owner_resident_id in tenants
-    ]
+    return [(rule, since) for rule, since in found if personal_runs(conn, rule, now, tenants)]
+
+
+def personal_runs(
+    conn: sqlite3.Connection,
+    rule: AutomationRule,
+    now: datetime,
+    tenants: set[UUID] | None = None,
+) -> bool:
+    """Uma regra da casa corre sempre; uma individual só enquanto o dono for inquilino ativo e
+    continuar no quarto onde a criou (senão desligaria a tomada do quarto de outra pessoa)."""
+    if rule.scope is AutomationScope.house:
+        return True
+    owner = rule.owner_resident_id
+    assert owner is not None
+    if tenants is not None and owner not in tenants:
+        return False
+    room = tenant_room(conn, rule.household_id, owner, now)
+    return room is not None and (rule.room_id is None or room == rule.room_id)

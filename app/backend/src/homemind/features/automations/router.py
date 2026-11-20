@@ -82,7 +82,10 @@ WriteAccess = Annotated[
 _ERRORS = {
     service.NOT_FOUND: (404, "Regra não encontrada"),
     service.NOT_ELIGIBLE: (403, "Só os inquilinos da casa participam nesta votação"),
-    service.INVALID_TARGET: (400, "A regra só pode desligar uma tomada conhecida da casa"),
+    service.INVALID_TARGET: (
+        400,
+        "A regra só pode usar uma tomada conhecida da casa (numa regra individual, do teu quarto)",
+    ),
     service.VOTE_NOT_OPEN: (409, "Esta regra não tem votação aberta"),
     service.VOTE_EXPIRED: (409, "O prazo da votação acabou; a regra foi rejeitada"),
     service.ALREADY_VOTED: (409, "Já votaste nesta regra"),
