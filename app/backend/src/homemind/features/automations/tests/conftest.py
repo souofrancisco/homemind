@@ -3,7 +3,7 @@ utilizadores simulados e relógio controlado (rotas). Nunca hardware, rede, LLM 
 
 Casa A é a demo (Ana, Bruno, Carla, Diogo, senhorio, operador; alvo SIMULADO: a tomada da
 extensão) e casa B é de outra pessoa (Eva, inquilina; Hugo, senhorio). `add_house` cria casas
-pequenas (2, 3 inquilinos…) para a maioria absoluta.
+pequenas (2, 3 inquilinos…) para a votação por unanimidade.
 """
 
 from datetime import UTC, date, datetime

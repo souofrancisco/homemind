@@ -12,7 +12,12 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from homemind.contracts import domain_events as de
-from homemind.contracts.agent import AutomationRule, AutomationStatus, ProposedAction
+from homemind.contracts.agent import (
+    AutomationRule,
+    AutomationScope,
+    AutomationStatus,
+    ProposedAction,
+)
 from homemind.contracts.billing import (
     Attribution,
     AttributionStatus,
@@ -299,6 +304,8 @@ class NotificationService:
         `disabled` (reativação); outro estado não tem nada por votar. Sem botões: vota-se na
         rota das automações. Id derivado do evento de origem (uma por ronda; reentrega não
         duplica)."""
+        if rule.scope is AutomationScope.personal:  # privada do dono: ninguém é avisado
+            return Outcome(None)
         if rule.status not in (AutomationStatus.proposed, AutomationStatus.disabled):
             return Outcome(None)
         n = compose_automation_proposal(

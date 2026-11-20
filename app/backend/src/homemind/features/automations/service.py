@@ -1,20 +1,25 @@
-"""Regras da casa votadas (SAFE-04): propor, votar, suspender e reativar. Síncrono sobre SQLite
-(`db.run`); nunca executa nada nem toca num dispositivo.
+"""Regras da casa votadas e regras individuais (SAFE-04): propor, votar, suspender e reativar.
+Síncrono sobre SQLite (`db.run`); nunca executa nada nem toca num dispositivo.
 
 Invariantes (todos testados):
-- só inquilinos ativos propõem e votam (o senhorio e o operador nunca); a maioria é a do
-  contrato (`rule_approval_outcome`, mais de metade dos elegíveis) sobre o grupo de elegíveis
-  gravado à abertura da ronda, por isso não muda se alguém entra ou sai a meio;
+- só inquilinos ativos propõem e votam (o senhorio e o operador nunca); a regra da casa exige
+  UNANIMIDADE (D-39), a do contrato (`rule_approval_outcome`: todos os elegíveis a favor, um
+  voto contra rejeita) sobre o grupo de elegíveis gravado à abertura da ronda, por isso não
+  muda se alguém entra ou sai a meio;
+- regra INDIVIDUAL (`scope=personal`, D-39): só o dono (inquilino ativo) a cria, `active` na
+  hora (a criação é a confirmação humana), sem votação, sem aviso nem evento para os outros, e
+  só em tomadas do quarto do próprio. É PRIVADA: só o dono a vê (os outros, o senhorio e o
+  operador recebem «não encontrada»); só o dono a suspende e reativa (reativar é imediato);
 - prazo fixo de 24 h; um voto fora de prazo nunca conta (filtra-se antes da função pura) e uma
-  ronda sem maioria no prazo é rejeitada, de forma preguiçosa (na leitura e antes de votar),
+  ronda sem todos os votos no prazo é rejeitada, de forma preguiçosa (na leitura e antes de votar),
   idempotente e sem relógio em segundo plano;
 - cada transição é um *compare-and-set*; um voto decisivo perdido (outro decidiu primeiro)
   levanta `ConflictError` e a transação inteira volta atrás;
-- aprovada: `proposed|disabled → active` com `approved_by_resident_id` = quem deu o voto
+- aprovada: `proposed|disabled → active` com `approved_by_resident_id` = quem deu o último voto
   decisivo (`vote_decided` + `status_changed`); rejeitada: `proposed → draft` (uma reativação
   rejeitada deixa a regra `disabled`), só `vote_decided`;
 - qualquer inquilino suspende (`active → disabled`, `status_changed`); reativar abre uma nova
-  ronda de votos limpa (`active` só pela maioria) e reemite `automation.proposed` (regra
+  ronda de votos limpa (`active` só por unanimidade) e reemite `automation.proposed` (regra
   `disabled`) para avisar os moradores;
 - os eventos entram no outbox na mesma transação (`append_event`, ids estáveis: repetir não
   duplica); o chamador acorda o barramento depois do COMMIT;
@@ -34,6 +39,7 @@ from pydantic import Field
 
 from homemind.contracts.agent import (
     AutomationRule,
+    AutomationScope,
     AutomationSource,
     AutomationStatus,
     AutomationTrigger,
@@ -105,6 +111,8 @@ class AutomationProposeIn(ContractModel):
     name: ShortText
     trigger: AutomationTriggerIn
     target_device_id: UUID
+    # `personal` = regra individual: só em tomadas do quarto do próprio, ativa na hora, privada.
+    scope: AutomationScope = AutomationScope.house
 
 
 class AutomationStatusIn(ContractModel):
@@ -118,18 +126,23 @@ class AutomationVoteIn(ContractModel):
 
 
 class AutomationPlugView(ContractModel):
-    """Tomada que o servidor aceita como gatilho ou alvo de uma regra. Só id interno e nome."""
+    """Tomada que o servidor aceita como gatilho ou alvo de uma regra. Só id interno e nome.
+    `room_id` = divisão da tomada (`None` = desconhecida); `personal_allowed` = serve numa regra
+    individual DE QUEM PEDE (a tomada está no quarto dele)."""
 
     id: UUID
     name: Annotated[str, Field(max_length=500)]
     simulated: bool
+    room_id: UUID | None = None
+    personal_allowed: bool = False
 
 
 class AutomationView(ContractModel):
-    """Vista de uma regra da casa para a app. Só contagens: nunca quem votou o quê."""
+    """Vista de uma regra para a app. Só contagens: nunca quem votou o quê."""
 
     id: UUID
     name: ShortText
+    scope: AutomationScope
     status: AutomationStatus
     source: AutomationSource
     trigger: AutomationTrigger
@@ -143,6 +156,8 @@ class AutomationView(ContractModel):
     votes_for: Annotated[int, Field(strict=True, ge=0)]
     votes_against: Annotated[int, Field(strict=True, ge=0)]
     eligible: Annotated[int, Field(strict=True, ge=1)]
+    # votos a favor necessários: nas regras da casa, todos os elegíveis (unanimidade, D-39);
+    # o nome vem da maioria absoluta (D-35) e mantém-se por compatibilidade com a app.
     majority: Annotated[int, Field(strict=True, ge=1)]
     my_vote: bool | None  # `True` = a favor; `None` = ainda não votou nesta ronda
     last_verdict: RuleVerdict | None
@@ -180,19 +195,22 @@ def _outcome(
 
 def _message(row: sqlite3.Row, out: RuleApprovalOutcome, eligible: int, status: AutomationStatus):
     tag = "SIMULADO: " if row["origin"] == Origin.simulated.value else ""
+    if row["scope"] == AutomationScope.personal.value:
+        if status is AutomationStatus.active:
+            return f"{tag}Ativa no teu quarto. Só tu a vês e a podes suspender."
+        return f"{tag}Suspensa: não executa. Só tu a podes reativar, na hora."
     if row["vote_open"]:
         return (
-            f"{tag}Em votação: precisa de {out.majority} de {eligible} votos a favor em 24 h. "
+            f"{tag}Em votação: precisa de {out.votes_needed} de {eligible} votos a favor "
+            "(todos os moradores têm de concordar) em 24 h. "
             "Nada é executado enquanto a regra não estiver ativa."
         )
     if status is AutomationStatus.active:
-        return (
-            f"{tag}Ativa: aprovada pela maioria dos moradores. Qualquer morador a pode suspender."
-        )
+        return f"{tag}Ativa: aprovada por todos os moradores. Qualquer morador a pode suspender."
     if status is AutomationStatus.disabled:
         return f"{tag}Suspensa: não executa. Reativar abre uma nova votação."
     if row["last_verdict"] == RuleVerdict.rejected.value:
-        return f"{tag}Rejeitada: não houve maioria. Nada foi executado."
+        return f"{tag}Rejeitada: nem todos os moradores concordaram. Nada foi executado."
     return f"{tag}Rascunho; nada foi executado."
 
 
@@ -205,6 +223,7 @@ def view_of(
     return AutomationView(
         id=rule.id,
         name=rule.name,
+        scope=rule.scope,
         status=rule.status,
         source=rule.source,
         trigger=rule.trigger,
@@ -218,7 +237,7 @@ def view_of(
         votes_for=out.votes_for,
         votes_against=out.votes_against,
         eligible=eligible,
-        majority=out.majority,
+        majority=out.votes_needed,
         my_vote=mine,
         last_verdict=RuleVerdict(row["last_verdict"]) if row["last_verdict"] else None,
         message=_message(row, out, eligible, rule.status),
@@ -248,7 +267,7 @@ def _close(
     old = rule.status
     approved = out.verdict is RuleVerdict.approved
     if approved:
-        assert by is not None  # a maioria só se atinge com um voto
+        assert by is not None  # a unanimidade só se atinge com um voto
         updated = replace(rule, status=AutomationStatus.active, approved_by_resident_id=by)
     elif old is AutomationStatus.proposed:  # rejeitada: `proposed → draft`
         updated = replace(rule, status=AutomationStatus.draft, approved_by_resident_id=None)
@@ -257,7 +276,7 @@ def _close(
     new = updated.status
     if not repo.close_vote(conn, row, rule=updated, verdict=out.verdict.value, now=now):
         raise ConflictError(CONFLICT)
-    code = "expired" if expired else ("approved" if approved else "majority_impossible")
+    code = "expired" if expired else ("approved" if approved else "rejected_by_vote")
     repo.log(conn, row["id"], now, "decided", from_status=old, to_status=new, by=by, code=code)
     decided = AutomationVoteDecided(
         id=stable_id("automation.vote_decided", row["id"], str(row["vote_round"])),
@@ -304,7 +323,7 @@ def _status_event(
 
 
 def _resolve(conn: sqlite3.Connection, row: sqlite3.Row, now: datetime):
-    """Prazo acabado: a ronda fecha sem maioria (`expired=True`). Idempotente: depois de
+    """Prazo acabado: a ronda fecha sem todos os votos (`expired=True`). Idempotente: depois de
     fechada deixa de ser devolvida por `due_rows`."""
     out, eligible = _outcome(conn, row, expired=True)
     return _close(conn, row, out, eligible, now, by=None, expired=True)
@@ -332,14 +351,18 @@ def propose(
     plugs: Mapping[UUID, str],
     origin: Origin,
     now: datetime,
+    plug_rooms: Mapping[UUID, UUID | None] | None = None,
 ) -> Result:
     """Grava a regra `proposed`, o log e `automation.proposed` numa transação. `plugs` são as
     tomadas conhecidas da casa (id → nome): qualquer outro alvo (lâmpada incluída) é recusado.
     Levanta `pydantic.ValidationError` se o gatilho não cumpre o contrato (ex.: sem limiar).
 
-    O proponente vota a favor ao propor (1 voto): com a maioria já atingida (ex.: 1 morador) a
-    regra fecha aprovada no próprio pedido, com os eventos normais. No máximo
+    O proponente vota a favor ao propor (1 voto): com a unanimidade já atingida (ex.: 1 morador)
+    a regra fecha aprovada no próprio pedido, com os eventos normais. No máximo
     `MAX_OPEN_PER_PROPOSER` propostas abertas por proponente.
+
+    `scope=personal`: regra individual (ver `_propose_personal`); `plug_rooms` (tomada → divisão)
+    decide se a tomada está no quarto do dono.
 
     Alvo e `trigger.device_id` têm de ser tomadas conhecidas da casa (nunca de outra casa nem a
     lâmpada). Atenção: pode ser a tomada AGREGADA (a extensão, que alimenta vários aparelhos):
@@ -364,6 +387,11 @@ def propose(
         status=AutomationStatus.proposed,
         created_by_resident_id=resident_id,
     )
+    if body.scope is AutomationScope.personal:
+        return _propose_personal(
+            conn, rule, plugs=plugs, plug_rooms=plug_rooms or {}, origin=origin, now=now,
+            events=events,
+        )  # fmt: skip
     if any(a.target_device_id not in plugs for a in rule.actions) or (
         rule.trigger.device_id is not None and rule.trigger.device_id not in plugs
     ):
@@ -392,11 +420,51 @@ def propose(
     repo.log(conn, rule.id, now, "voted", by=resident_id, approve=True)
     out, n = _outcome(conn, row, expired=False)
     events += (event,)
-    if out.decided:  # maioria já atingida (ex.: 1 morador)
+    if out.decided:  # todos já votaram a favor (ex.: 1 morador)
         events += _close(conn, row, out, n, now, by=resident_id, expired=False)
     fresh = repo.get_row(conn, household_id, rule.id)
     assert fresh is not None
     return Result(view_of(conn, fresh, resident_id, now), events=events)
+
+
+def _propose_personal(
+    conn: sqlite3.Connection,
+    draft: AutomationRule,
+    *,
+    plugs: Mapping[UUID, str],
+    plug_rooms: Mapping[UUID, UUID | None],
+    origin: Origin,
+    now: datetime,
+    events: tuple[DomainEvent, ...],
+) -> Result:
+    """Regra individual: o dono (já validado como inquilino ativo) cria-a `active` na hora, sem
+    votação, sem `automation.proposed` e sem qualquer aviso aos outros. Alvo e gatilho têm de ser
+    tomadas conhecidas DO QUARTO do dono (a divisão vem da `membership`); com divisão
+    desconhecida ou outra, `INVALID_TARGET`. Só fica registo no `automation_log`."""
+    owner = draft.created_by_resident_id
+    room = repo.tenant_room(conn, draft.household_id, owner, now)
+    devices = [a.target_device_id for a in draft.actions]
+    if draft.trigger.device_id is not None:
+        devices.append(draft.trigger.device_id)
+    if room is None or any(d not in plugs or plug_rooms.get(d) != room for d in devices):
+        return Result(error=INVALID_TARGET, events=events)
+    rule = replace(
+        draft,
+        status=AutomationStatus.active,
+        approved_by_resident_id=owner,
+        scope=AutomationScope.personal,
+        owner_resident_id=owner,
+        room_id=room,
+    )
+    names = ", ".join(dict.fromkeys(plugs[a.target_device_id] for a in rule.actions))
+    repo.insert_personal(conn, rule, origin=origin.value, device_name=names, now=now)
+    repo.log(
+        conn, rule.id, now, "proposed", to_status=AutomationStatus.active, by=owner,
+        code="personal",
+    )  # fmt: skip
+    row = repo.get_row(conn, rule.household_id, rule.id)
+    assert row is not None
+    return Result(view_of(conn, row, owner, now), events=events)
 
 
 def vote(
@@ -407,7 +475,7 @@ def vote(
     approve: bool,
     now: datetime,
 ) -> Result:
-    row = repo.get_row(conn, household_id, rule_id)
+    row = repo.visible_row(conn, household_id, rule_id, resident_id)
     if row is None:
         return Result(error=NOT_FOUND)
     if row["vote_open"] and datetime.fromisoformat(row["vote_deadline"]) <= now:
@@ -432,9 +500,10 @@ def vote(
 def suspend(
     conn: sqlite3.Connection, household_id: UUID, resident_id: UUID, rule_id: UUID, now: datetime
 ) -> Result:
-    """Qualquer inquilino suspende uma regra `active`, na hora (sem votação)."""
+    """Qualquer inquilino suspende uma regra da casa `active`, na hora (sem votação: é o veto);
+    uma individual só o dono a suspende (para os outros nem existe) e sem eventos."""
     events = resolve_expired(conn, household_id, now)  # não deixa prazos por fechar
-    row = repo.get_row(conn, household_id, rule_id)
+    row = repo.visible_row(conn, household_id, rule_id, resident_id)
     if row is None:
         return Result(error=NOT_FOUND, events=events)
     rule = repo.rule_of(row)
@@ -446,28 +515,33 @@ def suspend(
         conn, rule_id, now, "suspended", from_status=AutomationStatus.active,
         to_status=AutomationStatus.disabled, by=resident_id,
     )  # fmt: skip
+    fresh = repo.get_row(conn, household_id, rule_id)
+    assert fresh is not None
+    if rule.scope is AutomationScope.personal:  # privada: nada sai para o barramento
+        return Result(view_of(conn, fresh, resident_id, now), events=events)
     event = _status_event(
         row, household_id, AutomationStatus.active, AutomationStatus.disabled, resident_id,
         row["rev"] + 1, now,
     )  # fmt: skip
     append_event(conn, event)
-    fresh = repo.get_row(conn, household_id, rule_id)
-    assert fresh is not None
     return Result(view_of(conn, fresh, resident_id, now), events=(*events, event))
 
 
 def reactivate(
     conn: sqlite3.Connection, household_id: UUID, resident_id: UUID, rule_id: UUID, now: datetime
 ) -> Result:
-    """Abre uma nova ronda de votos numa regra `disabled`; a regra só volta a `active` pela
-    maioria. Não emite evento (o estado só muda quando a votação decide). Conta para o limite de
-    `MAX_OPEN_PER_PROPOSER` votações abertas de quem reativa (como `propose`)."""
+    """Abre uma nova ronda de votos numa regra da casa `disabled`; a regra só volta a `active`
+    por unanimidade. Não emite evento (o estado só muda quando a votação decide). Conta para o
+    limite de `MAX_OPEN_PER_PROPOSER` votações abertas de quem reativa (como `propose`).
+    Uma individual `disabled` só o dono a reativa, na hora (sem votação nem eventos)."""
     events = resolve_expired(conn, household_id, now)
-    row = repo.get_row(conn, household_id, rule_id)
+    row = repo.visible_row(conn, household_id, rule_id, resident_id)
     if row is None:
         return Result(error=NOT_FOUND, events=events)
     if repo.rule_of(row).status is not AutomationStatus.disabled:
         return Result(error=NOT_DISABLED, events=events)
+    if row["scope"] == AutomationScope.personal.value:
+        return _reactivate_personal(conn, row, resident_id, now, events)
     if row["vote_open"]:
         return Result(error=VOTE_ALREADY_OPEN, events=events)
     eligible = repo.active_tenants(conn, household_id, now)
@@ -494,11 +568,36 @@ def reactivate(
     return Result(view_of(conn, fresh, resident_id, now), events=(*events, notice))
 
 
+def _reactivate_personal(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row,
+    resident_id: UUID,
+    now: datetime,
+    events: tuple[DomainEvent, ...],
+) -> Result:
+    """O dono volta a ativar a sua regra: imediato. Só se ainda for inquilino ativo da casa."""
+    rule = repo.rule_of(row)
+    household_id = rule.household_id
+    if resident_id not in repo.active_tenants(conn, household_id, now):
+        return Result(error=NOT_ELIGIBLE, events=events)
+    if not repo.reactivate_personal(
+        conn, row, rule=replace(rule, status=AutomationStatus.active), now=now
+    ):
+        raise ConflictError(CONFLICT)
+    repo.log(
+        conn, rule.id, now, "decided", from_status=AutomationStatus.disabled,
+        to_status=AutomationStatus.active, by=resident_id, code="personal_reactivated",
+    )  # fmt: skip
+    fresh = repo.get_row(conn, household_id, rule.id)
+    assert fresh is not None
+    return Result(view_of(conn, fresh, resident_id, now), events=events)
+
+
 def get_view(
     conn: sqlite3.Connection, household_id: UUID, resident_id: UUID, rule_id: UUID, now: datetime
 ) -> tuple[AutomationView | None, tuple[DomainEvent, ...]]:
     events = resolve_expired(conn, household_id, now)
-    row = repo.get_row(conn, household_id, rule_id)
+    row = repo.visible_row(conn, household_id, rule_id, resident_id)
     return (view_of(conn, row, resident_id, now) if row else None), events
 
 
@@ -510,5 +609,5 @@ def list_views(
     limit: int = 50,
 ) -> tuple[list[AutomationView], tuple[DomainEvent, ...]]:
     events = resolve_expired(conn, household_id, now)
-    rows = repo.list_rows(conn, household_id, limit)
+    rows = repo.list_rows(conn, household_id, resident_id, limit)
     return [view_of(conn, r, resident_id, now) for r in rows], events

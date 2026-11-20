@@ -157,6 +157,29 @@ def _seed_live_catalog(conn: sqlite3.Connection, at: datetime) -> None:
         last_seen_at=at,
     )
     appliance_repo.register_device(conn, plug)
+    # Uma tomada SIMULADA por quarto, para cada morador poder criar regras individuais (D-39).
+    # Sem leituras nem consumos: não altera os números da faturação.
+    for first_name, room_name, room in (
+        ("ana", "da Ana", fx.ROOM_ANA),
+        ("bruno", "do Bruno", fx.ROOM_BRUNO),
+        ("carla", "da Carla", fx.ROOM_CARLA),
+        ("diogo", "do Diogo", fx.ROOM_DIOGO),
+    ):
+        appliance_repo.register_device(
+            conn,
+            Device(
+                id=stable_id("demo-web-device", f"tomada-quarto-{first_name}"),
+                household_id=fx.HOUSEHOLD,
+                room_id=room,
+                name=f"Tomada do quarto {room_name} (SIMULADA)",
+                kind=DeviceKind.plug,
+                role=DeviceRole.actuator,
+                source=DeviceSource.fake,
+                power_unit=PowerUnit.W,
+                online=True,
+                last_seen_at=at,
+            ),
+        )
     heater = fx.heater()
     shared_kettle = kettle().model_copy(
         update={

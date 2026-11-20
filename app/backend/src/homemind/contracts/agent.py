@@ -304,6 +304,11 @@ class AutomationTrigger(ContractModel):
         return self
 
 
+class AutomationScope(StrEnum):
+    house = "house"  # regra da casa: votada por todos os moradores (unanimidade, D-39)
+    personal = "personal"  # regra individual: privada, no quarto do dono, sem votação (D-39)
+
+
 class AutomationRule(ContractModel):
     id: UUID
     household_id: UUID
@@ -316,11 +321,22 @@ class AutomationRule(ContractModel):
     status: AutomationStatus = AutomationStatus.draft
     created_by_resident_id: UUID
     approved_by_resident_id: UUID | None = None
+    # Predefinição `house`: o JSON de regras antigas (sem `scope`) continua a ser uma regra da casa.
+    scope: AutomationScope = AutomationScope.house
+    owner_resident_id: UUID | None = None  # só nas individuais (= o autor)
+    # Só nas individuais: o quarto do dono quando a criou. Se o dono mudar de quarto, a regra
+    # deixa de correr (a tomada do quarto antigo passa a ser de outra pessoa).
+    room_id: UUID | None = None
 
     @model_validator(mode="after")
     def _coherent(self) -> Self:
         if self.status is AutomationStatus.active and self.approved_by_resident_id is None:
             raise ValueError("regra ativa exige aprovação explícita")
+        if self.scope is AutomationScope.personal:
+            if self.owner_resident_id != self.created_by_resident_id:
+                raise ValueError("regra individual: o dono é quem a cria")
+        elif self.owner_resident_id is not None or self.room_id is not None:
+            raise ValueError("regra da casa não tem dono nem quarto")
         if self.source is AutomationSource.natural_language and not self.nl_text:
             raise ValueError("origem em linguagem natural exige nl_text")
         if any(
@@ -333,7 +349,7 @@ class AutomationRule(ContractModel):
         check_transition(AUTOMATION_TRANSITIONS, self.status, new)
 
 
-# --- votação das regras da casa (SAFE-04, D-35 PROPOSTA) ----------------------------------------
+# --- votação das regras da casa (SAFE-04, D-39: unanimidade; atualiza a D-35) ------------------
 
 
 class AutomationVote(ContractModel):
@@ -346,8 +362,8 @@ class AutomationVote(ContractModel):
 
 
 class RuleVerdict(StrEnum):
-    approved = "approved"  # maioria absoluta a favor: a regra passa a `active`
-    rejected = "rejected"  # maioria impossível ou prazo sem maioria: `proposed -> draft`
+    approved = "approved"  # todos os elegíveis a favor: a regra passa a `active`
+    rejected = "rejected"  # um voto contra ou prazo sem todos os votos: `proposed -> draft`
     pending = "pending"
 
 
@@ -355,39 +371,33 @@ class RuleApprovalOutcome(ContractModel):
     verdict: RuleVerdict
     votes_for: Annotated[int, Field(strict=True, ge=0)]
     votes_against: Annotated[int, Field(strict=True, ge=0)]
-    majority: Annotated[int, Field(strict=True, ge=1)]  # votos a favor necessários
+    votes_needed: Annotated[int, Field(strict=True, ge=1)]  # votos a favor necessários (todos)
 
     @property
     def decided(self) -> bool:
         return self.verdict is not RuleVerdict.pending
 
 
-def absolute_majority(eligible: int) -> int:
-    """Mais de metade dos elegíveis (2 → 2, 3 → 2, 4 → 3, 5 → 3). Não confundir com
-    `votes_needed` (D-32), que é «pelo menos metade»."""
-    return eligible // 2 + 1
-
-
 def rule_approval_outcome(
     votes: Collection[AutomationVote], eligible: Collection[UUID], *, expired: bool = False
 ) -> RuleApprovalOutcome:
-    """Fonte única da votação de regras. Aprovada quando os votos a favor atingem a maioria
-    absoluta; rejeitada quando já não a pode atingir ou quando o prazo acabou sem maioria.
-    Votos repetidos ou de quem não é elegível são erro (o serviço já os impede)."""
+    """Fonte única da votação de regras da casa: UNANIMIDADE dos elegíveis. Aprovada quando todos
+    votam a favor; rejeitada logo que há um voto contra ou quando o prazo acabou sem todos os
+    votos. Votos repetidos ou de quem não é elegível são erro (o serviço já os impede)."""
     voters = [v.resident_id for v in votes]
     if not eligible or len(set(eligible)) != len(eligible):
         raise ValueError("elegíveis em falta ou repetidos")
     if len(set(voters)) != len(voters) or not set(voters) <= set(eligible):
         raise ValueError("votos repetidos ou de quem não é elegível")
-    majority = absolute_majority(len(eligible))
+    needed = len(eligible)
     pro = sum(v.approve for v in votes)
     against = len(voters) - pro
-    if pro >= majority:
+    if pro >= needed:
         verdict = RuleVerdict.approved
-    elif expired or against >= len(eligible) - majority + 1:
+    elif expired or against >= 1:
         verdict = RuleVerdict.rejected
     else:
         verdict = RuleVerdict.pending
     return RuleApprovalOutcome(
-        verdict=verdict, votes_for=pro, votes_against=against, majority=majority
+        verdict=verdict, votes_for=pro, votes_against=against, votes_needed=needed
     )

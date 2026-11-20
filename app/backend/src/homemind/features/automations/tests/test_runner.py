@@ -11,6 +11,7 @@ from homemind.contracts import fixtures as fx
 from homemind.contracts import household as hh
 from homemind.contracts.agent import (
     ActionExecutionResult,
+    AutomationScope,
     AutomationStatus,
     DeviceCapability,
     ExecutionStatus,
@@ -70,7 +71,7 @@ def body(kind=TriggerKind.power_above, device=DEMO_PLUG, duration_s=600, target=
 
 
 def activate(
-    db, *, house=A, people=(fx.ANA, fx.BRUNO, fx.CARLA), origin=Origin.simulated,
+    db, *, house=A, people=(fx.ANA, fx.BRUNO, fx.CARLA, fx.DIOGO), origin=Origin.simulated,
     device=DEMO_PLUG, kind=TriggerKind.power_above, duration_s=600, target=None,
 ):  # fmt: skip
     """Propõe e aprova pela votação real (o proponente + os votos necessários)."""
@@ -172,8 +173,8 @@ def test_a_confirmacao_e_a_votacao_e_so_corre_com_a_regra_ativa_e_aprovada(db):
     house, tenants = real_house(db)
     fake = FakeExecutor()
     dev = stable_id("device", "tomada-real")
-    rule = activate(db, house=house, people=tuple(tenants[:2]), origin=Origin.real, device=dev)
-    approver = tenants[1]  # quem deu o voto decisivo (grupo de 3: bastam 2)
+    rule = activate(db, house=house, people=tuple(tenants), origin=Origin.real, device=dev)
+    approver = tenants[-1]  # quem deu o voto decisivo (unanimidade: o último a votar)
     row = db.run_sync(lambda c: repo.get_row(c, house, rule))
     assert UUID(row["approved_by_resident_id"]) == approver
 
@@ -249,7 +250,7 @@ def test_regra_suspensa_proposta_ou_rejeitada_nunca_executa(db):
 def test_sem_executor_o_resultado_e_blocked_executor_unavailable_sem_tentar(db):
     house, tenants = real_house(db)
     dev = stable_id("device", "tomada-real")
-    activate(db, house=house, people=tuple(tenants[:2]), origin=Origin.real, device=dev)
+    activate(db, house=house, people=tuple(tenants), origin=Origin.real, device=dev)
 
     async def go():
         async with Harness(db) as h:  # nada registado em `agent_action_executor`
@@ -266,9 +267,7 @@ def test_sem_executor_o_resultado_e_blocked_executor_unavailable_sem_tentar(db):
 def test_resultado_incerto_nunca_se_repete_e_bloqueia_o_dispositivo(db):
     house, tenants = real_house(db)
     dev, fake = stable_id("device", "tomada-real"), FakeExecutor("raise")
-    activate(
-        db, house=house, people=tuple(tenants[:2]), origin=Origin.real, device=dev, duration_s=60
-    )
+    activate(db, house=house, people=tuple(tenants), origin=Origin.real, device=dev, duration_s=60)
     kw = {"device": dev, "house": house, "prov": REAL}
 
     def reads(*pairs):
@@ -297,7 +296,7 @@ def test_resultado_incerto_nunca_se_repete_e_bloqueia_o_dispositivo(db):
 
 def test_duas_regras_no_mesmo_dispositivo_executam_uma_so_vez(db):
     activate(db)
-    activate(db, people=(fx.DIOGO, fx.BRUNO, fx.CARLA))
+    activate(db, people=(fx.DIOGO, fx.BRUNO, fx.CARLA, fx.ANA))
 
     async def go():
         async with Harness(db) as h:
@@ -371,9 +370,7 @@ def test_replay_depois_de_reiniciar_nao_duplica_e_o_estado_refaz_se(db):
 def test_o_bloqueio_por_incerteza_sobrevive_ao_reinicio(db):
     house, tenants = real_house(db)
     dev = stable_id("device", "tomada-real")
-    activate(
-        db, house=house, people=tuple(tenants[:2]), origin=Origin.real, device=dev, duration_s=60
-    )
+    activate(db, house=house, people=tuple(tenants), origin=Origin.real, device=dev, duration_s=60)
     kw = {"device": dev, "house": house, "prov": REAL}
     first, second = FakeExecutor("raise"), FakeExecutor()
 
@@ -431,7 +428,7 @@ def test_o_bloqueio_volta_a_consultar_se_na_execucao_e_trava_um_disparo_ja_decid
     dev_a, dev_b = stable_id("device", "gatilho-a"), stable_id("device", "gatilho-b")
     plug, fake = stable_id("device", "tomada-real"), FakeExecutor("raise", delay=0.3)
     for trigger in (dev_a, dev_b):  # duas regras, gatilhos distintos, a mesma tomada
-        activate(db, house=house, people=tuple(tenants[:2]), origin=Origin.real, device=trigger,
+        activate(db, house=house, people=tuple(tenants), origin=Origin.real, device=trigger,
                  target=plug, duration_s=0)  # fmt: skip
 
     async def go():
@@ -483,3 +480,60 @@ def test_restore_so_le_a_janela_recente_e_mantem_o_estado(db):
     assert n == 1 + 5  # a presença (toda) e as leituras recentes; as de há 3 dias ficam de fora
     run(life(ramp(15, 45)))  # o mesmo episódio depois de reiniciar: sem duplicar
     assert len(executed(db)) == 1
+
+
+# --- regras individuais -----------------------------------------------------------------------
+
+
+def personal_rule(db, house, owner, room, dev):
+    body_ = body(device=dev).model_copy(update={"scope": AutomationScope.personal})
+    r = db.run_sync(
+        lambda c: service.propose(
+            c,
+            household_id=house,
+            resident_id=owner,
+            body=body_,
+            plugs={dev: "Tomada do quarto"},
+            origin=Origin.real,
+            now=NOW,
+            plug_rooms={dev: room},
+        )
+    )
+    assert r.error is None and r.view.status is AutomationStatus.active
+    return r.view.id
+
+
+def test_individual_executa_sem_votacao_e_so_enquanto_o_dono_for_inquilino(db):
+    house, tenants = real_house(db)
+    dev = stable_id("device", "tomada-quarto-0")
+    personal_rule(db, house, tenants[0], stable_id("room", "real", "0"), dev)
+    fake = FakeExecutor()
+
+    async def go():
+        async with Harness(db, executor=fake) as h:
+            await h.publish(*ramp(0, 12, device=dev, house=house, prov=REAL))
+
+    run(go())
+    ((action, confirmation),) = fake.calls
+    assert action.command.target_device_id == dev
+    assert confirmation.resident_id == tenants[0]  # a confirmação humana é a do dono
+
+
+def test_individual_do_dono_que_saiu_nao_executa(db):
+    house, tenants = real_house(db)
+    dev = stable_id("device", "tomada-quarto-0")
+    personal_rule(db, house, tenants[0], stable_id("room", "real", "0"), dev)
+    db.run_sync(
+        lambda c: c.execute(
+            "UPDATE membership SET status = 'ended', ends_on = '2026-11-10' WHERE resident_id = ?",
+            (str(tenants[0]),),
+        )
+    )
+    fake = FakeExecutor()
+
+    async def go():
+        async with Harness(db, executor=fake) as h:
+            await h.publish(*ramp(0, 12, device=dev, house=house, prov=REAL))
+
+    run(go())
+    assert fake.calls == [] and executed(db) == []

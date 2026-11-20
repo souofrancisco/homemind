@@ -52,7 +52,7 @@ def vote(client, sub, aid, approve=True, house=A):
 
 def active(client):
     aid = create(client)["id"]
-    for sub in (BRUNO, CARLA):  # a Ana propôs: já votou a favor
+    for sub in (BRUNO, CARLA, DIOGO):  # a Ana propôs: já votou a favor
         assert vote(client, sub, aid).status_code == 200
     return aid
 
@@ -112,14 +112,19 @@ def test_propor_votar_ativar_suspender_e_reativar(client, app):
     v = create(client)
     aid = v["id"]
     assert v["status"] == "proposed" and v["vote_open"] and v["proposed_by_me"] is True
-    assert v["majority"] == 3 and v["eligible"] == 4 and v["origin"] == "simulated"
+    assert (
+        v["majority"] == 4
+        and v["scope"] == "house"
+        and v["eligible"] == 4
+        and v["origin"] == "simulated"
+    )
     assert v["device_name"] and v["message"].startswith("SIMULADO")
     assert [e.type for e in events(app, "automation.proposed")] == ["automation.proposed"]
 
     assert (v["votes_for"], v["my_vote"]) == (1, True)  # o proponente vota a favor ao propor
     assert err(vote(client, ANA, aid)) == (409, "already_voted")
-    assert vote(client, BRUNO, aid, approve=False).json()["votes_against"] == 1
-    assert vote(client, CARLA, aid).json()["status"] == "proposed"  # 2 a favor de 4: falta uma
+    assert vote(client, BRUNO, aid).json()["votes_for"] == 2
+    assert vote(client, CARLA, aid).json()["status"] == "proposed"  # 3 a favor de 4: falta uma
     final = vote(client, DIOGO, aid).json()
     assert final["status"] == "active" and final["my_vote"] is True and not final["vote_open"]
     decided = events(app, "automation.vote_decided", "automation.status_changed")
@@ -134,11 +139,19 @@ def test_propor_votar_ativar_suspender_e_reativar(client, app):
     reopened = client.post(f"{URL}/{aid}/reactivate", headers=as_(DIOGO)).json()
     assert reopened["status"] == "disabled" and reopened["vote_open"]
     assert reopened["votes_for"] == 0 and reopened["vote_round"] == 2
-    for sub in (ANA, BRUNO):
+    for sub in (ANA, BRUNO, CARLA):
         vote(client, sub, aid)
-    last = vote(client, CARLA, aid).json()
+    last = vote(client, DIOGO, aid).json()
     assert last["status"] == "active"
     assert [r["status"] for r in client.get(URL, headers=as_(ANA)).json()] == ["active"]
+
+
+def test_um_voto_contra_rejeita_logo_a_regra_da_casa(client, app):
+    aid = create(client)["id"]
+    r = vote(client, BRUNO, aid, approve=False).json()
+    assert r["status"] == "draft" and r["last_verdict"] == "rejected" and not r["vote_open"]
+    assert err(vote(client, CARLA, aid)) == (409, "vote_not_open")
+    assert [e.type for e in events(app, "automation.vote_decided")] == ["automation.vote_decided"]
 
 
 def test_a_resposta_nao_diz_quem_votou_o_que_nem_expoe_ids_de_moradores(client):
@@ -285,7 +298,11 @@ def test_tomadas_listadas_sao_exatamente_as_que_o_servidor_aceita(client, app):
     assert r.status_code == 200
     plugs = r.json()
     assert {p["id"] for p in plugs} == {str(DEMO_PLUG), str(live)}
-    assert all(set(p) == {"id", "name", "simulated"} and p["simulated"] for p in plugs)
+    assert all(
+        set(p) == {"id", "name", "simulated", "room_id", "personal_allowed"} and p["simulated"]
+        for p in plugs
+    )
+    assert not any(p["personal_allowed"] for p in plugs)  # nenhuma está no quarto da Ana
     assert LAMP not in {p["id"] for p in plugs}
     for p in plugs:  # cada uma é aceite como gatilho e como alvo (nunca 400 invalid_target)
         assert client.post(URL, json=body(p["id"]), headers=as_(ANA)).status_code == 201
@@ -307,3 +324,104 @@ def test_tomadas_de_outra_casa_e_nao_membro(client):
 def test_tomada_viva_da_demo_web_e_aceite_como_alvo(client, app):
     live = _live_plug(app)
     assert client.post(URL, json=body(live), headers=as_(ANA)).status_code == 201
+
+
+# --- regras individuais (D-39) ---------------------------------------------------------------
+
+
+def _plug_in(app, room, key):
+    """Tomada SIMULADA no catálogo da casa, numa divisão (aceite como alvo)."""
+    from homemind.contracts.common import stable_id
+    from homemind.contracts.devices import Device, DeviceKind, DeviceRole, DeviceSource, PowerUnit
+    from homemind.features.appliances import repo as appliance_repo
+
+    plug = Device(
+        id=stable_id("device", key), household_id=A, room_id=room, name=f"Tomada {key} (SIMULADA)",
+        kind=DeviceKind.plug, role=DeviceRole.actuator, source=DeviceSource.fake,
+        power_unit=PowerUnit.W, online=True, last_seen_at=fx.T0,
+    )  # fmt: skip
+    app.state.db.run_sync(lambda c: appliance_repo.register_device(c, plug))
+    return plug.id
+
+
+def personal_body(target):
+    return {**body(target), "scope": "personal"}
+
+
+def create_personal(client, sub, target):
+    r = client.post(URL, json=personal_body(target), headers=as_(sub))
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_tomadas_marcam_as_permitidas_para_regra_individual_de_quem_pede(client, app):
+    ana, bruno = _plug_in(app, fx.ROOM_ANA, "quarto-ana"), _plug_in(app, fx.ROOM_BRUNO, "q-bruno")
+    for sub, mine in ((ANA, ana), (BRUNO, bruno)):
+        plugs = {p["id"]: p for p in client.get(f"{URL}/plugs", headers=as_(sub)).json()}
+        assert {i for i, p in plugs.items() if p["personal_allowed"]} == {str(mine)}
+        assert plugs[str(DEMO_PLUG)]["personal_allowed"] is False  # sem divisão: nunca
+        assert plugs[str(mine)]["room_id"] in (str(fx.ROOM_ANA), str(fx.ROOM_BRUNO))
+
+
+def test_individual_cria_se_ativa_na_hora_e_so_no_quarto_do_dono(client, app):
+    mine = _plug_in(app, fx.ROOM_ANA, "quarto-ana")
+    other = _plug_in(app, fx.ROOM_BRUNO, "q-bruno")
+    v = create_personal(client, ANA, mine)
+    assert v["scope"] == "personal" and v["status"] == "active" and not v["vote_open"]
+    assert v["proposed_by_me"] is True and v["eligible"] == 1
+    for bad in (DEMO_PLUG, other, LAMP):  # zona comum, quarto alheio, lâmpada
+        r = client.post(URL, json=personal_body(bad), headers=as_(ANA))
+        assert err(r) == (400, "invalid_target")
+    assert events(app, "automation.proposed", "automation.vote_decided") == []
+    # sem aviso para os colegas
+    count = app.state.db.run_sync(
+        lambda c: c.execute("SELECT count(*) FROM notification").fetchone()[0]
+    )
+    assert count == 0
+
+
+def test_individual_e_privada_para_colegas(client, app):
+    mine = _plug_in(app, fx.ROOM_ANA, "quarto-ana")
+    aid = create_personal(client, ANA, mine)["id"]
+    house = create(client, BRUNO)["id"]
+    assert [r["id"] for r in client.get(URL, headers=as_(ANA)).json()] == [house, aid]
+    for sub in (BRUNO, CARLA, DIOGO):
+        assert [r["id"] for r in client.get(URL, headers=as_(sub)).json()] == [house]
+        assert err(vote(client, sub, aid)) == (404, "automation_not_found")
+        patch = client.patch(f"{URL}/{aid}", json={"status": "disabled"}, headers=as_(sub))
+        assert err(patch) == (404, "automation_not_found")
+        react = client.post(f"{URL}/{aid}/reactivate", headers=as_(sub))
+        assert err(react) == (404, "automation_not_found")
+    for sub in (LANDLORD, OPERATOR):  # senhorio e operador nem entram nas rotas
+        assert err(client.get(URL, headers=as_(sub))) == (403, "forbidden_role")
+    assert err(vote(client, ANA, aid)) == (409, "vote_not_open")
+    assert client.get(URL, headers=as_(ANA)).json()[1]["status"] == "active"
+
+
+def test_individual_o_dono_suspende_e_reativa_na_hora(client, app):
+    mine = _plug_in(app, fx.ROOM_ANA, "quarto-ana")
+    aid = create_personal(client, ANA, mine)["id"]
+    paused = client.patch(f"{URL}/{aid}", json={"status": "disabled"}, headers=as_(ANA))
+    assert paused.status_code == 200 and paused.json()["status"] == "disabled"
+    back = client.post(f"{URL}/{aid}/reactivate", headers=as_(ANA)).json()
+    assert back["status"] == "active" and not back["vote_open"] and back["votes_for"] == 0
+    assert events(app, "automation.proposed", "automation.status_changed") == []
+
+
+def test_o_corpo_aceita_scope_e_recusa_valores_desconhecidos(client):
+    assert err(client.post(URL, json={**body(), "scope": "global"}, headers=as_(ANA)))[0] == 400
+    assert create(client)["scope"] == "house"  # predefinição
+
+
+def test_demo_web_cada_morador_tem_tomada_no_seu_quarto_e_cria_regra_individual(client, app):
+    """O catálogo da demo web traz uma tomada SIMULADA por quarto: cada morador tem pelo menos
+    uma `personal_allowed` e consegue criar uma regra individual nela."""
+    from homemind.demo import web
+
+    app.state.db.run_sync(lambda c: web._seed_live_catalog(c, fx.T0))
+    for sub in (ANA, BRUNO, CARLA, DIOGO):
+        plugs = client.get(f"{URL}/plugs", headers=as_(sub)).json()
+        mine = [p for p in plugs if p["personal_allowed"]]
+        assert len(mine) == 1 and "quarto" in mine[0]["name"] and mine[0]["simulated"]
+        created = create_personal(client, sub, mine[0]["id"])
+        assert created["status"] == "active" and created["scope"] == "personal"
