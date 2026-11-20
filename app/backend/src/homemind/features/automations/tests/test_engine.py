@@ -3,8 +3,7 @@
 from datetime import timedelta
 
 from homemind.contracts import fixtures as fx
-from homemind.contracts.agent import AutomationScope, ExecutionStatus, TriggerKind
-from homemind.contracts.common import replace
+from homemind.contracts.agent import ExecutionStatus, TriggerKind
 from homemind.contracts.presence import PresenceState as P
 from homemind.features.automations import simulation as sim
 from homemind.features.automations.engine import (
@@ -209,20 +208,3 @@ def test_transicoes_com_incerto_nao_disparam_mas_o_estado_fica_registado():
     assert eng.on_event(sim.presence(at(4), fx.ANA, P.uncertain), rules) == []
     assert eng.on_event(sim.presence(at(5), fx.ANA, P.away), rules) == []  # incerto -> out
     assert len(eng.on_event(sim.presence(at(6), fx.ANA, P.home), rules)) == 1  # out -> in
-
-
-def test_regra_individual_de_presenca_so_dispara_com_as_transicoes_do_dono():
-    eng = AutomationEngine(device_cooldown_s=0, rule_cooldown_s=0)
-    mine = replace(
-        sim.presence_rule("pessoal"), scope=AutomationScope.personal, owner_resident_id=fx.ANA
-    )
-    rules = active(mine)
-    eng.on_event(sim.presence(at(0), fx.BRUNO, P.home), rules)
-    assert eng.on_event(sim.presence(at(1), fx.BRUNO, P.away), rules) == []  # o Bruno não conta
-    eng.on_event(sim.presence(at(2), fx.ANA, P.home), rules)
-    (f,) = eng.on_event(sim.presence(at(3), fx.ANA, P.away), rules)  # a Ana (dona) sim
-    assert f.cause is TriggerKind.presence_changed and f.rule_id == mine.id
-    # a regra da casa continua a disparar com qualquer morador
-    eng2, house_rules = AutomationEngine(), active(sim.presence_rule())
-    eng2.on_event(sim.presence(at(0), fx.BRUNO, P.home), house_rules)
-    assert len(eng2.on_event(sim.presence(at(1), fx.BRUNO, P.away), house_rules)) == 1

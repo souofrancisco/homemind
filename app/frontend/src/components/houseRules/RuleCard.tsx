@@ -16,7 +16,6 @@ type Props = {
 const dt = new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" });
 
 export default function RuleCard({ rule, tapName, busy, onVote, onSuspend, onReactivate }: Props) {
-  const personal = rule.scope === "personal";
   const pending = rule.vote_open;
   const reactivating = pending && rule.status === "disabled";
   const [confirming, { open, close }] = useDisclosure(false);
@@ -27,14 +26,13 @@ export default function RuleCard({ rule, tapName, busy, onVote, onSuspend, onRea
         <Group justify="space-between" align="flex-start" wrap="wrap">
           <Title order={3} size="h4">{rule.name}</Title>
           <Group gap="xs">
-            <Badge variant="outline" color="gray">{personal ? "Só para mim" : "Da casa"}</Badge>
             <Badge color={rule.origin === "simulated" ? "orange" : "teal"} variant="light">{originLabel(rule.origin)}</Badge>
             {rule.status === "active" && <Badge color="green" variant="light">Ativa</Badge>}
             {rule.status === "disabled" && !pending && <Badge color="gray" variant="light">Suspensa</Badge>}
             {pending && <Badge color="yellow" variant="light">{reactivating ? "Reativação em votação" : "Em votação"}</Badge>}
           </Group>
         </Group>
-        <Text size="sm">{describeTrigger(rule.trigger, tapName, rule.scope === "personal")}.</Text>
+        <Text size="sm">{describeTrigger(rule.trigger, tapName)}.</Text>
         <Group gap="xs" wrap="nowrap" align="flex-start">
           <IconPlugOff size={18} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} />
           <Text size="sm">Desliga a tomada «{rule.device_name}». Pode ser a extensão que alimenta vários aparelhos: desligá-la corta tudo o que lá está.</Text>
@@ -42,23 +40,21 @@ export default function RuleCard({ rule, tapName, busy, onVote, onSuspend, onRea
         {pending && (
           <>
             <Text size="sm" c="dimmed">
-              {rule.votes_for} a favor · {rule.votes_against} contra · {rule.majority} necessários (todos os {rule.eligible} moradores têm de votar a favor). Votação até {dt.format(new Date(rule.vote_deadline))} (24 h); um voto contra ou falta de votos rejeita a proposta.
+              {rule.votes_for} a favor · {rule.votes_against} contra · {rule.majority} necessários (de {rule.eligible} moradores). Votação até {dt.format(new Date(rule.vote_deadline))} (24 h); sem maioria, a proposta é rejeitada.
             </Text>
             <Group>
-              <Button mih={44} leftSection={<IconThumbUp size={18} />} variant={rule.my_vote === true ? "filled" : "light"} color="green" disabled={rule.my_vote != null} loading={busy} onClick={() => onVote(true)}>A favor</Button>
-              <Button mih={44} leftSection={<IconThumbDown size={18} />} variant={rule.my_vote === false ? "filled" : "light"} color="red" disabled={rule.my_vote != null} loading={busy} onClick={() => onVote(false)}>Contra</Button>
+              <Button leftSection={<IconThumbUp size={18} />} variant={rule.my_vote === true ? "filled" : "light"} color="green" disabled={rule.my_vote != null} loading={busy} onClick={() => onVote(true)}>A favor</Button>
+              <Button leftSection={<IconThumbDown size={18} />} variant={rule.my_vote === false ? "filled" : "light"} color="red" disabled={rule.my_vote != null} loading={busy} onClick={() => onVote(false)}>Contra</Button>
             </Group>
             {rule.my_vote != null && <Text size="xs" c="dimmed">O teu voto: {rule.my_vote ? "a favor" : "contra"}. Não pode ser alterado.</Text>}
           </>
         )}
-        {rule.status === "active" && <Button w="fit-content" mih={44} variant="light" color="red" loading={busy} onClick={open}>Suspender</Button>}
-        {rule.status === "disabled" && !pending && (personal
-          ? <Button w="fit-content" mih={44} variant="light" loading={busy} onClick={onReactivate}>Reativar</Button>
-          : <Button w="fit-content" mih={44} variant="light" loading={busy} onClick={openReactivate}>Reativar (abre nova votação)</Button>)}
+        {rule.status === "active" && <Button w="fit-content" variant="light" color="red" loading={busy} onClick={open}>Suspender</Button>}
+        {rule.status === "disabled" && !pending && <Button w="fit-content" variant="light" loading={busy} onClick={openReactivate}>Reativar (abre nova votação)</Button>}
       </Stack>
       <Modal opened={confirming} onClose={close} title="Suspender regra" centered>
         <Stack gap="md">
-          <Text size="sm">«{rule.name}» deixa de desligar a tomada de imediato. {personal ? "Podes reativá-la quando quiseres." : "Para voltar a ativá-la é preciso uma nova votação."}</Text>
+          <Text size="sm">«{rule.name}» deixa de desligar a tomada de imediato. Para voltar a ativá-la é preciso uma nova votação.</Text>
           <Group justify="flex-end">
             <Button variant="default" onClick={close}>Cancelar</Button>
             <Button color="red" onClick={() => { close(); onSuspend(); }}>Suspender</Button>
@@ -67,7 +63,7 @@ export default function RuleCard({ rule, tapName, busy, onVote, onSuspend, onRea
       </Modal>
       <Modal opened={reopening} onClose={closeReactivate} title="Reativar regra" centered>
         <Stack gap="md">
-          <Text size="sm">Reativar «{rule.name}» abre uma nova votação de 24 h e notifica a casa. A regra só volta a desligar a tomada se todos os moradores votarem a favor; até lá continua suspensa. Conta para o teu limite de 3 votações abertas.</Text>
+          <Text size="sm">Reativar «{rule.name}» abre uma nova votação de 24 h e notifica a casa. A regra só volta a desligar a tomada se a maioria votar a favor; até lá continua suspensa. Conta para o teu limite de 3 votações abertas.</Text>
           <Group justify="flex-end">
             <Button variant="default" onClick={closeReactivate}>Cancelar</Button>
             <Button onClick={() => { closeReactivate(); onReactivate(); }}>Abrir votação</Button>

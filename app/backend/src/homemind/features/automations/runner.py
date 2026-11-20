@@ -59,7 +59,6 @@ from homemind.contracts.agent import (
     ActionExecutionResult,
     ActionStatus,
     AutomationRule,
-    AutomationScope,
     DeviceCapability,
     DeviceCommand,
     ExecutionStatus,
@@ -147,8 +146,9 @@ class AutomationRunner:
         event = stored.event
         with self._lock:
             if event.id not in self._decided:
-                found = repo.active_rules(conn, event.household_id, event.ts)
-                rules = [ActiveRule(r, since) for r, since in found]
+                rules = [
+                    ActiveRule(r, since) for r, since in repo.active_rules(conn, event.household_id)
+                ]
                 self._decided[event.id] = self.engine.on_event(event, rules)
                 while len(self._decided) > _SEEN_MAX:
                     self._decided.popitem(last=False)
@@ -187,7 +187,7 @@ class AutomationRunner:
                 if ev.household_id not in rules:
                     rules[ev.household_id] = [
                         ActiveRule(r, since)
-                        for r, since in repo.active_rules(conn, ev.household_id, ev.ts)
+                        for r, since in repo.active_rules(conn, ev.household_id)
                     ]
                 self.engine.on_event(ev, rules[ev.household_id])
                 n += 1
@@ -264,8 +264,6 @@ class AutomationRunner:
             or row["status"] != "active"
             or row["vote_open"]
             or row["approved_by_resident_id"] is None
-            # uma individual só corre com o dono na casa e no quarto onde a criou
-            or not repo.personal_runs(conn, repo.rule_of(row), self.clock())
         ):
             return None
         return repo.rule_of(row), Origin(row["origin"]), house["source_kind"]
@@ -294,11 +292,7 @@ class AutomationRunner:
             command=DeviceCommand(
                 target_device_id=f.device_id, capability=DeviceCapability.power, power=False
             ),
-            rationale=(
-                f"Regra «{rule.name}» aprovada por votação dos moradores"
-                if rule.scope is AutomationScope.house
-                else f"Regra individual «{rule.name}» criada pelo dono"
-            )[:300],
+            rationale=f"Regra «{rule.name}» aprovada por votação dos moradores"[:300],
             status=ActionStatus.confirmed,  # a votação é a confirmação humana
             proposed_at=now,
             expires_at=now + timedelta(seconds=self.action_ttl_s),
