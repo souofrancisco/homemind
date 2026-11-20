@@ -5,11 +5,11 @@ export default function MessageBubble({ message }: { message: AgentMessage & { i
   const mine = message.role === "user";
   return (
     <Paper
-      p="12px 18px"
-      radius={mine ? "20px 20px 4px 20px" : "20px 20px 20px 4px"}
-      maw="min(92%, 46rem)"
+      p={mine ? "12px 18px" : "2px 0"}
+      radius={mine ? "22px 22px 6px 22px" : 0}
+      maw={mine ? "min(80%, 40rem)" : "100%"}
       ml={mine ? "auto" : 0}
-      bg={mine ? "light-dark(#16181d, #f3f4f6)" : "light-dark(#f4f4f1, #0e0f12)"}
+      bg={mine ? "light-dark(#16181d, #f3f4f6)" : "transparent"}
       c={mine ? "light-dark(#ffffff, #0e0f12)" : undefined}
       shadow="none"
       aria-label={mine ? "A tua mensagem" : "Resposta do assistente"}

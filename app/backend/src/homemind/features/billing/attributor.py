@@ -276,14 +276,21 @@ def _on_responded(conn: sqlite3.Connection, ev: de.NotificationResponded) -> lis
     if not outcome.decided or not _pending(conn, ref.id):
         return []  # a votar ainda, ou chegou depois do prazo/da decisão
     consumption = load_consumption(conn, ref.id)
-    resident = outcome.resident_id if outcome.verdict is not ConfirmationVerdict.everyone else None
+    payers = outcome.resident_ids if outcome.verdict is not ConfirmationVerdict.everyone else []
+    if not payers:
+        target = AttributionTarget.common
+    elif len(payers) == 1:
+        target = AttributionTarget.resident
+    else:
+        target = AttributionTarget.group  # por igual entre os escolhidos (D-32)
     vote = ev.data.response
     attribution = Attribution(
         id=stable_id("attribution", str(ref.id), "confirmation"),
         household_id=consumption.household_id,
         consumption_event_id=consumption.id,
-        target_type=AttributionTarget.common if resident is None else AttributionTarget.resident,
-        target_resident_id=resident,
+        target_type=target,
+        target_resident_id=payers[0] if len(payers) == 1 else None,
+        target_resident_ids=payers if len(payers) > 1 else [],
         method=AttributionMethod.confirmation,
         provenance=Provenance(origin=consumption.provenance.origin, kind=ValueKind.measured),
         decided_by=Audit(at=vote.responded_at, by_resident_id=vote.resident_id),

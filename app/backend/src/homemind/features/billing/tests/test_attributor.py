@@ -42,6 +42,7 @@ def _evento(c, ts=TS):
 
 
 def _votacao(verdict, resident=None, voter=fx.CARLA, at=TS + timedelta(minutes=5)):
+    group = resident if isinstance(resident, list) else ([resident] if resident else [])
     return de.NotificationResponded(
         ts=at,
         household_id=fx.HOUSEHOLD,
@@ -56,13 +57,13 @@ def _votacao(verdict, resident=None, voter=fx.CARLA, at=TS + timedelta(minutes=5
                 else "everyone",
                 resident_id=voter,
                 responded_at=at,
-                target_resident_id=resident
+                target_resident_ids=sorted(group)
                 if verdict is ConfirmationVerdict.accusation_accepted
-                else None,
+                else [],
             ),
             ref=NotificationRef(type=RefType.consumption_event, id=fx.CONSUMPTION),
             outcome=ConfirmationOutcome(
-                verdict=verdict, resident_id=resident, votes=2, votes_needed=2
+                verdict=verdict, resident_ids=sorted(group), votes=2, votes_needed=2
             ),
         ),
     )
@@ -153,6 +154,14 @@ def test_votacao_aceita_atribuicao_a_outro(app):
     _handle(app, _evento(_consumo()))
     _handle(app, _votacao(ConfirmationVerdict.accusation_accepted, fx.BRUNO), seq=2)
     assert _ativa(app).target_resident_id == fx.BRUNO
+
+
+def test_votacao_num_grupo_atribui_ao_grupo(app):
+    _handle(app, _evento(_consumo()))
+    _handle(app, _votacao(ConfirmationVerdict.accusation_accepted, [fx.DIOGO, fx.BRUNO]), seq=2)
+    a = _ativa(app)
+    assert a.target_type is AttributionTarget.group and a.target_resident_id is None
+    assert a.target_resident_ids == sorted([fx.BRUNO, fx.DIOGO])
 
 
 def test_votacao_inconclusiva_vai_para_todos(app):

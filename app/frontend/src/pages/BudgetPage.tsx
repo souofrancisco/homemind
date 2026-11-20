@@ -56,7 +56,7 @@ export default function BudgetContent() {
       <Group align="flex-end" gap={16} wrap="wrap">
         <Stack gap={4} style={{ flex: "1 1 280px" }}>
           <Title order={2} size={18}>{hasBudget ? "Mudar o orçamento" : "Quanto queres gastar por mês?"}</Title>
-          <Text size="sm" c="dimmed" mb={8}>{hasBudget ? "Ao mudar, os avisos de 50 %, 80 % e 100 % recomeçam." : "Dizemos-te quando chegares a 50 %, 80 % e 100 %. Podes mudar quando quiseres."}</Text>
+          {!hasBudget && <Text size="sm" c="dimmed" mb={8}>Dizemos-te quando chegares a 50 %, 80 % e 100 %. Podes mudar quando quiseres.</Text>}
           <NumberInput aria-label="Orçamento mensal (€)" placeholder="Orçamento mensal (€)" decimalScale={2} min={0} value={limit} onChange={setLimit} maw={320}
             styles={{ input: { minHeight: 48, fontSize: 16, borderRadius: 12 } }} />
         </Stack>
@@ -86,8 +86,7 @@ export default function BudgetContent() {
           ) : <Text c="dimmed">Ainda não definiste um orçamento para este mês.</Text>}
           {!s.final && (s.forecast ? (
             <Text size="sm">
-              Previsão para o fim do mês: <b>{eur(s.forecast.cents)}</b> (entre {eur(s.forecast.low_cents)} e {eur(s.forecast.high_cents)}), com base em {s.forecast.observed_days} dias de consumo deste mês.
-              {s.budget?.limit_cents != null && s.forecast.cents > s.budget.limit_cents && ` Acima do orçamento em ${eur(s.forecast.cents - s.budget.limit_cents)}.`}
+              Previsão para o fim do mês: <b>{eur(s.forecast.cents)}</b>, com base em {s.forecast.observed_days} dias de consumo deste mês.
             </Text>
           ) : <Text size="sm" c="dimmed">Ainda não há dados suficientes para prever o fim do mês (são precisos pelo menos 3 dias).</Text>)}
           <SimpleGrid className="conta-figures" cols={{ base: 2, sm: 4 }} spacing={24}>
@@ -96,7 +95,7 @@ export default function BudgetContent() {
             <Figure label="A tua parte das zonas comuns" cents={s.shared_cents} hint="estimada" />
             <Figure label="Parte fixa da fatura" cents={s.base_cents} hint={s.base_cents == null ? "ainda sem fatura" : "estimada"} />
           </SimpleGrid>
-          {s.provenance && <Group><OriginBadge origin={s.provenance.origin} kind={s.provenance.kind} demo={session.house?.source_kind === "demo"} /><Text size="xs" c="dimmed">Os avisos chegam a 50 %, 80 % e 100 %.</Text></Group>}
+          {s.provenance && <Group><OriginBadge origin={s.provenance.origin} kind={s.provenance.kind} demo={session.house?.source_kind === "demo"} /></Group>}
         </Stack>
       </Card>
       {s.budget?.limit_cents != null && budgetForm}

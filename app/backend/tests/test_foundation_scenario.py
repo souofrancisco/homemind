@@ -90,7 +90,7 @@ def respond(conn, notification_id, resident_id, action_id, now):
 def stand_in_attribution(conn, stored):
     """P4 (stand-in): votação decidida => Attribution de quem paga; nunca duas ativas."""
     outcome = stored.event.data.outcome
-    assert outcome.decided and outcome.resident_id == fx.CARLA
+    assert outcome.decided and outcome.resident_ids == [fx.CARLA]
     resp = stored.event.data.response
     assert resp.action_id == "mine"
     a = billing.Attribution(
@@ -194,7 +194,7 @@ def test_energy_to_notification_to_attribution_to_bill(tmp_path):
 
         threads = [
             threading.Thread(target=attempt, args=(fx.CARLA, "mine")),
-            threading.Thread(target=attempt, args=(fx.ANA, "everyone")),
+            threading.Thread(target=attempt, args=(fx.ANA, "unknown")),
         ]
         [t.start() for t in threads]
         await asyncio.to_thread(lambda: [t.join() for t in threads])

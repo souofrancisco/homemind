@@ -424,7 +424,7 @@ def test_real_p4_p3_consumers_and_d32_votes_use_isolated_demo_db(store):
                     household_id=fx.HOUSEHOLD,
                     resident_id=resident_id,
                     action_id=action_id,
-                    target_resident_id=target_resident_id,
+                    target_resident_ids=[target_resident_id] if target_resident_id else None,
                 )
                 for event in outcome.events:
                     append_event(conn, event)

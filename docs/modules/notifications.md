@@ -12,7 +12,7 @@ Ser o **único canal de comunicação com o utilizador**: avisos, perguntas inte
 
 | Tipo | Origem | Âmbito | Interativa | Exemplo (PT-PT) |
 |---|---|---|---|---|
-| `confirmation_request` | `billing.confirmation_needed` | Casa (moradores autorizados) | Sim | «O aquecedor está ligado numa zona comum, cerca de 0,64 € estimados. Parece ser do Bruno (aparelho identificado a 87 %); confirma.» [É minha] [É de todos] [Não sei] [É de outra pessoa → escolher] (dica **PROPOSTA**, P-18) |
+| `confirmation_request` | `billing.confirmation_needed` | Casa (moradores autorizados) | Sim | «O aquecedor está ligado numa zona comum, cerca de 0,64 € estimados. Parece ser do Bruno (aparelho identificado a 87 %); confirma.» [É minha] [Escolher responsável(eis) → uma ou mais pessoas] [Não sei] (dica **PROPOSTA**, P-18) |
 | `budget_alert` | `alerts.threshold_crossed` | Pessoal | Não | «Já gastaste 20 € dos teus 25 € (80 %). Ao ritmo atual chegas aos 31 €.» |
 | `peak_alert` | `alerts.alert_raised` | Casa | Opcional | «Pico na sala: 2 kW há 40 min.» |
 | `forgotten_appliance` | `alerts.alert_raised` | Pessoal (dono) | Sim | «Saíste há 1 h e o aquecedor continua ligado. Desligo?» [Desliga] [Deixa estar] |
@@ -75,7 +75,7 @@ P5 (barramento, papéis), P4 (pedidos e alertas), P1 (ações físicas), P2 (ale
 ## Critérios de aceitação
 
 - Fluxo completo com simulador: pedido → notificação no ecrã do inquilino A → resposta «É minha» → `Attribution` atualizada → confirmação mostrada; pedido não chega ao senhorio.
-- Votação: 2 de 4 votam «É de outra pessoa → Bruno» → atribuído ao Bruno; o Bruno assume antes → fecha com ele; votos divididos/«Não sei» até ao fim ou 24 h → por todos.
+- Votação: 2 de 4 escolhem o mesmo grupo (ex.: «Bruno» ou «Bruno e Carla») → atribuído a esse grupo, por igual (D-38); o Bruno assume antes → fecha com ele; votos divididos/«Não sei» até ao fim ou 24 h → por todos.
 - Votar duas vezes: segundo voto `409`.
 - Expiração sem resposta aciona o fallback (verificado por P4).
 - Reconexão do WebSocket recupera as notificações por `GET`.
@@ -94,7 +94,7 @@ Refs #95 (APP-02), #96 (APP-03) e #112 (AGENT-03); não as fecham (faltam UI e W
 | Persistência | SQLite (`0300_notifications_core.sql`): `notification` (JSON validado + colunas escalares), `notification_read`, `notification_preferences` (por residente e casa); compare-and-set sobre o estado e o n.º de votos lido: `UPDATE … WHERE id=? AND status=? AND json_array_length(json,'$.responses')=?` (o par só avança: nenhum voto se perde nem se duplica) |
 | Lista | `GET …/notifications` (filtros `status`, `scope`, `limit` 1..100), só `NotificationView`; o senhorio só recebe os tipos da allow-list (hoje `info`) |
 | Leitura | `POST …/read`: recibo por residente; o estado partilhado só muda nas pessoais |
-| Resposta / voto | `POST …/respond` (corpo `NotificationRespondIn`: `action_id` e, com `other`, `target_resident_id`). Confirmações: um voto por inquilino (409 `already_responded` ao repetir ou depois de fechada), fecha segundo `confirmation_outcome` (D-32); alvo inválido 400 `invalid_request`; 409 `notification_expired`. Outros tipos: a primeira resposta vence. `notification.responded` **por voto**, com `outcome`, gravado na mesma transação; se o CAS perde, relê e reaplica a regra |
+| Resposta / voto | `POST …/respond` (corpo `NotificationRespondIn`: `action_id` e, com `other`, `target_resident_ids`). Confirmações: um voto por inquilino (409 `already_responded` ao repetir ou depois de fechada), fecha segundo `confirmation_outcome` (D-32); alvo inválido 400 `invalid_request`; 409 `notification_expired`. Outros tipos: a primeira resposta vence. `notification.responded` **por voto**, com `outcome`, gravado na mesma transação; se o CAS perde, relê e reaplica a regra |
 | Provider do assistente (**IMPLEMENTADO**) | `features/notifications/agent_providers.py`: leitura SQLite sob o lock comum, `query_only`, sem transação de escrita; devolve apenas `confirmation_request` aberto, não expirado e ainda respondível pelo próprio residente (`responder_ids` e votos). Conta todos e inclui até três resumos com aparelho, custo estimado e prazo; sem votos de terceiros. Compõe `ProviderSet` por `dataclasses.replace`, preservando os providers de billing em qualquer ordem de arranque |
 | Preferências | `GET|PUT …/notification-preferences` (por casa; `security_alert` não se desliga: 400) |
 | Varrimento de expiração | `sweeper.py`: a cada 60 s (`NOTIFICATIONS_EXPIRY_SWEEP_S`, 0 desliga) o lifespan chama `expire_due`; só grava o estado `expired` (a leitura já o deduzia do tempo), sem evento; a tarefa é cancelada no `finally` |

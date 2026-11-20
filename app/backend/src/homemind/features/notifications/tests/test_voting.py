@@ -70,7 +70,11 @@ def _setup(eligible=None):
 
 def _vote(svc, nid, who, action, target=None):
     return svc.respond(
-        nid, household_id=HOUSE, resident_id=who, action_id=action, target_resident_id=target
+        nid,
+        household_id=HOUSE,
+        resident_id=who,
+        action_id=action,
+        target_resident_ids=[target] if target else None,
     )
 
 
@@ -88,7 +92,7 @@ def test_um_e_minha_fecha_e_paga_quem_assumiu():
     svc, repo, _, nid = _setup()
     out = _vote(svc, nid, BRUNO, "mine")
     outcome = _outcome(out)
-    assert (outcome.verdict, outcome.resident_id) == (ConfirmationVerdict.self_claimed, BRUNO)
+    assert (outcome.verdict, outcome.resident_ids) == (ConfirmationVerdict.self_claimed, [BRUNO])
     stored = repo.get(nid)
     assert stored is not None and stored.status is NotificationStatus.actioned
     assert stored.response is not None and stored.response.resident_id == BRUNO
@@ -103,9 +107,9 @@ def test_metade_arredondada_para_cima_atribui_a_outra_pessoa():
     assert first.notification.status is NotificationStatus.unread  # 1 de 2: ainda aberta
     second = _vote(svc, nid, BRUNO, "other", DIOGO)
     outcome = _outcome(second)
-    assert (outcome.verdict, outcome.resident_id) == (
+    assert (outcome.verdict, outcome.resident_ids) == (
         ConfirmationVerdict.accusation_accepted,
-        DIOGO,
+        [DIOGO],
     )
     assert (outcome.votes, outcome.votes_needed) == (2, 2)
     stored = repo.get(nid)
@@ -126,7 +130,7 @@ def test_o_acusado_assume_antes_de_se_chegar_a_metade():
     _vote(svc, nid, ANA, "other", DIOGO)
     out = _vote(svc, nid, DIOGO, "mine")
     outcome = _outcome(out)
-    assert (outcome.verdict, outcome.resident_id) == (ConfirmationVerdict.self_claimed, DIOGO)
+    assert (outcome.verdict, outcome.resident_ids) == (ConfirmationVerdict.self_claimed, [DIOGO])
     stored = repo.get(nid)
     assert stored is not None and stored.status is NotificationStatus.actioned
 
@@ -138,7 +142,7 @@ def test_todos_votaram_sem_decisao_divide_se_por_todos():
     _vote(svc, nid, CARLA, "other", DIOGO)
     out = _vote(svc, nid, DIOGO, "other", ANA)  # 1 voto em cada alvo: nenhum chega a 2
     outcome = _outcome(out)
-    assert (outcome.verdict, outcome.resident_id) == (ConfirmationVerdict.everyone, None)
+    assert (outcome.verdict, outcome.resident_ids) == (ConfirmationVerdict.everyone, [])
     stored = repo.get(nid)
     assert stored is not None and stored.status is NotificationStatus.actioned
     assert len(stored.responses) == 4
@@ -280,7 +284,7 @@ def test_vista_nunca_revela_quem_votou():
         assert (
             view.voting.votes == 2 and view.voting.eligible == 4 and view.voting.votes_needed == 2
         )
-        assert [(a.target_resident_id, a.votes) for a in view.voting.accusations] == [(DIOGO, 1)]
+        assert [(a.target_resident_ids, a.votes) for a in view.voting.accusations] == [([DIOGO], 1)]
     (carla,) = svc.list_for(HOUSE, CARLA)
     assert carla.voting is not None and carla.voting.my_vote is None and carla.can_respond is True
     (ana,) = svc.list_for(HOUSE, ANA)

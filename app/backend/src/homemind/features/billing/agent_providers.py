@@ -11,11 +11,15 @@ from homemind.contracts.agent_providers import (
     AttributionValue,
     ToolValue,
 )
-from homemind.contracts.billing import AttributionTarget, BillAllocation, BreakdownKind
+from homemind.contracts.billing import BillAllocation, BreakdownKind
 from homemind.contracts.common import Provenance
 from homemind.core.db import Database
 from homemind.features.billing import allowance, bills, budgets, closing, explanation, tariff
-from homemind.features.billing.allocation import EnergyShare, draw_order, largest_remainder
+from homemind.features.billing.allocation import (
+    draw_order,
+    largest_remainder,
+    shares_for,
+)
 
 
 class BillingAgentProviders:
@@ -362,8 +366,7 @@ class BillingAgentProviders:
             c = consumptions[a.consumption_event_id]
             if not c.energy_wh:
                 continue
-            target = a.target_resident_id if a.target_type is AttributionTarget.resident else None
-            shares.append(EnergyShare(target, c.energy_wh, c.provenance, c.id))
+            shares.extend(shares_for(a, c))
             provenance[c.id] = c.provenance
         adjusted, _ = allowance.apply(
             shares,

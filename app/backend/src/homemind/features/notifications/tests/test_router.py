@@ -263,14 +263,14 @@ def test_resposta_feliz_um_vencedor_e_um_evento(client, caplog):
     assert str(fx.ANA) not in win.text
     assert not [r for r in caplog.records if "publicar" in r.getMessage()]
     # outro inquilino perde: 409 e a resposta de Ana fica
-    lose = client.post(url(A, nid, "/respond"), json={"action_id": "everyone"}, headers=as_(BRUNO))
+    lose = client.post(url(A, nid, "/respond"), json={"action_id": "unknown"}, headers=as_(BRUNO))
     assert err(lose) == (409, "already_responded")
     seen = client.get(url(A), headers=as_(BRUNO)).json()[0]
     assert seen["response"] == {
         "action_id": "mine",
         "responded_at": seen["response"]["responded_at"],
         "by_me": False,
-        "target_resident_id": None,
+        "target_resident_ids": [],
     }
     events = client.app.state.db.run_sync(
         lambda c: load_events(c, types=["notification.responded"])
@@ -313,7 +313,7 @@ def test_acao_desconhecida_400_e_nao_consome(client):
     nid = confirmation(client.app)
     r = client.post(url(A, nid, "/respond"), json={"action_id": "desliga"}, headers=as_(ANA))
     assert err(r) == (400, "invalid_request")
-    ok = client.post(url(A, nid, "/respond"), json={"action_id": "everyone"}, headers=as_(ANA))
+    ok = client.post(url(A, nid, "/respond"), json={"action_id": "unknown"}, headers=as_(ANA))
     assert ok.status_code == 200
 
 
@@ -349,7 +349,7 @@ def test_inquilino_fora_dos_responsaveis_403(client):
 
 
 def _vote(client, nid, who, action, target=None):
-    body = {"action_id": action} | ({"target_resident_id": str(target)} if target else {})
+    body = {"action_id": action} | ({"target_resident_ids": [str(target)]} if target else {})
     return client.post(url(A, nid, "/respond"), json=body, headers=as_(who))
 
 
@@ -372,7 +372,7 @@ def test_votacao_pela_api_atribui_a_outra_pessoa_sem_revelar_quem_votou(client):
     assert str(fx.ANA) not in carla.text and str(fx.BRUNO) not in carla.text
     (seen,) = carla.json()
     assert seen["can_respond"] is True and seen["voting"]["my_vote"] is None
-    assert seen["voting"]["accusations"] == [{"target_resident_id": str(fx.DIOGO), "votes": 1}]
+    assert seen["voting"]["accusations"] == [{"target_resident_ids": [str(fx.DIOGO)], "votes": 1}]
     assert seen["voting"]["votes_needed"] == 2 and seen["voting"]["eligible"] == 4
     second = _vote(client, nid, BRUNO, "other", fx.DIOGO)
     assert second.status_code == 200, second.text
@@ -385,7 +385,7 @@ def test_votacao_pela_api_atribui_a_outra_pessoa_sem_revelar_quem_votou(client):
     assert diogo["voting"]["pays_me"] is True and diogo["can_respond"] is False
     events = _responded(client)  # um evento por voto, o último com a decisão
     assert [e.data.outcome.verdict.value for e in events] == ["pending", "accusation_accepted"]
-    assert events[-1].data.outcome.resident_id == fx.DIOGO
+    assert events[-1].data.outcome.resident_ids == [fx.DIOGO]
     assert events[-1].data.response.resident_id == fx.BRUNO
     assert client.get(url(A), headers=as_(LANDLORD)).json() == []
 
@@ -421,7 +421,7 @@ def test_alvo_que_nao_e_uuid_400(client):
     nid = confirmation(client.app)
     r = client.post(
         url(A, nid, "/respond"),
-        json={"action_id": "other", "target_resident_id": "bruno"},
+        json={"action_id": "other", "target_resident_ids": ["bruno"]},
         headers=as_(ANA),
     )
     assert err(r) == (400, "invalid_request")
@@ -431,7 +431,7 @@ def test_todos_votaram_sem_decisao_divide_se_por_todos_pela_api(client):
     nid = confirmation(client.app)
     plan = [
         (ANA, "unknown", None),
-        (BRUNO, "everyone", None),
+        (BRUNO, "unknown", None),
         (CARLA, "other", fx.DIOGO),
         ("sub-diogo", "other", fx.ANA),
     ]
@@ -477,7 +477,7 @@ def test_pedido_do_barramento_chega_a_ana_e_nao_ao_senhorio(client):
     assert len(created) == 1
     # e é possível responder a esse pedido
     r = client.post(
-        url(A, seen[0]["id"], "/respond"), json={"action_id": "everyone"}, headers=as_(ANA)
+        url(A, seen[0]["id"], "/respond"), json={"action_id": "unknown"}, headers=as_(ANA)
     )
     assert r.status_code == 200
 

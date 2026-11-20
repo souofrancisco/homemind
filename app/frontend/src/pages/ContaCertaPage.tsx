@@ -13,7 +13,6 @@ import BillsContent from "./BillsPage";
 import RoomAllowanceLine from "../components/billing/RoomAllowanceLine";
 import { listRoomAllowances, type RoomAllowanceView } from "../services/billing/allowances";
 import HouseRulesCard from "../components/billing/HouseRulesCard";
-import SecurityPanelCard from "../components/security/SecurityPanelCard";
 import PresenceConsentCard from "../components/presence/PresenceConsentCard";
 import OriginBadge from "../components/common/OriginBadge";
 import Dashboard from "./DashboardPage";
@@ -24,6 +23,7 @@ import NotificationsContent from "./NotificationsPage";
 import AssistantPage from "./AssistantPage";
 import { getCameraStatus, listMcpTools, type CameraStatus, type McpTool } from "../services/diagnostics/api";
 import { request } from "../services/api/client";
+import { useHouseAutomations } from "../hooks/useHouseAutomations";
 
 type Placeholder = { title: string; detail: string; dependency: string; badge?: string };
 function NoData({ value }: { value: Placeholder }) {
@@ -140,11 +140,27 @@ function DiagnosticsContent() {
   </Stack>;
 }
 
+/** Regras da casa em destaque na página Casa (só moradores): quantas esperam o meu voto. */
+function HouseRulesHighlight({ householdId }: { householdId: string }) {
+  const auto = useHouseAutomations(householdId);
+  const waiting = (auto.rules ?? []).filter((r) => r.vote_open && r.my_vote == null).length;
+  return (
+    <Card className="conta-rules-highlight" bg="var(--mantine-color-text)" c="var(--mantine-color-body)" p={{ base: "md", sm: 28 }}>
+      <Group justify="space-between" align="center" wrap="wrap" gap="md">
+        <Stack gap={10} align="flex-start">
+          <Title order={2} fz={26}>Regras da casa</Title>
+          {waiting > 0 && <Badge className="conta-rules-waiting">{waiting === 1 ? "1 regra à espera do teu voto" : `${waiting} regras à espera do teu voto`}</Badge>}
+        </Stack>
+        <Button component={Link} to="/regras" className="conta-rules-cta" mih={48} rightSection={<IconArrowRight size={16} aria-hidden="true" />}>Ver regras</Button>
+      </Group>
+    </Card>
+  );
+}
+
 function HouseContent() {
   const session = useHouseholdSession();
   const membership = session.membership;
   const role = membership?.role;
-  const ownRoom = session.rooms.find((room) => room.id === membership?.room_id);
   const householdId = membership?.household_id;
   // Plafond por quarto em vigor este mês e mudança agendada (BILL-03); sem resposta, o valor
   // da criação do quarto (`RoomView.included_wh`).
@@ -174,19 +190,8 @@ function HouseContent() {
   const hasAllowance = allowanceWh > 0;
   return (
     <Stack gap={24}>
-      <Card p={{ base: "md", sm: "24px 28px" }}>
-        <Group justify="space-between" align="center" wrap="wrap">
-          <Stack gap={4}>
-            <Text c="dimmed" size="sm">Casa selecionada</Text>
-            <Title order={2} fz={26} lh={1.15} className="conta-number">{session.house.name}</Title>
-            <Text size="sm" c="dimmed">Fuso horário: {session.house.timezone}{role === "tenant" && ownRoom ? ` · O teu quarto: ${ownRoom.name}` : ""}</Text>
-          </Stack>
-          {session.house.source_kind === "demo"
-            ? <Badge className="conta-demo-badge">Casa de demonstração</Badge>
-            : <Badge>Registo de produção</Badge>}
-        </Group>
-      </Card>
-      <section aria-labelledby="room-list-title">
+      {role === "tenant" && householdId && <HouseRulesHighlight householdId={householdId} />}
+      {role !== "tenant" && <section aria-labelledby="room-list-title">
         <Title id="room-list-title" order={2} size={18} mb="sm">Divisões da casa</Title>
         {session.rooms.length ? (
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing={16}>
@@ -207,24 +212,10 @@ function HouseContent() {
           </SimpleGrid>
         ) : <Text c="dimmed">Ainda não existem divisões registadas nesta casa.</Text>}
         {hasAllowance && <Text size="sm" c="dimmed" mt="sm">O senhorio inclui {(allowanceWh / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 1 })} kWh por mês de aquecimento em cada quarto, pagos por todos.</Text>}
-      </section>
+      </section>}
       {role === "tenant" && <section aria-labelledby="appliances-title"><Title id="appliances-title" order={2} size={18} mb="sm">Aparelhos</Title><AppliancesContent /></section>}
-      {role === "tenant" && (
-        <Card p={{ base: "md", sm: "20px 28px" }}>
-          <Group justify="space-between" align="center" wrap="wrap">
-            <Stack gap={2}>
-              <Title order={2} size={18}>Regras da casa</Title>
-              <Text size="sm" c="dimmed">Regras que desligam uma tomada, propostas e votadas pelos moradores.</Text>
-            </Stack>
-            <Button component={Link} to="/regras" variant="default" mih={48} rightSection={<IconArrowRight size={16} aria-hidden="true" />}>Ver regras</Button>
-          </Group>
-        </Card>
-      )}
-      {role === "tenant" && <SecurityPanelCard householdId={session.house.id} />}
       {role === "operator" && <section aria-labelledby="appliances-title"><Title id="appliances-title" order={3} size="h4" mb="sm">Aparelhos</Title><NoData value={{ title: "Diagnóstico de dispositivos", detail: "O operador consulta o estado técnico autorizado na área Diagnóstico.", dependency: "Não são apresentados aparelhos pessoais." }} /></section>}
-      {(role === "tenant" || role === "landlord") && (
-        <HouseRulesCard householdId={session.house.id} canEdit={role === "tenant"} />
-      )}
+      {role === "landlord" && <HouseRulesCard householdId={session.house.id} canEdit={false} />}
       {role === "landlord" && (
         <Alert color="gray" variant="light">
           A vista de senhorio limita-se à gestão e aos totais autorizados. Não inclui presença, horários nem aparelhos pessoais dos moradores.
@@ -282,7 +273,7 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
   if (section === "home") return <HomeContent role={role} />;
   if (section === "house") return (
     <Stack gap={24}>
-      <PageHeading title="Casa" description="Divisões e aparelhos da tua casa." />
+      <PageHeading title={session.house ? `Casa — ${session.house.name}` : "Casa"} description={role === "tenant" ? "Regras e aparelhos da tua casa." : "Divisões da tua casa."} />
       <HouseContent />
     </Stack>
   );
@@ -297,6 +288,7 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
     <Stack gap="xl">
       <PageHeading title={screenLabels.houseRules} description="Regras que desligam uma tomada, propostas e votadas pelos moradores." />
       <HouseRulesContent />
+      {role === "tenant" && session.house && <HouseRulesCard householdId={session.house.id} canEdit />}
     </Stack>
   );
   if (section === "notifications") return (

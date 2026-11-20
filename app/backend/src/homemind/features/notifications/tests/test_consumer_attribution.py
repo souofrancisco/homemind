@@ -53,7 +53,7 @@ def _vote(db, resident, action, target=None):
                 if x.kind is NotificationKind.confirmation_request]  # fmt: skip
         svc.respond(
             n.id, household_id=fx.HOUSEHOLD, resident_id=resident, action_id=action,
-            target_resident_id=target,
+            target_resident_ids=[target] if target else None,
         )  # fmt: skip
 
     db.run_sync(work)
@@ -124,7 +124,7 @@ def test_atribuido_por_votacao_a_outro_o_pagador_nao_precisa_de_ter_votado(seede
 
 def test_comum_vai_a_cada_votante_e_so_a_eles(seeded):
     _vote(seeded, fx.ANA, "unknown")
-    _vote(seeded, fx.BRUNO, "everyone")
+    _vote(seeded, fx.BRUNO, "unknown")
     _go(seeded, _event(_common()))
     infos = _infos(seeded)
     assert {n.recipient_resident_id for n in infos} == {fx.ANA, fx.BRUNO}
@@ -146,7 +146,7 @@ def test_comum_sem_votantes_nao_notifica_ninguem(seeded):
 
 def test_comum_ignora_votante_que_ja_saiu(seeded):
     _vote(seeded, fx.ANA, "unknown")
-    _vote(seeded, fx.BRUNO, "everyone")
+    _vote(seeded, fx.BRUNO, "unknown")
     end_membership(seeded, fx.BRUNO)
     _go(seeded, _event(_common()))
     assert [n.recipient_resident_id for n in _infos(seeded)] == [fx.ANA]
