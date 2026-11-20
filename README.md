@@ -73,7 +73,7 @@ A identificação energética é probabilística; quando a evidência não chega
 
 | Nome | GitHub | Área |
 |---|---|---|
-| Bruno Vieira | [@brunoviera88](https://github.com/brunoviera88) | MCP, energia e identificação de aparelhos |
+| Bruno Vieira | [@brunovieira88](https://github.com/brunovieira88) | MCP, energia e identificação de aparelhos |
 | Miguel Santos | [@1Mii](https://github.com/1Mii) | Visão e presença |
 | Francisco Correia | [@souofrancisco](https://github.com/souofrancisco) | Arquitetura, frontend e integração |
 | Afonso Santos | [@Amorim3000](https://github.com/Amorim3000) | Faturação, atribuição e alertas |
