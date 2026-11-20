@@ -33,4 +33,7 @@ Cerca de 5 minutos, com dados **SIMULADOS**.
 
 O guião de 3 minutos é uma **PROPOSTA**. Nada se diz como REAL sem validação nesse dia.
 
-*Fontes canónicas: `README.md`, `docs/development/mvp.md`.*
+*Fontes canónicas: `docs/functional-flows.md`, `docs/development/mvp.md`, `app/frontend/src/app/routes.tsx`.*
+
+!!! note "Navegação"
+    Os passos seguem a navegação atual (Hoje, Contas, Casa). A validação no browser de 2026-11-18 foi feita com a navegação anterior; este percurso ainda não foi repetido no browser com a atual.
