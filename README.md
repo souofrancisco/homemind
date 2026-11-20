@@ -1,80 +1,80 @@
 # Conta Certa
 
-**Aveiro Tech City Hackathon 2026 · Desafio 3, Altice Labs (Connected Home)** — *cada um paga o que usa; a casa trata do resto.*
+[![Python](https://img.shields.io/badge/Python_3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React_19-149ECA?style=flat-square&logo=react&logoColor=white)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vite.dev/)
+[![Mantine](https://img.shields.io/badge/Mantine-339AF0?style=flat-square&logo=mantine&logoColor=white)](https://mantine.dev/)
+[![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://www.sqlite.org/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
 
-Serviço para **casas partilhadas**: lê o consumo elétrico por tomada (kit Connected Home via MCP), atribui cada consumo a um morador ou à conta comum — **perguntando na app** quando há dúvida —, divide a fatura de forma explicada e avisa antes de o orçamento de cada um chegar ao limite. O senhorio só reparte o custo real da fatura e nunca vê presença nem horários.
+[![Documentação](https://img.shields.io/badge/Documentação-online-0A66C2?style=flat-square&logo=readthedocs&logoColor=white)](https://souofrancisco.github.io/homemind/)
+[![Deploy da documentação](https://github.com/souofrancisco/homemind/actions/workflows/publish-docs.yml/badge.svg?branch=main)](https://github.com/souofrancisco/homemind/actions/workflows/publish-docs.yml)
+[![Docs CI](https://img.shields.io/badge/Docs_CI-MkDocs_strict-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/souofrancisco/homemind/actions/workflows/pr-docs.yml)
+[![CI geral](https://img.shields.io/badge/CI_geral-desativada-lightgrey?style=flat-square&logo=githubactions)](https://github.com/souofrancisco/homemind/blob/main/.github/workflows/ci.yml)
+[![CLI](https://img.shields.io/badge/CLI-Makefile-4C8C2B?style=flat-square&logo=gnubash&logoColor=white)](Makefile)
 
-## O que já funciona
+**Aveiro Tech City Hackathon 2026 · Desafio 3 — Altice Labs (Connected Home)**
 
-Validado no browser com dados **SIMULADOS** (FakeHome + seed de demo; evidência em [`docs/evidence/demo-web-2026-11-18/`](docs/evidence/demo-web-2026-11-18/README.md)):
+*Cada um paga o que usa. A casa trata do resto.*
 
-- Login (Authentik/OIDC) com papéis morador, senhorio e operador, e isolamento de dados entre eles.
-- Casa, quartos e zonas comuns; consumo por tomada com proveniência (medido / estimado / simulado).
-- Pergunta «De quem é esta conta?» com votação dos moradores (D-32) e efeito no orçamento.
-- Fatura do senhorio (pré-visualizar → registar → finalizar), repartição quarto/comum/resíduo, **4 recibos que somam a fatura** e recibo explicado.
-- Orçamento mensal com avisos a 50/80/100 %.
-
-**Ainda não / só em testes:** interface do assistente de IA, hardware real (MCP) validado ponta a ponta, push/offline, versionamento de políticas. Detalhe por fluxo: [`docs/functional-flows.md`](docs/functional-flows.md). Trabalho por fazer: [GitHub Project](https://github.com/users/souofrancisco/projects/1) e issue [#129](https://github.com/souofrancisco/homemind/issues/129).
+A **Conta Certa** ajuda a gerir a eletricidade em casas partilhadas: analisa consumos por tomada, identifica aparelhos de forma probabilística, pede confirmação quando há dúvidas e reparte a fatura em valores individuais explicáveis. Inclui orçamentos e notificações, sem dar ao senhorio acesso à presença ou aos horários dos moradores.
 
 ## Começar
 
-Requisitos: Docker (Compose v2), `make`, [`uv`](https://docs.astral.sh/uv/), Node 22+.
+**Requisitos:** Docker (Compose v2), Make, [uv](https://docs.astral.sh/uv/) e Node.js 22+.
 
 ```bash
-make setup      # dependências + app/.env (uma vez)
-make demo-up    # Authentik (Docker) + contas + base de demo + backend/frontend locais, ~20 s
+make setup       # Instalar dependências e criar app/.env
+make demo-up     # Iniciar a demonstração
 ```
 
-| Serviço | URL (omissão; portas em `app/.env`) |
+| Serviço | Endereço local |
 |---|---|
-| Aplicação | <http://localhost:5173> |
-| API · OpenAPI | <http://localhost:8000/docs> · `/healthz` |
-| Authentik | <http://localhost:9000> |
+| Aplicação | http://localhost:5173 |
+| API / Swagger | http://localhost:8000/docs |
+| Authentik | http://localhost:9000 |
 
-Contas de demonstração (só no Authentik local): `ana`, `bruno`, `carla`, `diogo` (moradores), `senhorio`, `operador` — palavra-passe `demo-conta-certa`.
+As portas são configuráveis em `app/.env`. A demo utiliza **dados simulados** (`FakeHome`), com autenticação local e lógica de negócio executada no backend.
 
-`make demo-reset` repõe a base de demo; `make down` pára tudo. Desenvolver com reload: `make auth-up`, depois `make backend` e `make frontend` em dois terminais. Detalhes, `.env` e migração dos comandos antigos: [`docs/development.md`](docs/development.md).
+**Contas da demo:** `ana`, `bruno`, `carla`, `diogo` (moradores), `senhorio` e `operador`.  
+**Palavra-passe local:** `demo-conta-certa`.
 
-> Os URLs/portas acima foram verificados com `BACKEND_PORT=18000 FRONTEND_PORT=15173 AUTHENTIK_PORT=19000` (as de omissão estavam ocupadas por `make dev` na máquina de teste); o mecanismo é o mesmo.
+## Comandos
 
-## Percurso da demo (≈5 min)
+| Comando | Função |
+|---|---|
+| `make help` / `make help-all` | Ver os comandos disponíveis, incluindo Docker e MCP |
+| `make demo-up` | Iniciar a demo |
+| `make demo-reset` | Repor o cenário simulado |
+| `make down` | Parar os serviços |
+| `make auth-up` | Iniciar Authentik |
+| `make backend` / `make frontend` | Desenvolvimento local com reload (em dois terminais) |
+| `make test` / `make lint` | Testes e análise estática |
+| `make check` | Validação local: lint, testes, contratos, build e Docker |
+| `make contracts` / `make build` | Gerar tipos OpenAPI e compilar o frontend |
 
-1. `ana`: **Hoje** (consumo e pedidos) → sino de **Notificações** → «De quem é esta conta?» → «É minha» → **Contas → Este mês** (definir o orçamento de 35 €).
-2. `senhorio`: **Contas** → fatura 120 € (01–18/11, fixo 15 €, 400 kWh) → pré-visualizar → registar → **Finalizar e repartir**. O **Hoje** do senhorio não mostra consumo detalhado, presença nem aparelhos.
-3. `ana`, `bruno`, `carla`, `diogo`: **Contas → Recibos** → «Porque pago isto?»; os quatro valores somam 120,00 €.
+Para desenvolvimento, executa `make auth-up` e depois `make backend` e `make frontend` em terminais separados. O CI geral está desativado; `make check` é a verificação local recomendada.
 
 ## Arquitetura
 
-Monorepo `app/`: **FastAPI + SQLite + barramento de eventos** (Python 3.12, Pydantic v2) e **React 19 + Vite + Mantine**; Authentik (OIDC) em Docker. Cada feature (`app/backend/src/homemind/features/<nome>/`) fala com as outras por `contracts/` e eventos de domínio, nunca por imports diretos. Visão geral: [`docs/architecture.md`](docs/architecture.md).
+**Frontend:** React 19, TypeScript, Vite e Mantine.  
+**Backend:** Python 3.12, FastAPI, Pydantic e SQLite, com contratos tipados e eventos de domínio.  
+**Autenticação:** Authentik (OIDC). **IoT:** adaptadores `McpHome` (Altice) e `FakeHome` (demo).
 
-## Equipa
+A identificação energética é probabilística; quando a evidência não chega, aplicam-se as regras de atribuição da casa. A cadeia completa com hardware real ainda requer validação.
 
-| | Pessoa | Área |
+## Documentação
+
+**[Documentação online](https://souofrancisco.github.io/homemind/)** · [Arquitetura](docs/architecture.md) · [Desenvolvimento](docs/development.md) · [Fluxos funcionais](docs/functional-flows.md)
+
+## Contribuidores
+
+| Nome | GitHub | Área |
 |---|---|---|
-| P1 | `brunovieira88` | MCP, energia, identificação de aparelhos |
-| P2 | `1Mii` | visão e presença |
-| P3 | `RafaelMat0s-Dev` | notificações e assistente |
-| P4 | `Amorim3000` | faturação, atribuição, alertas |
-| P5 | `souofrancisco` | arquitetura, frontend, integração, demo |
-
-Como trabalhamos (issue → worktree → PR; Claude Code e Codex): [`CLAUDE.md`](CLAUDE.md) e [`docs/ai-workflow.md`](docs/ai-workflow.md). Índice da documentação: [`docs/README.md`](docs/README.md).
-
-## Website / Documentação
-
-Documentação publicada (MkDocs + Material) em **<https://souofrancisco.github.io/homemind/>**. O conteúdo público vive em `docs/content/`; os restantes ficheiros de `docs/` (evidência, arquivo, referências, planos) **não são publicados**.
-
-```bash
-docker compose -f docs/compose.yml up docs      # pré-visualização em http://localhost:8100
-# sem Docker: python -m pip install -r docs/requirements.txt && mkdocs serve -f docs/mkdocs.yml
-mkdocs build -f docs/mkdocs.yml --strict        # validação (a mesma do CI)
-```
-
-- **PR para `main`:** `pr-docs.yml` corre `mkdocs build --strict` (check «MkDocs strict») e não publica.
-- **Push para `main`** que altere `docs/content/**`, `docs/mkdocs.yml`, `docs/requirements.txt` ou o workflow (ou execução manual): `publish-docs.yml` constrói o site e publica-o no GitHub Pages (ambiente `github-pages`).
-- **Manter:** alterar primeiro o documento canónico em `docs/`, depois a página publicada (cada uma indica a sua «Fonte canónica»). O site é **público**: nunca segredos, dados pessoais nem informação operacional sensível. Detalhes: [`docs/content/desenvolvimento/website.md`](docs/content/desenvolvimento/website.md).
-
-## Limitações conhecidas
-
-- Tudo na demo é **SIMULADO**; nada foi validado com hardware real nesta fase.
-- O código ObjectOS (motor de regras e gestos) foi removido na BASE-04 (#74); o histórico está em [`docs/architecture/migration.md`](docs/architecture/migration.md).
-- Sem CI geral ativa (o workflow `CI` está desativado); a verificação é `make check` local. Só os workflows de documentação (`pr-docs.yml`, `publish-docs.yml`) estão ativos.
+| Bruno Vieira | [@brunovieira88](https://github.com/brunovieira88) | MCP, energia e identificação de aparelhos |
+| Miguel Santos | [@1Mii](https://github.com/1Mii) | Visão e presença |
+| Francisco Correia | [@souofrancisco](https://github.com/souofrancisco) | Arquitetura, frontend e integração |
+| Afonso Santos | [@Amorim3000](https://github.com/Amorim3000) | Faturação, atribuição e alertas |
+| Rafael Matos | [@rafaelmat0s-dev](https://github.com/rafaelmat0s-dev) | Notificações e assistente |
