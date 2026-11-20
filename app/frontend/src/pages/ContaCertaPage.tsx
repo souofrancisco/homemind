@@ -286,7 +286,7 @@ export default function ContaCertaPage({ section }: { section: SectionId }) {
   );
   if (section === "houseRules") return (
     <Stack gap="xl">
-      <PageHeading title={screenLabels.houseRules} description="Regras que desligam uma tomada, propostas e votadas pelos moradores." />
+      <PageHeading title={screenLabels.houseRules} description="Regras que desligam uma tomada: as tuas, só para o teu quarto, e as da casa, votadas por todos os moradores." />
       <HouseRulesContent />
       {role === "tenant" && session.house && <HouseRulesCard householdId={session.house.id} canEdit />}
     </Stack>

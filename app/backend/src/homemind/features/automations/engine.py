@@ -11,7 +11,8 @@ Gatilhos (os únicos do contrato):
   `MAX_READING_GAP` entre leituras ou uma leitura não acima do limiar quebram a sequência; o fecho
   do consumo (`energy.consumption_closed`) também. Leituras fora de ordem ignoram-se.
 - `presence_changed`: só transições in↔out face ao estado IMEDIATAMENTE anterior do morador. A
-  primeira observação e qualquer transição que envolva `uncertain` só registam o estado.
+  primeira observação e qualquer transição que envolva `uncertain` só registam o estado. Uma
+  regra individual só dispara com as transições do próprio dono.
 
 Invariantes:
 - só regras `active` aprovadas, e só eventos desde a ativação (`active_since`): um evento anterior
@@ -33,6 +34,7 @@ from uuid import UUID
 from homemind.contracts import domain_events as de
 from homemind.contracts.agent import (
     AutomationRule,
+    AutomationScope,
     DeviceCapability,
     ExecutionStatus,
     TriggerKind,
@@ -172,6 +174,10 @@ class AutomationEngine:
             (ar.rule, TriggerKind.presence_changed)
             for ar in rules
             if ar.rule.trigger.kind is TriggerKind.presence_changed
+            and (
+                ar.rule.scope is AutomationScope.house
+                or ar.rule.owner_resident_id == event.data.resident_id
+            )
         ]
 
     # decisão ------------------------------------------------------------------------------

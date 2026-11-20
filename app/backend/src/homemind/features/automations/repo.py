@@ -10,7 +10,12 @@ from datetime import UTC, datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from homemind.contracts.agent import AutomationRule, AutomationStatus, AutomationVote
+from homemind.contracts.agent import (
+    AutomationRule,
+    AutomationScope,
+    AutomationStatus,
+    AutomationVote,
+)
 
 
 def iso(dt: datetime) -> str:
@@ -36,6 +41,26 @@ def active_tenants(conn: sqlite3.Connection, household_id: UUID, now: datetime) 
     return [UUID(r["resident_id"]) for r in rows]
 
 
+def tenant_room(
+    conn: sqlite3.Connection, household_id: UUID, resident_id: UUID, now: datetime
+) -> UUID | None:
+    """Quarto do inquilino ativo (da `membership`, o contrato pessoa–quarto); `None` se não for
+    inquilino ativo da casa."""
+    house = conn.execute(
+        "SELECT timezone FROM household WHERE id = ?", (str(household_id),)
+    ).fetchone()
+    if house is None:
+        return None
+    today = now.astimezone(ZoneInfo(house["timezone"])).date().isoformat()
+    row = conn.execute(
+        "SELECT room_id FROM membership WHERE household_id = ? AND resident_id = ?"
+        " AND role = 'tenant' AND status = 'active' AND starts_on <= ?"
+        " AND (ends_on IS NULL OR ends_on >= ?) AND room_id IS NOT NULL",
+        (str(household_id), str(resident_id), today, today),
+    ).fetchone()
+    return UUID(row["room_id"]) if row else None
+
+
 def insert_rule(
     conn: sqlite3.Connection,
     rule: AutomationRule,
@@ -49,8 +74,8 @@ def insert_rule(
     conn.execute(
         "INSERT INTO automation_rule (id, household_id, name, status, origin,"
         " created_by_resident_id, approved_by_resident_id, device_name, proposed_at, vote_round,"
-        " vote_open, vote_deadline, eligible_json, rev, json, updated_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?,1,1,?,?,1,?,?)",
+        " vote_open, vote_deadline, eligible_json, rev, json, updated_at, scope)"
+        " VALUES (?,?,?,?,?,?,?,?,?,1,1,?,?,1,?,?,'house')",
         (
             str(rule.id), str(rule.household_id), rule.name, rule.status.value, origin,
             str(rule.created_by_resident_id), None, device_name, iso(now), iso(deadline),
@@ -59,19 +84,53 @@ def insert_rule(
     )  # fmt: skip
 
 
+def insert_personal(
+    conn: sqlite3.Connection, rule: AutomationRule, *, origin: str, device_name: str, now: datetime
+) -> None:
+    """Regra individual: nasce `active`, aprovada pelo dono, sem ronda de votos (ver `0321`)."""
+    assert rule.owner_resident_id is not None and rule.approved_by_resident_id is not None
+    conn.execute(
+        "INSERT INTO automation_rule (id, household_id, name, status, origin,"
+        " created_by_resident_id, approved_by_resident_id, device_name, proposed_at, vote_round,"
+        " vote_open, vote_deadline, eligible_json, rev, json, updated_at, scope,"
+        " owner_resident_id) VALUES (?,?,?,?,?,?,?,?,?,1,0,?,?,1,?,?,'personal',?)",
+        (
+            str(rule.id), str(rule.household_id), rule.name, rule.status.value, origin,
+            str(rule.created_by_resident_id), str(rule.approved_by_resident_id), device_name,
+            iso(now), iso(now), json.dumps([str(rule.owner_resident_id)]),
+            rule.model_dump_json(), iso(now), str(rule.owner_resident_id),
+        ),
+    )  # fmt: skip
+
+
 def get_row(conn: sqlite3.Connection, household_id: UUID, rule_id: UUID) -> sqlite3.Row | None:
-    """Só a regra desta casa: a de outra é como se não existisse."""
+    """Só a regra desta casa: a de outra é como se não existisse. SEM filtro de privacidade (uma
+    individual é devolvida a quem a pedir): as rotas usam `visible_row`."""
     return conn.execute(
         "SELECT * FROM automation_rule WHERE id = ? AND household_id = ?",
         (str(rule_id), str(household_id)),
     ).fetchone()
 
 
-def list_rows(conn: sqlite3.Connection, household_id: UUID, limit: int) -> list[sqlite3.Row]:
+def visible_row(
+    conn: sqlite3.Connection, household_id: UUID, rule_id: UUID, viewer: UUID
+) -> sqlite3.Row | None:
+    """Como `get_row`, mas a individual de outro morador é como se não existisse."""
+    row = get_row(conn, household_id, rule_id)
+    if row is not None and row["scope"] == "personal" and row["owner_resident_id"] != str(viewer):
+        return None
+    return row
+
+
+def list_rows(
+    conn: sqlite3.Connection, household_id: UUID, viewer: UUID, limit: int
+) -> list[sqlite3.Row]:
+    """As da casa e as individuais do próprio `viewer` (as dos outros nunca aparecem)."""
     return conn.execute(
         "SELECT * FROM automation_rule WHERE household_id = ?"
+        " AND (scope = 'house' OR owner_resident_id = ?)"
         " ORDER BY proposed_at DESC, rowid DESC LIMIT ?",
-        (str(household_id), limit),
+        (str(household_id), str(viewer), limit),
     ).fetchall()
 
 
@@ -165,6 +224,19 @@ def suspend(
     return cur.rowcount == 1
 
 
+def reactivate_personal(
+    conn: sqlite3.Connection, row: sqlite3.Row, *, rule: AutomationRule, now: datetime
+) -> bool:
+    """CAS `disabled → active` de uma individual (sem votação) sobre a versão lida."""
+    cur = conn.execute(
+        "UPDATE automation_rule SET status = 'active', rev = rev + 1, json = ?, updated_at = ?"
+        " WHERE id = ? AND rev = ? AND status = 'disabled' AND scope = 'personal'"
+        " AND vote_open = 0",
+        (rule.model_dump_json(), iso(now), row["id"], row["rev"]),
+    )
+    return cur.rowcount == 1
+
+
 def open_round(
     conn: sqlite3.Connection,
     row: sqlite3.Row,
@@ -216,10 +288,11 @@ def log(
 
 
 def active_rules(
-    conn: sqlite3.Connection, household_id: UUID
+    conn: sqlite3.Connection, household_id: UUID, now: datetime
 ) -> list[tuple[AutomationRule, datetime]]:
     """Regras que o motor pode executar: `active`, aprovadas e sem votação aberta, com o instante
-    da última ativação (do log). Sem ativação registada, a regra não conta."""
+    da última ativação (do log). Sem ativação registada, a regra não conta. Uma individual só
+    conta enquanto o dono for inquilino ativo da casa em `now`."""
     rows = conn.execute(
         "SELECT r.json, (SELECT max(l.at) FROM automation_log l WHERE l.rule_id = r.id"
         " AND l.to_status = 'active') AS active_since FROM automation_rule r"
@@ -227,8 +300,14 @@ def active_rules(
         " AND r.approved_by_resident_id IS NOT NULL ORDER BY r.proposed_at, r.rowid",
         (str(household_id),),
     ).fetchall()
-    return [
+    tenants = set(active_tenants(conn, household_id, now))
+    found = [
         (AutomationRule.model_validate_json(r["json"]), datetime.fromisoformat(r["active_since"]))
         for r in rows
         if r["active_since"] is not None
+    ]
+    return [
+        (rule, since)
+        for rule, since in found
+        if rule.scope is AutomationScope.house or rule.owner_resident_id in tenants
     ]

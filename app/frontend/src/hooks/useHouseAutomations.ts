@@ -7,7 +7,7 @@ import {
 
 type State = { key: string; rules: AutomationView[] | null; plugs: AutomationPlugView[] };
 
-/** Regras da casa (SAFE-04). Só atualiza a lista com o que o servidor devolve; um erro
+/** Regras da casa e regras individuais (SAFE-04). Só atualiza a lista com o que o servidor devolve; um erro
  *  (incl. 409 de voto repetido ou limite de propostas) não altera nada e a lista é relida. */
 export function useHouseAutomations(householdId: string | undefined) {
   const [state, setState] = useState<State | null>(null);
@@ -46,13 +46,17 @@ export function useHouseAutomations(householdId: string | undefined) {
     vote: (id: string, approve: boolean) =>
       act(id, () => voteAutomation(householdId!, id, approve), approve ? "Voto a favor registado." : "Voto contra registado."),
     suspend: (id: string) => act(id, () => suspendAutomation(householdId!, id), "Regra suspensa."),
-    reactivate: (id: string) => act(id, () => reactivateAutomation(householdId!, id), "Nova votação aberta para reativar a regra."),
+    reactivate: (rule: AutomationView) =>
+      act(rule.id, () => reactivateAutomation(householdId!, rule.id),
+        rule.scope === "personal" ? "Regra reativada." : "Nova votação aberta para reativar a regra."),
     propose: async (body: AutomationProposeIn): Promise<boolean> => {
       setBusy("new");
       try {
         await proposeAutomation(householdId!, body);
         notifications.clean();
-        notifications.show({ color: "green", title: "Proposta criada", message: "Ficou registada com o teu voto a favor.", autoClose: 4000 });
+        notifications.show(body.scope === "personal"
+          ? { color: "green", title: "Regra criada", message: "Já está ativa e só tu a vês.", autoClose: 4000 }
+          : { color: "green", title: "Proposta criada", message: "Ficou registada com o teu voto a favor.", autoClose: 4000 });
         return true;
       } catch { return false; }
       finally { setBusy(null); reload(); }

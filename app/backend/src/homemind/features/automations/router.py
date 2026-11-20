@@ -1,4 +1,6 @@
-"""Regras da casa votadas (SAFE-04): propor, listar, votar, suspender e reativar.
+"""Regras da casa votadas por todos e regras individuais (SAFE-04): propor, listar, votar,
+suspender e reativar. Uma regra individual (`scope=personal`) é privada do dono: para os outros
+moradores não existe (404 e fora das listas).
 
 Só inquilinos (`Resource.automation`): o senhorio e o operador recebem 403 e quem não é membro da
 casa, 404 (padrão de `core/access.py`). O residente vem sempre do token; uma regra de outra casa
@@ -30,7 +32,7 @@ from homemind.core.access import (
 from homemind.core.db import Database
 from homemind.features.agent.config import get_agent_settings
 from homemind.features.agent.devices import select_directory
-from homemind.features.automations import service
+from homemind.features.automations import repo, service
 from homemind.features.automations.engine import AutomationEngine
 from homemind.features.automations.runner import AutomationRunner
 from homemind.features.automations.service import (
@@ -133,10 +135,14 @@ async def _run(db: Database, state: State, fn) -> AutomationView:
     return await _finish(state, result)
 
 
-async def _known_plugs(db: Database, state: State, household_id: UUID) -> list[AutomationPlugView]:
+async def _known_plugs(
+    db: Database, state: State, household_id: UUID, resident_id: UUID, now: datetime
+) -> list[AutomationPlugView]:
     """Tomadas que o servidor aceita como gatilho/alvo (a mesma fonte da validação de `propose`).
     Casa de demonstração: as do diretório simulado e as tomadas SIMULADAS do catálogo da casa (a
-    tomada viva da demo web tem outro id que a do cenário offline). Casa real: só as reais."""
+    tomada viva da demo web tem outro id que a do cenário offline). Casa real: só as reais.
+    `room_id` vem do diretório ou, na falta, do catálogo `device`; `personal_allowed` marca as
+    tomadas do quarto de quem pede (regra individual)."""
     row = await db.run(
         lambda c: c.execute(
             "SELECT source_kind FROM household WHERE id = ?", (str(household_id),)
@@ -146,7 +152,21 @@ async def _known_plugs(db: Database, state: State, household_id: UUID) -> list[A
     devices = select_directory(state, household_id, source_kind).actuators(household_id)
     if source_kind != "demo":  # uma casa real nunca usa dispositivos simulados
         devices = [d for d in devices if not d.simulated]
-    plugs = {d.id: (d.name, d.simulated) for d in devices if d.kind is DeviceKind.plug}
+    catalog_rooms = await db.run(
+        lambda c: {
+            UUID(r["id"]): UUID(r["room_id"]) if r["room_id"] else None
+            for r in c.execute(
+                "SELECT id, room_id FROM device WHERE household_id = ? AND kind = 'plug'",
+                (str(household_id),),
+            )
+        }
+    )
+    my_room = await db.run(lambda c: repo.tenant_room(c, household_id, resident_id, now))
+    plugs = {
+        d.id: (d.name, d.simulated, d.room_id or catalog_rooms.get(d.id))
+        for d in devices
+        if d.kind is DeviceKind.plug
+    }
     if source_kind == "demo":
         rows = await db.run(
             lambda c: c.execute(
@@ -156,19 +176,23 @@ async def _known_plugs(db: Database, state: State, household_id: UUID) -> list[A
             ).fetchall()
         )
         for r in rows:
-            plugs.setdefault(UUID(r["id"]), (r["name"], True))
+            plugs.setdefault(UUID(r["id"]), (r["name"], True, catalog_rooms.get(UUID(r["id"]))))
     return [
-        AutomationPlugView(id=i, name=n, simulated=sim)
-        for i, (n, sim) in sorted(plugs.items(), key=lambda kv: (kv[1][0], str(kv[0])))
-    ]
+        AutomationPlugView(
+            id=i, name=n, simulated=sim, room_id=room,
+            personal_allowed=room is not None and room == my_room,
+        )
+        for i, (n, sim, room) in sorted(plugs.items(), key=lambda kv: (kv[1][0], str(kv[0])))
+    ]  # fmt: skip
 
 
 @router.get("/households/{household_id}/automations/plugs")
 async def list_automation_plugs(
-    access: ReadAccess, db: DbDep, state: StateDep
+    access: ReadAccess, db: DbDep, clock: ClockDep, state: StateDep
 ) -> list[AutomationPlugView]:
-    """As tomadas que a casa pode usar numa regra (o que o servidor aceitaria em `POST`)."""
-    return await _known_plugs(db, state, access.household_id)
+    """As tomadas que a casa pode usar numa regra (o que o servidor aceitaria em `POST`).
+    `personal_allowed` diz quais servem numa regra individual de quem pede (as do seu quarto)."""
+    return await _known_plugs(db, state, access.household_id, access.resident_id, clock())
 
 
 @router.get("/households/{household_id}/automations")
@@ -179,7 +203,8 @@ async def list_automations(
     state: StateDep,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> list[AutomationView]:
-    """As regras da casa, da mais recente à mais antiga. Uma votação fora de prazo resolve-se
+    """As regras da casa e as individuais de quem pede (nunca as dos outros), da mais recente à
+    mais antiga. Uma votação fora de prazo resolve-se
     aqui (rejeitada), de forma idempotente."""
     now = clock()
     views, events = await db.run(
@@ -193,13 +218,16 @@ async def list_automations(
 async def propose_automation(
     body: AutomationProposeIn, access: WriteAccess, db: DbDep, clock: ClockDep, state: StateDep
 ) -> AutomationView:
-    """Propõe uma regra: fica `proposed`, por votar, e nada é executado. O alvo tem de ser uma
-    tomada conhecida da casa (a lâmpada nunca)."""
+    """Propõe uma regra da casa: fica `proposed`, por votar (todos os moradores têm de aprovar), e
+    nada é executado. O alvo tem de ser uma tomada conhecida da casa (a lâmpada nunca). Com
+    `scope=personal` cria uma regra individual: `active` na hora, privada, só em tomadas do
+    quarto do próprio (`400 invalid_target` nas restantes)."""
     household_id = access.household_id
-    known = await _known_plugs(db, state, household_id)
-    plugs = {p.id: p.name for p in known}
-    origin = Origin.simulated if any(p.simulated for p in known) else Origin.real
     now = clock()
+    known = await _known_plugs(db, state, household_id, access.resident_id, now)
+    plugs = {p.id: p.name for p in known}
+    plug_rooms = {p.id: p.room_id for p in known}
+    origin = Origin.simulated if any(p.simulated for p in known) else Origin.real
     try:
         return await _run(
             db,
@@ -212,6 +240,7 @@ async def propose_automation(
                 plugs=plugs,
                 origin=origin,
                 now=now,
+                plug_rooms=plug_rooms,
             ),
         )
     except ValidationError:  # gatilho incoerente (ex.: `power_above` sem limiar)
@@ -248,7 +277,8 @@ async def suspend_automation(
     clock: ClockDep,
     state: StateDep,
 ) -> AutomationView:
-    """Suspende (`active → disabled`) na hora; qualquer inquilino da casa o pode fazer."""
+    """Suspende (`active → disabled`) na hora; qualquer inquilino da casa o pode fazer numa regra
+    da casa (veto); uma individual só o dono."""
     now = clock()
     return await _run(
         db,
@@ -261,7 +291,8 @@ async def suspend_automation(
 async def reactivate_automation(
     automation_id: UUID, access: WriteAccess, db: DbDep, clock: ClockDep, state: StateDep
 ) -> AutomationView:
-    """Abre uma nova votação para reativar uma regra suspensa; só a maioria a torna `active`."""
+    """Abre uma nova votação para reativar uma regra da casa suspensa (só a unanimidade a torna
+    `active`); uma individual suspensa o dono reativa-a na hora, sem votação."""
     now = clock()
     return await _run(
         db,

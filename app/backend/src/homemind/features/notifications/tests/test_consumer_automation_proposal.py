@@ -7,7 +7,7 @@ import pytest
 
 from homemind.contracts import domain_events as de
 from homemind.contracts import fixtures as fx
-from homemind.contracts.agent import AutomationStatus, RuleVerdict
+from homemind.contracts.agent import AutomationScope, AutomationStatus, RuleVerdict
 from homemind.contracts.common import Origin, Provenance, ValueKind, replace, stable_id
 from homemind.contracts.notification import (
     NotificationKind,
@@ -72,7 +72,9 @@ def test_cria_aviso_da_casa_sem_botoes_com_o_ref_da_regra(seeded):
     assert n.actions == [] and n.responder_ids == []
     assert (n.ref.type, n.ref.id) == (RefType.automation, ev.data.id)
     assert n.expires_at == NOW + timedelta(hours=24)
-    assert ev.data.name in n.body and "maioria" in n.body and "nada é executado" in n.body
+    assert (
+        ev.data.name in n.body and "todos os moradores" in n.body and "nada é executado" in n.body
+    )
     assert "SIMULADO" in n.body
     assert len(created_events(seeded)) == 1
 
@@ -150,3 +152,23 @@ def test_texto_do_gatilho_em_portugues_correto():
     assert "desligar uma tomada quando a potência passar de 1500 W durante 300 s." in bodies[0]
     assert "desligar uma tomada quando mudar quem está em casa." in bodies[1]
     assert not any(" ao a " in b or " ao mudar" in b for b in bodies)
+
+
+def test_regra_individual_nao_avisa_ninguem(seeded):
+    rule = replace(
+        fx.automation(),
+        status=AutomationStatus.active,
+        approved_by_resident_id=fx.ANA,
+        created_by_resident_id=fx.ANA,
+        scope=AutomationScope.personal,
+        owner_resident_id=fx.ANA,
+    )
+    ev = de.AutomationProposed(ts=fx.T0, household_id=fx.HOUSEHOLD, provenance=SIM, data=rule)
+    _go(seeded, ev)
+    assert all_notifications(seeded) == []
+    disabled = replace(rule, status=AutomationStatus.disabled)  # nem como «reativação»
+    _go(
+        seeded,
+        de.AutomationProposed(ts=fx.T0, household_id=fx.HOUSEHOLD, provenance=SIM, data=disabled),
+    )
+    assert all_notifications(seeded) == []

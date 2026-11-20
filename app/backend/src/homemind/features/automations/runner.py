@@ -146,9 +146,8 @@ class AutomationRunner:
         event = stored.event
         with self._lock:
             if event.id not in self._decided:
-                rules = [
-                    ActiveRule(r, since) for r, since in repo.active_rules(conn, event.household_id)
-                ]
+                found = repo.active_rules(conn, event.household_id, event.ts)
+                rules = [ActiveRule(r, since) for r, since in found]
                 self._decided[event.id] = self.engine.on_event(event, rules)
                 while len(self._decided) > _SEEN_MAX:
                     self._decided.popitem(last=False)
@@ -187,7 +186,7 @@ class AutomationRunner:
                 if ev.household_id not in rules:
                     rules[ev.household_id] = [
                         ActiveRule(r, since)
-                        for r, since in repo.active_rules(conn, ev.household_id)
+                        for r, since in repo.active_rules(conn, ev.household_id, ev.ts)
                     ]
                 self.engine.on_event(ev, rules[ev.household_id])
                 n += 1
@@ -264,6 +263,11 @@ class AutomationRunner:
             or row["status"] != "active"
             or row["vote_open"]
             or row["approved_by_resident_id"] is None
+            or (
+                row["scope"] == "personal"  # o dono que saiu da casa já não tem regras a correr
+                and UUID(row["owner_resident_id"])
+                not in repo.active_tenants(conn, f.household_id, self.clock())
+            )
         ):
             return None
         return repo.rule_of(row), Origin(row["origin"]), house["source_kind"]

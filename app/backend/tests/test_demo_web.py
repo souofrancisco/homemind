@@ -47,6 +47,7 @@ def test_copia_web_ancorada_no_relógio_e_com_catálogo_real(roots):
         assert datetime.now(UTC) - datetime.fromisoformat(recent) < timedelta(minutes=30)
         device = c.execute(
             "SELECT role,room_id,name FROM device WHERE name LIKE '%SIMULADA%'"
+            " AND role='room_meter'"
         ).fetchone()
         assert device[0] == "room_meter" and "SIMULADA" in device[2]
         assert c.execute("SELECT count(*) FROM appliance").fetchone()[0] >= 8
