@@ -753,39 +753,50 @@ def _votes(*pairs: tuple[UUID, bool]) -> list[agent.AutomationVote]:
     ]
 
 
-@pytest.mark.parametrize("n", [1, 2, 3, 5])
-def test_rule_approval_needs_every_eligible_resident(n):
+@pytest.mark.parametrize(("n", "majority"), [(1, 1), (2, 2), (3, 2), (4, 3), (5, 3)])
+def test_absolute_majority_is_more_than_half(n, majority):
+    assert agent.absolute_majority(n) == majority
     ids = [stable_id("m", str(i)) for i in range(n)]
-    out = agent.rule_approval_outcome(_votes(*[(r, True) for r in ids[:-1]]), ids)
-    assert out.verdict is agent.RuleVerdict.pending or n == 1
-    out = agent.rule_approval_outcome(_votes(*[(r, True) for r in ids]), ids)
-    assert out.verdict is agent.RuleVerdict.approved and out.votes_needed == n and out.decided
+    out = agent.rule_approval_outcome(_votes(*[(r, True) for r in ids[: majority - 1]]), ids)
+    assert out.verdict is agent.RuleVerdict.pending or majority == 1
+    out = agent.rule_approval_outcome(_votes(*[(r, True) for r in ids[:majority]]), ids)
+    assert out.verdict is agent.RuleVerdict.approved and out.majority == majority and out.decided
 
 
-def test_rule_outcome_rejects_on_the_first_vote_against():
-    ids = [stable_id("m", str(i)) for i in range(4)]
-    one = agent.rule_approval_outcome(_votes((ids[0], True), (ids[1], False)), ids)
-    assert one.verdict is agent.RuleVerdict.rejected and (one.votes_for, one.votes_against) == (
-        1,
-        1,
+def test_rule_outcome_rejects_as_soon_as_majority_is_impossible():
+    ids = [stable_id("m", str(i)) for i in range(4)]  # maioria 3: 2 contra chegam
+    one = agent.rule_approval_outcome(_votes((ids[0], False)), ids)
+    assert one.verdict is agent.RuleVerdict.pending
+    two = agent.rule_approval_outcome(_votes((ids[0], False), (ids[1], False)), ids)
+    assert two.verdict is agent.RuleVerdict.rejected and (two.votes_for, two.votes_against) == (
+        0,
+        2,
     )
-    alone = agent.rule_approval_outcome(_votes((ids[0], False)), ids[:2])
-    assert alone.verdict is agent.RuleVerdict.rejected  # um contra basta, mesmo sem os outros
+    ids2 = ids[:2]  # maioria 2: um contra chega
     assert (
-        agent.rule_approval_outcome(_votes((ids[0], True)), ids[:2]).verdict
+        agent.rule_approval_outcome(_votes((ids2[0], False)), ids2).verdict
+        is agent.RuleVerdict.rejected
+    )
+    ids3 = ids[:3]  # maioria 2: um contra não chega, dois sim
+    assert (
+        agent.rule_approval_outcome(_votes((ids3[0], False)), ids3).verdict
         is agent.RuleVerdict.pending
     )
+    assert (
+        agent.rule_approval_outcome(_votes((ids3[0], False), (ids3[1], False)), ids3).verdict
+        is agent.RuleVerdict.rejected
+    )
 
 
-def test_rule_outcome_expiry_without_all_votes_rejects_but_unanimity_still_wins():
-    ids = [stable_id("m", str(i)) for i in range(5)]
-    short = _votes(*[(r, True) for r in ids[:4]])  # 4 de 5 não chegam
+def test_rule_outcome_expiry_without_majority_rejects_but_majority_still_wins():
+    ids = [stable_id("m", str(i)) for i in range(5)]  # maioria 3
+    short = _votes((ids[0], True), (ids[1], True))
     assert agent.rule_approval_outcome(short, ids).verdict is agent.RuleVerdict.pending
     assert (
         agent.rule_approval_outcome(short, ids, expired=True).verdict is agent.RuleVerdict.rejected
     )
     assert agent.rule_approval_outcome([], ids, expired=True).verdict is agent.RuleVerdict.rejected
-    full = _votes(*[(r, True) for r in ids])
+    full = _votes((ids[0], True), (ids[1], True), (ids[2], True))
     assert (
         agent.rule_approval_outcome(full, ids, expired=True).verdict is agent.RuleVerdict.approved
     )
@@ -794,12 +805,12 @@ def test_rule_outcome_expiry_without_all_votes_rejects_but_unanimity_still_wins(
 def test_rule_outcome_with_fixture_votes_and_invalid_votes():
     four = [fx.ANA, fx.BRUNO, fx.CARLA, fx.DIOGO]
     out = agent.rule_approval_outcome(fx.automation_votes(), four)
-    assert (out.verdict, out.votes_for, out.votes_against, out.votes_needed) == (
-        agent.RuleVerdict.rejected,
+    assert (out.verdict, out.votes_for, out.votes_against, out.majority) == (
+        agent.RuleVerdict.pending,
         2,
         1,
-        4,
-    )  # a Carla votou contra: a unanimidade já é impossível
+        3,
+    )  # 2 a favor < maioria de 3
     with pytest.raises(ValueError):
         agent.rule_approval_outcome(_votes((fx.ANA, True), (fx.ANA, False)), four)
     with pytest.raises(ValueError):
@@ -955,16 +966,3 @@ def _types(ann):
 
     args = get_args(ann)
     return [ann, *[x for a in args for x in _types(a)]] if args else [ann]
-
-
-def test_automation_scope_defaults_to_house_and_personal_needs_its_owner():
-    base = fx.automation().model_dump(mode="json")
-    base.pop("scope", None), base.pop("owner_resident_id", None)  # JSON de uma regra antiga
-    old = agent.AutomationRule.model_validate(base)
-    assert old.scope is agent.AutomationScope.house and old.owner_resident_id is None
-    personal = {**base, "scope": "personal", "owner_resident_id": str(fx.BRUNO)}
-    ok = agent.AutomationRule.model_validate(personal)
-    assert ok.scope is agent.AutomationScope.personal and ok.owner_resident_id == fx.BRUNO
-    bad(agent.AutomationRule, **{**base, "scope": "personal"})  # sem dono
-    bad(agent.AutomationRule, **{**personal, "owner_resident_id": str(fx.ANA)})  # dono != autor
-    bad(agent.AutomationRule, **{**base, "owner_resident_id": str(fx.BRUNO)})  # da casa com dono

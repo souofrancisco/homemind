@@ -284,7 +284,7 @@ def compose_automation_proposal(
         else "Nova regra da casa para votar",
         body=_tag(
             f"Foi proposta {what} «{rule.name}»: desligar uma tomada {_trigger_text(rule)}. "
-            "Só passa a valer se todos os moradores votarem a favor em 24 h; "
+            "Só passa a valer se a maioria dos moradores votar a favor em 24 h; "
             "até lá nada é executado.",
             origin,
         ),

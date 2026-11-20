@@ -177,7 +177,7 @@ class AutomationExecutedData(ContractModel):
 
 class AutomationVoteDecidedData(ContractModel):
     """A votação de uma regra fechou (SAFE-04): só o veredicto e as contagens, nunca quem votou
-    o quê. `rejected` com `expired=False` = um voto contra; com `expired=True` = prazo."""
+    o quê. `rejected` com `expired=False` = maioria impossível; com `expired=True` = prazo."""
 
     rule_id: UUID
     verdict: Literal[RuleVerdict.approved, RuleVerdict.rejected]

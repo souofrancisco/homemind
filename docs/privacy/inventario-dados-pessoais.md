@@ -18,7 +18,7 @@ Fonte de verdade das tabelas: `app/backend/src/homemind/core/migrations/`. Base 
 | Consumo e atribuição | `domain_event` `energy.*`, `billing.*`; `billing_consumption`, `billing_attribution`, `billing_confirmation`, `billing_allocation*`, `billing_contestation`, `billing_budget`, aparelhos (`appliance*`, dono declarado) | O próprio os seus; o senhorio só totais por quarto | Telemetria em bruto 90 dias (`RETENTION_TELEMETRY_DAYS`, PROPOSTA); evidência financeira **sem expurgo** (trigger da base) | Nunca se apaga o que explica uma cobrança; prazo legal por fixar (P-08) |
 | Notificações | `notification`, `notification_read`, `notification_preferences` | O destinatário (e as da casa, os moradores) | Sem expurgo (PLANEADO) | **Não tocadas** pela eliminação de presença (módulo de P3): uma pergunta «estás em casa?» já enviada fica |
 | Assistente | `agent_message`, `agent_action*` | O próprio | Mensagens: 50 por morador e 30 dias (`AGENT_HISTORY_*`, P-25) | Corte ao gravar; nunca vai ao LLM |
-| Regras da casa e regras individuais (D-39; as individuais só o dono as vê) | `automation_rule`, `automation_vote`, `automation_log` | Moradores da casa | Sem expurgo | — |
+| Regras da casa | `automation_rule`, `automation_vote`, `automation_log` | Moradores da casa | Sem expurgo | — |
 | Segurança (alarme) | `domain_event` `safety.*` | Moradores da casa | Sem expurgo | — |
 | Logs da aplicação | Ficheiros/consola do backend | Operação | Não definido | Só metadados, nunca pessoas, MAC, frames nem segredos |
 | Segredos | `app/.env`, `app/.mcp-auth/` (fora do Git) | Operação | — | Nunca em logs, erros, testes nem docs |
