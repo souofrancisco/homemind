@@ -44,7 +44,7 @@ sequenceDiagram
   E->>B: consumption_detected (location=common, owner=Bruno)
   B->>B: regra da casa = «perguntar» e custo acima do limiar
   B->>N: confirmation_needed (event_id, custo estimado)
-  N->>U: notification.created «De quem é esta conta?» [É minha] [É de todos] [Não sei] [É de outra pessoa]
+  N->>U: notification.created «De quem é esta conta?» [É minha] [Escolher responsável(eis)] [Não sei]
   U->>N: respond(action_id = mine)
   N->>N: guarda o voto; confirmation_outcome = self_claimed → status = actioned
   N->>B: notification.responded (outcome decidido)
@@ -55,9 +55,9 @@ sequenceDiagram
 
 Regras:
 
-- **Votação (D-32, prevalece sobre a regra antiga «primeira resposta vence»):** vota qualquer **inquilino ativo da casa**, uma vez. Um «É minha» fecha (paga quem assumiu). «É de outra pessoa» (`other` + alvo) só decide quando **pelo menos metade** dos elegíveis (arredondado para cima) escolheu o mesmo alvo; se o próprio assumir antes, fecha com ele. Todos votaram sem decisão, ou 24 h sem decisão → **por todos**. Fonte única: `confirmation_outcome`.
+- **Votação (D-32, prevalece sobre a regra antiga «primeira resposta vence»):** vota qualquer **inquilino ativo da casa**, uma vez. Um «É minha» fecha (paga quem assumiu). «Escolher responsável(eis)» (`other` + grupo, D-38) só decide quando **pelo menos metade** dos elegíveis (arredondado para cima) escolheu exatamente o mesmo grupo, que divide o consumo por igual; se o próprio assumir antes, fecha com ele. Todos votaram sem decisão, ou 24 h sem decisão → **por todos**. Fonte única: `confirmation_outcome`.
 - Cada voto emite `notification.responded` com `outcome`; billing só cria a `Attribution` quando `outcome.decided`. Sem decisão até `expires_at`, billing aplica a divisão por todos pelo seu próprio prazo.
-- «Não sei» e «É de todos» contam como votos (para «votaram todos»), mas não decidem sozinhos.
+- «Não sei» (e «É de todos», só em votações antigas) contam como votos (para «votaram todos»), mas não decidem sozinhos.
 - Em `HOME_BACKEND=fake` ou com leituras `simulated`, a atribuição resultante é `simulated` e a notificação diz-o.
 
 ### Estados do consumo e da notificação

@@ -441,11 +441,9 @@ def _confirmation(
             household_id=fx.HOUSEHOLD,
             consumption_event_id=event_id,
             target_type=(
-                AttributionTarget.common
-                if outcome.resident_id is None
-                else AttributionTarget.resident
+                AttributionTarget.resident if outcome.resident_ids else AttributionTarget.common
             ),
-            target_resident_id=outcome.resident_id,
+            target_resident_id=outcome.resident_ids[0] if outcome.resident_ids else None,
             method=AttributionMethod.equal_fallback if expired else AttributionMethod.confirmation,
             provenance=SIM_MEASURED,
             decided_by=(

@@ -202,7 +202,7 @@ Regras transversais: a identidade é o `sub` do token → `resident` → members
 |---|---|---|---|
 | `GET` | `/api/households/{household_id}/notifications?status&scope&limit` | T, L (as suas) | **IMPLEMENTADO.** Pessoais + da casa, como `NotificationView` (com `voting`); o senhorio só recebe os tipos da allow-list (hoje `info`). Caminho por casa; revisão P5 |
 | `POST` | `/api/households/{household_id}/notifications/{id}/read` | dono | **IMPLEMENTADO.** Caminho por casa; revisão P5 |
-| `POST` | `/api/households/{household_id}/notifications/{id}/respond` | T autorizado | **IMPLEMENTADO.** `NotificationRespondIn` `{ "action_id": "mine" \| "everyone" \| "unknown" \| "other", "target_resident_id"? }` (alvo só com `other`, outro inquilino elegível); `409 already_responded` (já votou / já fechada), `409 notification_expired`, `400 invalid_request` (alvo inválido). Caminho por casa; revisão P5 |
+| `POST` | `/api/households/{household_id}/notifications/{id}/respond` | T autorizado | **IMPLEMENTADO.** `NotificationRespondIn` `{ "action_id": "mine" \| "unknown" \| "other", "target_resident_ids": [] }` (grupo só com `other`: inquilinos elegíveis, pode incluir quem vota mas não só ele; D-38); `409 already_responded` (já votou / já fechada), `409 notification_expired`, `400 invalid_request` (alvo inválido). Caminho por casa; revisão P5 |
 | `GET` `PUT` | `/api/households/{household_id}/notification-preferences` | T, L | **IMPLEMENTADO.** Silêncio noturno e tipos desligados, por casa (`security_alert` não se desliga: `400`). Caminho por casa; revisão P5 |
 | `WS` | (caminho a acordar) | todos | **PLANEADO.** O `/api/ws` antigo foi removido em BASE-04; mensagens futuras: `notification`, `notification_update` |
 

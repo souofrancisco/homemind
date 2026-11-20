@@ -77,6 +77,7 @@ def apply(
             s
             for s in shares
             if s.resident_id is not None
+            and not s.group
             and s.consumption_id is not None
             and is_proven_heating(
                 consumptions[s.consumption_id], residents.get(s.resident_id), heating
@@ -92,7 +93,7 @@ def apply(
             left[room] -= take
     out: list[EnergyShare] = []
     for s in shares:
-        take = covered.get(s.consumption_id, 0) if s.resident_id is not None else 0
+        take = covered.get(s.consumption_id, 0) if s.resident_id is not None and not s.group else 0
         if not take:
             out.append(s)
             continue

@@ -49,6 +49,26 @@ class EnergyShare:
     provenance: Provenance
     consumption_id: UUID | None = field(default=None, compare=False)  # evidência (BILL-05)
     solidarity: bool = False  # parte coberta pelo plafond solidário (BILL-03): de todos
+    group: bool = False  # parte de um consumo decidido para um grupo (D-32): sem plafond
+
+
+def split_group(energy_wh: int, members: Sequence[UUID]) -> dict[UUID, int]:
+    """Um consumo decidido para um grupo divide-se por igual entre os seus membros; o Wh que
+    sobra vai para os menores ids (determinístico: o fecho e o recibo dão sempre o mesmo)."""
+    return largest_remainder(energy_wh, dict.fromkeys(members, 1))
+
+
+def shares_for(a: Attribution, event: ConsumptionEvent) -> list[EnergyShare]:
+    """As partes de energia de uma atribuição: uma por morador do grupo, senão uma só."""
+    wh = event.energy_wh or 0
+    if a.target_type is AttributionTarget.group:
+        return [
+            EnergyShare(r, part, event.provenance, event.id, group=True)
+            for r, part in split_group(wh, a.target_resident_ids).items()
+            if part
+        ]
+    resident = a.target_resident_id if a.target_type is AttributionTarget.resident else None
+    return [EnergyShare(resident, wh, event.provenance, event.id)]
 
 
 def shares_from_attributions(
@@ -65,8 +85,7 @@ def shares_from_attributions(
             raise BillInconsistentError("atribuição sem o consumo correspondente")
         if event.status is not ConsumptionStatus.closed or not event.energy_wh:
             continue
-        resident = a.target_resident_id if a.target_type is AttributionTarget.resident else None
-        out.append(EnergyShare(resident, event.energy_wh, event.provenance, event.id))
+        out.extend(shares_for(a, event))
     return out
 
 

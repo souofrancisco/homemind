@@ -65,12 +65,12 @@ export default function NotificationBell({ householdId, unread, onChanged }: {
                 <Text fw={700} fz={15} mt={vote ? 8 : 0}>{n.title}</Text>
                 <Text fz={14} c="dimmed" lineClamp={3} mt={2}>{n.body}</Text>
                 {vote && <div className="conta-notif-actions">
-                  {primary && <Button fullWidth mih={44} loading={busy === n.id} onClick={() => void act(n.id, () => respondToNotification(householdId, n.id, { action_id: primary.id, target_resident_id: null }))}>{primary.label}</Button>}
+                  {primary && <Button fullWidth mih={44} loading={busy === n.id} onClick={() => void act(n.id, () => respondToNotification(householdId, n.id, { action_id: primary.id, target_resident_ids: [] }))}>{primary.label}</Button>}
                   <div className="conta-notif-actions-row">
                     {rest.map((a) => <Button key={a.id} variant="default" fullWidth mih={44} disabled={busy === n.id}
-                      onClick={() => void act(n.id, () => respondToNotification(householdId, n.id, { action_id: a.id, target_resident_id: null }))}>{a.label}</Button>)}
+                      onClick={() => void act(n.id, () => respondToNotification(householdId, n.id, { action_id: a.id, target_resident_ids: [] }))}>{a.label}</Button>)}
                   </div>
-                  <Anchor component={Link} to="/notificacoes" fz={13} c="inherit" onClick={() => setOpened(false)}>Mais opções (É de outra pessoa)</Anchor>
+                  <Anchor component={Link} to="/notificacoes" fz={13} c="inherit" onClick={() => setOpened(false)}>Escolher responsável(eis)</Anchor>
                 </div>}
                 {!vote && n.can_respond && (n.status === "unread" || n.status === "read") && <Anchor component={Link} to="/notificacoes" fz={14} fw={600} c="inherit" mt={10} display="inline-block" onClick={() => setOpened(false)}>Responder na página</Anchor>}
                 {!vote && !n.can_respond && n.status === "unread" && <Button variant="default" mih={40} mt={10} w="fit-content" loading={busy === n.id}

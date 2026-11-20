@@ -205,3 +205,32 @@ def test_reconciliacao_com_varios_consumos_e_proveniencias(app, client):
     e = _explicacao(client, bill)
     assert e["evidence_available"] and len(e["own"]) == 6
     _reconcilia(e)
+
+
+def test_consumo_de_um_grupo_divide_se_por_igual_e_explica_se_a_cada_um(app, client):
+    """«Escolher responsável(eis)» (D-32): a Ana e o Bruno ficam com metade cada um."""
+    c = _consumo(app, "grupo", 20_001, **_no_quarto(fx.ROOM_CARLA))
+    group = sorted([fx.ANA, fx.BRUNO])
+    voto = Attribution(
+        id=stable_id("attribution", "grupo"),
+        household_id=fx.HOUSEHOLD,
+        consumption_event_id=c.id,
+        target_type=AttributionTarget.group,
+        target_resident_ids=group,
+        method=AttributionMethod.confirmation,
+        provenance=Provenance(origin="simulated", kind="measured"),
+        decided_by=Audit(at=fx.T0 + timedelta(hours=3), by_resident_id=fx.CARLA),
+    )
+    app.state.db.run_sync(lambda conn: attributor._record(conn, voto, stable_id("corr")))
+    bill = _rascunho(client)
+    assert _fechar(client, bill).status_code == 200
+    parts = []
+    for who in (ANA, BRUNO):
+        e = _explicacao(client, bill, who)
+        _reconcilia(e)
+        [mine] = e["own"]
+        assert "mesmas 2 pessoas" in mine["steps"][3]["text"]
+        parts.append(mine["amount_cents"])
+    assert abs(parts[0] - parts[1]) <= 1  # 20 001 Wh: um Wh a mais para um deles
+    carla = _explicacao(client, bill, {"x-test-sub": "sub-carla"})
+    assert carla["own"] == []  # o consumo era no quarto dela, mas a casa escolheu o grupo

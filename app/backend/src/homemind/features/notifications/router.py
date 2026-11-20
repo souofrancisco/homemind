@@ -185,7 +185,7 @@ async def respond_notification(
             household_id=access.household_id,
             resident_id=access.resident_id,
             action_id=body.action_id,
-            target_resident_id=body.target_resident_id,
+            target_resident_ids=body.target_resident_ids,
         )
         for ev in out.events:
             append_event(conn, ev)

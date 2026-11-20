@@ -140,7 +140,7 @@ def test_dica_de_dono_nao_preseleciona_o_voto_nem_chega_ao_senhorio(client, now)
     assert not any(name in n["body"] for name in ("Ana", "Carla", "Diogo"))
     assert not any(term in n["body"].casefold() for term in ("presença", "em casa", "fora"))
     assert n["status"] == "unread" and n["can_respond"] is True
-    assert [a["id"] for a in n["actions"]] == ["mine", "everyone", "unknown", "other"]
+    assert [a["id"] for a in n["actions"]] == ["mine", "other", "unknown"]
     assert _list(client, LANDLORD) == []
 
     # Mesmo com a dica para Bruno, a decisão segue o voto explícito de Ana (D-32).
@@ -158,7 +158,7 @@ def test_inconclusivo_expirado_divide_por_todos_a_cada_votante(client, now):
     _publish_consumption(client, _sala_consumption())
     n = _vote_notification(client)
     _respond(client, fx.ANA, n, "unknown")
-    _respond(client, fx.BRUNO, n, "everyone")
+    _respond(client, fx.BRUNO, n, "unknown")
     assert _by_title(client, SUB[fx.ANA], "Dividido por todos") == []  # ainda a votar
 
     late = TS + timedelta(hours=25)

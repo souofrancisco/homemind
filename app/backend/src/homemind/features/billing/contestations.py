@@ -28,6 +28,7 @@ from homemind.contracts.billing import (
     ContestationIn,
     ContestationStatus,
     LandlordContestationView,
+    payers,
 )
 from homemind.contracts.common import Audit, Provenance, ValueKind, replace, stable_id
 from homemind.features.billing import attributor, bills, closing
@@ -97,12 +98,15 @@ def open_contestation(
     if allocation is None:
         raise LookupError("sem parcela nesta fatura")
     if body.consumption_event_id is not None:
-        mine = conn.execute(
-            "SELECT 1 FROM billing_allocation_item WHERE bill_id = ? AND consumption_event_id = ?"
-            " AND attributed = 1 AND target_resident_id = ?",
-            (str(bill_id), str(body.consumption_event_id), str(resident_id)),
+        item = conn.execute(
+            "SELECT attribution_json FROM billing_allocation_item WHERE bill_id = ?"
+            " AND consumption_event_id = ? AND attributed = 1",
+            (str(bill_id), str(body.consumption_event_id)),
         ).fetchone()
-        if mine is None:
+        mine = item is not None and resident_id in payers(
+            Attribution.model_validate_json(item["attribution_json"])
+        )
+        if not mine:
             raise InvalidContestation("só podes contestar consumos atribuídos a ti nesta fatura")
     if conn.execute(
         "SELECT 1 FROM billing_contestation WHERE bill_id = ? AND resident_id = ?"

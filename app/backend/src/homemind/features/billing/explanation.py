@@ -20,6 +20,7 @@ from homemind.contracts.billing import (
     AllowanceExplanation,
     Attribution,
     AttributionMethod,
+    AttributionTarget,
     BillAllocation,
     BreakdownKind,
     DecisionActor,
@@ -33,7 +34,7 @@ from homemind.contracts.billing import (
 from homemind.contracts.common import Origin, Provenance, ValueKind
 from homemind.contracts.energy import ConsumptionEvent, LocationKind, MatchOutcome
 from homemind.features.billing import bills, closing, rules
-from homemind.features.billing.allocation import draw_order, largest_remainder
+from homemind.features.billing.allocation import draw_order, largest_remainder, split_group
 
 
 @dataclass(frozen=True)
@@ -154,7 +155,12 @@ def _reconcile(mine, items, ids, equal, draw):
             pool_of[c.id] = largest_remainder(i.covered_wh, equal, draw)[me]
             if pool_of[c.id]:
                 weights[(BreakdownKind.heating_allowance, c.provenance)][c.id] = pool_of[c.id]
-        if i.target == me:
+        if i.attribution.target_type is AttributionTarget.group:
+            part = split_group(c.energy_wh, i.attribution.target_resident_ids).get(me, 0)
+            if part:
+                mine_ids.append(c.id)
+                weights[(BreakdownKind.room, c.provenance)][c.id] = part
+        elif i.target == me:
             mine_ids.append(c.id)
             if c.energy_wh - i.covered_wh:
                 weights[(BreakdownKind.room, c.provenance)][c.id] = c.energy_wh - i.covered_wh
@@ -286,6 +292,12 @@ _DECISION = {
 
 
 def _decision_text(a: Attribution, actor: DecisionActor) -> str:
+    if a.target_type is AttributionTarget.group:
+        return (
+            "Decidido pela votação «De quem é esta conta?»: pelo menos metade dos moradores "
+            f"escolheu as mesmas {len(a.target_resident_ids)} pessoas, e tu és uma delas. "
+            "O consumo divide-se por igual entre elas."
+        )
     if a.method is AttributionMethod.confirmation:
         if actor is DecisionActor.me:
             return "Respondeste à pergunta «De quem é esta conta?» e a conta ficou contigo."
@@ -328,10 +340,13 @@ def _explain_own(
     note = _allowance_text(item, names, limit)
     if note:
         steps.append(ExplanationStep(stage=ExplanationStage.allowance, text=note))
+    billed = c.energy_wh - item.covered_wh
+    if a.target_type is AttributionTarget.group:
+        billed = split_group(c.energy_wh, a.target_resident_ids).get(me, 0)
     steps.append(
         ExplanationStep(
             stage=ExplanationStage.share,
-            text=f"{money(cents)} no teu recibo: {kwh(c.energy_wh - item.covered_wh)} ao preço "
+            text=f"{money(cents)} no teu recibo: {kwh(billed)} ao preço "
             f"médio da fatura ({price_per_kwh(price)}, sem termo fixo).",
         )
     )

@@ -47,7 +47,7 @@ from homemind.contracts.billing import (
 )
 from homemind.contracts.common import Origin, Provenance, ValueKind, stable_id
 from homemind.features.billing import allowance, bills, tariff
-from homemind.features.billing.allocation import EnergyShare
+from homemind.features.billing.allocation import EnergyShare, shares_for
 from homemind.features.billing.closing import (
     heating_appliances,
     period_inputs,
@@ -132,8 +132,7 @@ def month_spend(
         if not c.energy_wh:
             continue
         simulated = simulated or c.provenance.simulated
-        target = a.target_resident_id if a.target_type is AttributionTarget.resident else None
-        shares.append(EnergyShare(target, c.energy_wh, c.provenance, c.id))
+        shares.extend(shares_for(a, c))
 
     def mine(s: EnergyShare) -> tuple[Fraction, Fraction]:
         """(próprio, parte da conta comum) em milicêntimos; a conta comum divide-se por todos."""
@@ -458,10 +457,11 @@ def allowance_left(
         return None
     attributions, consumptions = period_inputs(conn, household_id, month)
     shares = [
-        EnergyShare(a.target_resident_id, c.energy_wh, c.provenance, c.id)
+        s
         for a in attributions
-        if a.target_type is AttributionTarget.resident
+        if a.target_type is not AttributionTarget.common
         and (c := consumptions[a.consumption_event_id]).energy_wh
+        for s in shares_for(a, c)
     ]
     _, covered = allowance.apply(
         shares,

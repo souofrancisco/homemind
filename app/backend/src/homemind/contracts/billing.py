@@ -39,6 +39,7 @@ from homemind.contracts.household import CommonAreaRule, HouseholdPolicy
 
 class AttributionTarget(StrEnum):
     resident = "resident"
+    group = "group"  # vários moradores escolhidos por votação (D-32): por igual entre eles
     common = "common"
 
 
@@ -61,6 +62,7 @@ class Attribution(ContractModel):
     consumption_event_id: UUID
     target_type: AttributionTarget
     target_resident_id: UUID | None = None
+    target_resident_ids: list[UUID] = []  # só em `group`: ≥ 2, ordenados, sem repetições
     method: AttributionMethod
     provenance: Provenance
     confidence: Confidence | None = None  # só em `inferred`
@@ -74,11 +76,23 @@ class Attribution(ContractModel):
             self.target_resident_id is not None
         ):
             raise ValueError("target_resident_id exatamente quando o alvo é um morador")
+        if (self.target_type is AttributionTarget.group) != bool(self.target_resident_ids):
+            raise ValueError("target_resident_ids exatamente quando o alvo é um grupo")
+        ids = self.target_resident_ids
+        if ids and (len(ids) < 2 or ids != sorted(set(ids))):
+            raise ValueError("um grupo tem ≥ 2 moradores, ordenados e sem repetições")
         if (self.provenance.kind is ValueKind.inferred) != (self.confidence is not None):
             raise ValueError("confidence exatamente quando a natureza é inferred")
         if self.method is AttributionMethod.confirmation and self.decided_by.by_resident_id is None:
             raise ValueError("uma confirmação é decidida por um morador")
         return self
+
+
+def payers(a: Attribution) -> list[UUID]:
+    """Quem paga o consumo: o morador, os do grupo, ou ninguém (conta comum)."""
+    if a.target_type is AttributionTarget.resident:
+        return [a.target_resident_id]
+    return list(a.target_resident_ids)
 
 
 class AttributionConflictError(ValueError):

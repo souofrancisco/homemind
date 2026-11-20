@@ -1,4 +1,5 @@
-import { Alert, Button, Card, Group, Loader, ScrollArea, Stack, Text, Textarea, Title } from "@mantine/core";
+import { ActionIcon, Alert, Button, Group, Loader, Stack, Text, Textarea, Title } from "@mantine/core";
+import { IconArrowUp } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import ActionCard from "../components/assistant/ActionCard";
 import MessageBubble from "../components/assistant/MessageBubble";
@@ -82,14 +83,10 @@ export default function AssistantPage() {
   }
 
   return (
-    <Stack gap={24} w="100%">
-      <div className="conta-page-head">
-        <Title order={1} className="conta-page-title">Assistente</Title>
-        <Text c="dimmed" fz={16} mt={6}>Só responde com números calculados pela Conta Certa. Pedidos de ação pedem a tua confirmação.</Text>
-      </div>
-      <Card p={{ base: "md", sm: "24px 28px" }}>
-        <ScrollArea h={{ base: "52vh", sm: "max(320px, calc(100dvh - 400px))" }} type="auto" offsetScrollbars>
-          <Stack gap="sm" p="xs" aria-live="polite" aria-relevant="additions text">
+    <div className="conta-chat">
+      <Title order={1} size={20} className="conta-chat-title">Assistente</Title>
+      <div className="conta-chat-log">
+          <Stack gap="lg" className="conta-chat-col" py="md" aria-live="polite" aria-relevant="additions text">
             {loading && <Group role="status"><Loader size="sm" /><Text>A carregar a conversa…</Text></Group>}
             {error === "history" && <Alert color="red" role="alert" title="Não foi possível carregar a conversa">
               <Button size="xs" variant="light" color="red" onClick={() => void load()}>Tentar novamente</Button>
@@ -106,9 +103,9 @@ export default function AssistantPage() {
             </Alert>}
             <div ref={endRef} />
           </Stack>
-        </ScrollArea>
-        <form onSubmit={onSubmit}>
-          <Group align="flex-end" mt="sm" wrap="nowrap" gap={12}>
+      </div>
+        <form onSubmit={onSubmit} className="conta-chat-col">
+          <Group align="flex-end" wrap="nowrap" gap={8} className="conta-chat-composer">
             <Textarea
               aria-label="Escreve uma mensagem ao assistente"
               placeholder="Escreve a tua pergunta…"
@@ -121,15 +118,15 @@ export default function AssistantPage() {
               autosize
               disabled={loading || sending || !householdId}
               style={{ flex: 1 }}
-              styles={{ input: { borderRadius: 26, minHeight: 52, padding: "14px 22px", fontSize: 15 } }}
+              variant="unstyled"
+              styles={{ input: { minHeight: 44, padding: "10px 0", fontSize: 16 } }}
             />
-            <Button type="submit" aria-label="Enviar mensagem" disabled={!draft.trim() || loading || sending} loading={sending} mih={52} px={24} fw={700}>
-              Enviar
-            </Button>
+            <ActionIcon type="submit" aria-label="Enviar mensagem" disabled={!draft.trim() || loading || sending} loading={sending} size={44} radius="xl" color="ink">
+              <IconArrowUp size={20} aria-hidden="true" />
+            </ActionIcon>
           </Group>
-          <Text ta="right" size="xs" c="dimmed" mt={4}>{draft.length}/2000 · Enter envia; Shift+Enter cria uma linha</Text>
+          <Text ta="center" size="xs" c="dimmed" mt={6}>{draft.length}/2000 · Enter envia; Shift+Enter cria uma linha</Text>
         </form>
-      </Card>
-    </Stack>
+    </div>
   );
 }

@@ -35,9 +35,9 @@ _NAMESPACE_P3 = UUID("8c3f5b7e-1d24-4e6a-9b0c-5a1e7d3c2f40")
 
 CONFIRMATION_LABELS = {
     "mine": "É minha",
-    "everyone": "É de todos",
+    "everyone": "É de todos",  # só em notificações antigas (D-32: já não se oferece)
     "unknown": "Não sei",
-    "other": "É de outra pessoa",  # a app pede a pessoa e envia `target_resident_id`
+    "other": "Escolher responsável(eis)",  # a app pede as pessoas: `target_resident_ids`
 }
 
 _SIMULATED = " (SIMULADO)"

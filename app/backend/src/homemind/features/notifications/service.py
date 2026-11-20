@@ -21,6 +21,7 @@ from homemind.contracts.billing import (
     ContestationStatus,
     RuleProposal,
     RuleProposalStatus,
+    payers,
 )
 from homemind.contracts.common import Provenance, ValueKind, replace
 from homemind.contracts.energy import ApplianceIdentificationRequest
@@ -475,9 +476,8 @@ class NotificationService:
         )
         if not requests:
             return Outcome(None)
-        if attribution.target_type is AttributionTarget.resident:
-            assert attribution.target_resident_id is not None  # invariante do contrato
-            recipients = [attribution.target_resident_id]
+        if attribution.target_type is not AttributionTarget.common:
+            recipients = payers(attribution)  # o morador, ou cada um do grupo
         else:  # comum: quem votou foi quem foi perguntado e participou
             recipients = list(dict.fromkeys(r.resident_id for n in requests for r in n.responses))
         now = self._clock()
@@ -492,7 +492,7 @@ class NotificationService:
                     consumption_event_id=attribution.consumption_event_id,
                     household_id=household_id,
                     resident_id=resident_id,
-                    on_my_account=attribution.target_type is AttributionTarget.resident,
+                    on_my_account=attribution.target_type is not AttributionTarget.common,
                     origin=provenance.origin,
                     correlation_id=correlation_id,
                     now=now,
@@ -706,7 +706,7 @@ class NotificationService:
         household_id: UUID,
         resident_id: UUID,
         action_id: str,
-        target_resident_id: UUID | None = None,
+        target_resident_ids: list[UUID] | None = None,
     ) -> Outcome:
         """Regista a resposta e emite `notification.responded` (só quem ganha o CAS).
 
@@ -721,7 +721,7 @@ class NotificationService:
         for _ in range(self._MAX_CAS_RETRIES):
             now = self._clock()
             n = self._get_visible(household_id, notification_id, resident_id, now)
-            new = n.respond(resident_id, action_id, now, target_resident_id)  # erros do contrato
+            new = n.respond(resident_id, action_id, now, target_resident_ids)  # erros do contrato
             if self._repo.compare_and_set(new, expected=n):
                 return Outcome(new, (self._responded_event(n, new, now),))
         raise AlreadyRespondedError("resposta concorrente; tente de novo")

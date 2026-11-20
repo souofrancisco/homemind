@@ -121,19 +121,22 @@ def _save_evidence(
     `shares` são as partes ANTES do plafond (uma por consumo); `covered` diz quanto ele cobriu."""
     by_consumption = {a.consumption_event_id: a for a in attributions}
     rows = []
+    seen: set[UUID] = set()
     for s in shares:
+        if s.consumption_id in seen:
+            continue  # um grupo tem uma parte por membro; a evidência é uma linha por consumo
+        seen.add(s.consumption_id)
         a, c = by_consumption[s.consumption_id], consumptions[s.consumption_id]
         superseded = conn.execute(
             "SELECT count(*) FROM billing_attribution WHERE consumption_event_id = ?"
             " AND status = 'superseded'",
             (str(c.id),),
         ).fetchone()[0]
-        proven = s.resident_id is not None and allowance.is_proven_heating(
+        resident = s.resident_id if not s.group else None  # o grupo está no attribution_json
+        proven = resident is not None and allowance.is_proven_heating(
             c, residents.get(s.resident_id), heating
         )
-        rows.append(
-            (c, 1, s.resident_id, superseded, a.model_dump_json(), proven, covered.get(c.id, 0))
-        )
+        rows.append((c, 1, resident, superseded, a.model_dump_json(), proven, covered.get(c.id, 0)))
     for c in undecided_in_period(conn, bill.household_id, bill.period):
         rows.append((c, 0, None, 0, None, False, 0))
     conn.executemany(

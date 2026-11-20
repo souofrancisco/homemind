@@ -424,7 +424,7 @@ def confirmation_notification() -> notification.Notification:
         "mine": "É minha",
         "everyone": "É de todos",
         "unknown": "Não sei",
-        "other": "É de outra pessoa",
+        "other": "Escolher responsável(eis)",
     }
     return notification.Notification(
         id=NOTIFICATION,

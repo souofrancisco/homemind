@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Card, Group, Loader, Select, Stack, Text, Title } from "@mantine/core";
+import { Alert, Badge, Button, Card, Group, Loader, Stack, Text, Title } from "@mantine/core";
 import { IconAlertCircle } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useHouseholdSession } from "../app/providers/HouseholdProvider";
@@ -23,29 +23,75 @@ const verdictLabel: Record<NonNullable<NotificationView["voting"]>["verdict"], s
   accusation_accepted: "Decidido por votação",
   everyone: "Decidido: dividido por todos",
 };
-// A ação «É de outra pessoa» exige indicar a pessoa (contrato D-32): id fixado pelo backend.
+// «Escolher responsável(eis)» exige indicar as pessoas (contrato D-32): id fixado pelo backend.
 const OTHER = "other";
+
+/** Escolha do grupo que paga: uma ou mais pessoas, incluindo quem vota (D-32). Só a própria
+ *  pessoa equivale a «É minha»; com mais alguém é preciso que metade da casa escolha o mesmo. */
+function ResponsiblePicker({ members, selfId, busy, onConfirm, onCancel }: {
+  members: MemberView[]; selfId: string | undefined; busy: boolean;
+  onConfirm: (ids: string[]) => void; onCancel: () => void;
+}) {
+  const [picked, setPicked] = useState<string[]>([]);
+  const people = [...members].sort((a, b) => Number(b.resident_id === selfId) - Number(a.resident_id === selfId));
+  const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const onlyMe = picked.length === 1 && picked[0] === selfId;
+  const needed = Math.max(1, Math.ceil(members.length / 2));
+  const names = people.filter((m) => picked.includes(m.resident_id)).map((m) => (m.resident_id === selfId ? "tu" : m.display_name));
+  const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}` : names[0];
+  return (
+    <Stack gap="sm" className="conta-picker">
+      <Group justify="space-between" align="center" wrap="wrap">
+        <Title order={4} size={18}>Escolher responsável(eis)</Title>
+        <Button variant="subtle" color="ink" mih={44} onClick={() => setPicked(people.map((m) => m.resident_id))}>Toda a casa</Button>
+      </Group>
+      <Text size="sm" c="dimmed" mt={-8}>Escolhe uma ou mais pessoas.</Text>
+      <Group gap="xs">
+        {people.map((m) => {
+          const on = picked.includes(m.resident_id);
+          return <Button key={m.resident_id} size="md" mih={48} radius="xl" variant={on ? "filled" : "default"} aria-pressed={on}
+            onClick={() => toggle(m.resident_id)}>{m.resident_id === selfId ? `Eu (${m.display_name})` : m.display_name}</Button>;
+        })}
+      </Group>
+      <div className="conta-picker-summary" role="status" aria-live="polite">
+        <Text fw={700}>{!picked.length ? "Ainda não escolheste ninguém" : onlyMe ? "Fica a teu cargo" : "Precisa de quórum"}</Text>
+        <Text size="sm" c="dimmed">{!picked.length ? "Escolhe pelo menos uma pessoa para votar."
+          : onlyMe ? "Só tu estás escolhido: decide logo, como «É minha»."
+            : `A conta fica com ${list} quando pelo menos metade da casa (${needed} de ${members.length}) escolher exatamente as mesmas pessoas. Sem quórum em 24 h, divide-se por todos.`}</Text>
+      </div>
+      <Group justify="flex-end" gap="xs">
+        <Button variant="default" mih={48} onClick={onCancel}>Cancelar</Button>
+        <Button mih={48} disabled={!picked.length} loading={busy} onClick={() => onConfirm(picked)}>Confirmar voto</Button>
+      </Group>
+    </Stack>
+  );
+}
 
 export function NotificationCard({ n, householdId, members, onChange }: {
   n: NotificationView; householdId: string; members: MemberView[]; onChange: (v: NotificationView) => void;
 }) {
   const session = useHouseholdSession();
   const [busy, setBusy] = useState(false);
-  const [target, setTarget] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
+  const selfId = members.find((m) => m.membership_id === session.membership?.id)?.resident_id;
   const act = async (fn: () => Promise<NotificationView>) => {
     setBusy(true);
     try { onChange(await fn()); } catch { /* o cliente HTTP mostra o erro (ex.: já votaste) */ } finally { setBusy(false); }
   };
-  const respond = (actionId: string, targetId?: string) =>
-    act(() => respondToNotification(householdId, n.id, { action_id: actionId, target_resident_id: targetId ?? null }));
+  const respond = (actionId: string, targets: string[] = []) =>
+    act(() => respondToNotification(householdId, n.id, { action_id: actionId, target_resident_ids: targets }));
+  // Só a própria pessoa escolhida é «É minha» (o contrato recusa `other` só com quem vota).
+  const respondGroup = (ids: string[]) => (ids.length === 1 && ids[0] === selfId ? respond("mine") : respond(OTHER, ids));
   const canAct = n.can_respond && (n.status === "unread" || n.status === "read");
   const v = n.voting;
   const isVote = v?.verdict === "pending" && canAct;
+  // Grupo decidido por votação (D-32): o que chegou ao quórum.
+  const groupSize = v?.verdict === "accusation_accepted"
+    ? v.accusations.find((a) => a.votes >= v.votes_needed)?.target_resident_ids.length ?? 1 : 1;
 
   return (
     <Card id={n.kind === "confirmation_request" ? `confirmation-vote-${n.id}` : undefined} p={{ base: "md", sm: 28 }} component="article" aria-label={n.title}>
-      <div className="conta-vote" data-vote={isVote ? "true" : "false"}>
+      <div className="conta-vote" data-vote={isVote ? "true" : "false"} data-picking={picking ? "true" : "false"}>
       <Stack gap="sm">
         {isVote && v ? <>
           <Group gap="xs"><Badge className="conta-pending-badge">Falta a tua resposta · {v.votes} de {v.eligible} já votaram</Badge>
@@ -67,10 +113,11 @@ export function NotificationCard({ n, householdId, members, onChange }: {
           <Alert className={v.verdict === "pending" ? "conta-pending" : undefined} color={v.verdict === "pending" ? "orange" : "gray"} variant="light" title={verdictLabel[v.verdict]}>
             {v.votes} de {v.eligible} votos (decide-se com {v.votes_needed}).
             {v.my_vote ? " O teu voto está registado; podes vê-lo mas não alterá-lo." : ""}
-            {v.verdict !== "pending" && (v.pays_me ? " Esta utilização fica a teu cargo." : " Esta utilização não fica a teu cargo.")}
+            {v.verdict !== "pending" && (!v.pays_me ? " Esta utilização não fica a teu cargo."
+              : groupSize > 1 ? ` Esta utilização divide-se por igual entre ti e mais ${groupSize - 1} ${groupSize === 2 ? "pessoa" : "pessoas"}.`
+                : " Esta utilização fica a teu cargo.")}
           </Alert>
         )}
-        {n.kind === "confirmation_request" && canAct && <Text size="sm" c="dimmed">O voto não se pode mudar. Se te enganares, podes contestar o recibo depois de o mês fechar.</Text>}
         <div role="status" aria-live="polite">{n.response && !v && <Text size="sm" c="dimmed">Respondeste {when.format(new Date(n.response.responded_at))}.</Text>}</div>
         <Text size="xs" c="dimmed">{n.scope === "personal" ? "Pessoal" : "Da casa"} · {when.format(new Date(n.created_at))}{n.expires_at && n.status !== "expired" ? ` · responder até ${when.format(new Date(n.expires_at))}` : ""}</Text>
       </Stack>
@@ -78,9 +125,9 @@ export function NotificationCard({ n, householdId, members, onChange }: {
         {!picking && (
           <div className="conta-vote-actions">
             {n.actions.map((a) => {
-              const consequence: Record<string, string> = { mine: "Pagas tu. Decide logo.", everyone: "Dividido por todos os moradores.", other: "Escolhes quem. Para valer, metade dos moradores tem de concordar.", unknown: "Fica em aberto. Sem decisão em 24 h, divide-se por todos." };
+              const consequence: Record<string, string> = { mine: "Pagas tu. Decide logo.", everyone: "Dividido por todos os moradores.", other: "Escolhes uma ou mais pessoas. Para valer, metade dos moradores tem de escolher exatamente as mesmas.", unknown: "Fica em aberto. Sem decisão em 24 h, divide-se por todos." };
               const emphasized = a.style === "primary";
-              return <Button key={a.id} className={emphasized || a.id === OTHER ? "conta-vote-wide" : undefined} size="md" fullWidth mih={emphasized ? 52 : 48} fw={emphasized ? 700 : 600}
+              return <Button key={a.id} className={emphasized || n.kind === "confirmation_request" ? "conta-vote-wide" : undefined} size="md" fullWidth mih={emphasized ? 52 : 48} fw={emphasized ? 700 : 600}
                 title={consequence[a.id]} aria-label={consequence[a.id] ? `${a.label}. ${consequence[a.id]}` : `${a.label}: ${n.title}`} loading={busy}
                 variant={emphasized ? "filled" : "default"} color={a.style === "danger" ? "red" : undefined}
                 onClick={() => (a.id === OTHER ? setPicking(true) : void respond(a.id))}>{a.label}</Button>;
@@ -88,13 +135,8 @@ export function NotificationCard({ n, householdId, members, onChange }: {
             {n.status === "unread" && n.kind !== "confirmation_request" && <Button size="md" mih={48} variant="default" loading={busy} onClick={() => void act(() => markNotificationRead(householdId, n.id))}>Marcar como lida</Button>}
           </div>
         )}
-        {picking && (
-          <Group align="end">
-            <Select label="De quem é?" placeholder="Escolhe uma pessoa" data={members.map((m) => ({ value: m.resident_id, label: m.display_name }))} value={target} onChange={setTarget} />
-            <Button disabled={!target} loading={busy} onClick={() => void respond(OTHER, target ?? undefined)}>Confirmar</Button>
-            <Button variant="subtle" onClick={() => setPicking(false)}>Cancelar</Button>
-          </Group>
-        )}
+        {picking && <ResponsiblePicker members={members} selfId={selfId} busy={busy}
+          onConfirm={(ids) => void respondGroup(ids)} onCancel={() => setPicking(false)} />}
       </Stack>}
       {!canAct && n.status === "expired" && <Text size="sm" c="dimmed">{isRule(n)
         ? "A votação desta regra já terminou. O resultado está em «Regras da casa»."
@@ -117,16 +159,14 @@ export default function NotificationsContent() {
     let active = true;
     Promise.all([listNotifications(householdId), session.membership?.role === "tenant" ? getMembers(householdId) : Promise.resolve([])])
       .then(([items, all]) => {
-        // «É de outra pessoa» só pode apontar para os outros inquilinos ativos: nem o senhorio,
-        // nem o operador, nem a própria pessoa (para isso há «É minha»).
-        const members = all.filter(
-          (m) => m.role === "tenant" && m.status === "active" && m.membership_id !== session.membership?.id,
-        );
+        // «Escolher responsável(eis)» só aponta para inquilinos ativos (incluindo a própria
+        // pessoa, num grupo): nunca o senhorio nem o operador.
+        const members = all.filter((m) => m.role === "tenant" && m.status === "active");
         if (active) setState({ key: householdId, items, members });
       })
       .catch(() => active && setState({ key: householdId, items: null, members: [] }));
     return () => { active = false; };
-  }, [householdId, reload, session.membership?.role, session.membership?.id]);
+  }, [householdId, reload, session.membership?.role]);
 
   if (!householdId) return null;
   const cur = state?.key === householdId ? state : null;

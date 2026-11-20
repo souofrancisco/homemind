@@ -60,7 +60,7 @@ atual à API da casa.
 | Opção | Comportamento | Prioridade |
 |---|---|---|
 | **A — por igual** | O consumo comum divide-se por todos os moradores ativos | P0 |
-| **B — perguntar** (recomendada pelo PDF) | Cria pedido na aplicação. «É minha»: basta quem assume. Atribuir a outro: pelo menos metade dos moradores aceita (fecha antes se o próprio assumir). Inconclusivo ao fim de 24 h → por igual (D-32) | P0 |
+| **B — perguntar** (recomendada pelo PDF) | Cria pedido na aplicação. «É minha»: basta quem assume. «Escolher responsável(eis)»: uma ou mais pessoas; vale quando pelo menos metade dos moradores escolhe exatamente o mesmo grupo (fecha antes se alguém assumir), e o consumo divide-se por igual entre o grupo (`AttributionTarget.group`, D-38). Inconclusivo ao fim de 24 h → por igual (D-32) | P0 |
 | **C — por presença** | Divide pelos que estavam em casa (usa presença de P2) | P1 |
 
 **APP-03 #96 / P-18 (PROPOSTA):** o pedido pode incluir uma dica de dono provável só quando o
@@ -154,6 +154,7 @@ Nenhum de domínio. O módulo usa o padrão de feature (`router.py`, `tests/`), 
 | `features/billing/attribution.py`: primeira decisão (quarto → morador; comum → perguntar/igual) | IMPLEMENTADO (puro, sem persistência) |
 | `features/billing/allocation.py`: repartição + arredondamento + recibo por linhas | IMPLEMENTADO (puro, sem persistência) |
 | Votação da regra B (D-32) | IMPLEMENTADO no contrato (`confirmation_outcome`) e consumido pelo atribuidor |
+| Atribuição a um grupo (D-38) | IMPLEMENTADO: `allocation.shares_for`/`split_group` (fecho, orçamento, assistente), evidência e explicação do recibo, contestação por qualquer membro do grupo; sem plafond solidário nas partes de grupo |
 | Atribuidor persistente (`features/billing/attributor.py`, consumidor `billing.attributor`, migração `0101`): `energy.consumption_*` → atribuição direta ou `billing.confirmation_needed`; `notification.responded` decidido → atribuição por confirmação; prazo esgotado (tarefa a cada 60 s) → conta comum. Emite `billing.attribution_changed`; nada se apaga (`superseded`) | IMPLEMENTADO |
 | Completar o consumo enquanto energy não localiza nem estima custo (BILL-02 #90, `attributor.locate` / `with_cost_estimate`): localização `unknown` → divisão configurada da tomada (`device.room_id`; quarto → `room`, zona comum → `common`; sem divisão, tomada desconhecida ou `main_meter` → fica `unknown`); a localização dada por energy nunca é substituída e a versão localizada é a que billing guarda (recibos e explicação coerentes). Sem `cost_estimate` → energia × preço de referência da casa ou preço médio da última fatura fechada, só para decidir se se pergunta (não se grava); sem preço não se pergunta. Limitação: `device.room_id` não tem histórico, por isso reprocessar consumos antigos usa a configuração atual da tomada | IMPLEMENTADO (provisório até ENERGY-05 #83) |
 | Regra da sala por data (política versionada, HOUSE-04 #87, `features/billing/rules.py`, migração `0108`): o atribuidor decide cada consumo com a versão do dia em que começou | IMPLEMENTADO (ver «Regras da casa versionadas») |

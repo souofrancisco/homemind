@@ -9,11 +9,15 @@ REGRA B — «De quem é esta conta?» (`confirmation_request`) é uma VOTAÇÃO
 equipa de 17/11/2026). PREVALECE sobre qualquer implementação anterior baseada em «primeira
 resposta vence»: quem fizer merge (pessoa ou agente) adapta o código de notifications (P3),
 da UI (P5) e de billing a esta regra, não o contrário.
-- Cada inquilino elegível vota uma vez: «É minha» (`mine`), «É de todos» (`everyone`),
-  «Não sei» (`unknown`) ou «É de outra pessoa» (`other` + `target_resident_id`).
+- Cada inquilino elegível vota uma vez: «É minha» (`mine`), «Não sei» (`unknown`) ou
+  «Escolher responsável(eis)» (`other` + `target_resident_ids`: uma ou mais pessoas, pode
+  incluir quem vota e até a casa toda). «É de todos» (`everyone`) já não é oferecido às
+  notificações novas; votos antigos com ele continuam válidos.
 - Basta UM «É minha» para fechar: paga quem assumiu.
-- Atribuir a outra pessoa exige que pelo menos metade dos elegíveis (arredondado para cima)
-  vote `other` com o mesmo alvo; se o próprio assumir antes disso, fecha com ele.
+- Atribuir a um grupo (com pelo menos uma pessoa além de quem vota) exige que pelo menos
+  metade dos elegíveis (arredondado para cima) escolha EXATAMENTE o mesmo grupo; se alguém
+  assumir («É minha») antes disso, fecha com ele. Um grupo decidido divide o consumo por
+  igual entre as pessoas escolhidas.
 - Votaram todos sem cumprir nenhuma regra, ou passaram 24 h (`expires_at`) → divide-se por
   todos (`everyone`).
 `confirmation_outcome` é a fonte única desta regra. Compare-and-set dos votos: `UPDATE ...
@@ -27,7 +31,7 @@ from collections import Counter
 from datetime import time
 from enum import StrEnum
 from math import ceil
-from typing import Annotated, Self
+from typing import Annotated, Any, Self
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -100,8 +104,9 @@ NOTIFICATION_TRANSITIONS = {
 
 
 class ConfirmationChoice(StrEnum):
-    """`É minha | É de todos | Não sei | É de outra pessoa`. «Minha» é sempre de quem vota;
-    `other` exige `target_resident_id` e só decide com metade dos votos (D-32)."""
+    """`É minha | Não sei | Escolher responsável(eis)` (e `everyone`, só em votos antigos).
+    «Minha» é sempre de quem vota; `other` exige `target_resident_ids` e só decide com metade
+    dos votos no mesmo grupo exato (D-32)."""
 
     mine = "mine"
     everyone = "everyone"
@@ -147,14 +152,22 @@ class NotificationResponse(ContractModel):
     action_id: str
     resident_id: UUID
     responded_at: UtcDatetime
-    target_resident_id: UUID | None = None  # só com `other`: a quem se atribui
+    # Só com `other`: o grupo a quem se atribui (ordenado, sem repetições).
+    target_resident_ids: list[UUID] = []
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_target(cls, data: Any) -> Any:
+        return _legacy_targets(data)
 
     @model_validator(mode="after")
     def _target(self) -> Self:
-        if (self.action_id == ConfirmationChoice.other) != (self.target_resident_id is not None):
-            raise ValueError("target_resident_id exatamente com a ação `other`")
-        if self.target_resident_id == self.resident_id:
-            raise ValueError("atribuir a si próprio é `mine`")
+        if (self.action_id == ConfirmationChoice.other) != bool(self.target_resident_ids):
+            raise ValueError("target_resident_ids exatamente com a ação `other`")
+        if self.target_resident_ids != sorted(set(self.target_resident_ids)):
+            raise ValueError("target_resident_ids ordenados e sem repetições")
+        if self.target_resident_ids == [self.resident_id]:
+            raise ValueError("atribuir só a si próprio é `mine`")
         return self
 
 
@@ -162,24 +175,52 @@ class NotificationRespondIn(ContractModel):
     """Corpo de `POST /api/notifications/{id}/respond`."""
 
     action_id: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")]
-    target_resident_id: UUID | None = None
+    target_resident_ids: Annotated[list[UUID], Field(max_length=32)] = []
+
+
+def _legacy_targets(data: Any) -> Any:
+    """Votos e resultados gravados antes dos grupos tinham um só `target_resident_id` /
+    `resident_id`: lêem-se como um grupo de uma pessoa."""
+    if isinstance(data, dict):
+        if "target_resident_id" in data:
+            data = dict(data)
+            old = data.pop("target_resident_id")
+            data.setdefault("target_resident_ids", [old] if old else [])
+        if "target_resident_ids" in data:
+            ids = {UUID(str(t)) for t in data["target_resident_ids"]}
+            data = {**data, "target_resident_ids": sorted(ids)}
+    return data
+
+
+def normalize_targets(targets: list[UUID]) -> list[UUID]:
+    return sorted(set(targets))
 
 
 class ConfirmationVerdict(StrEnum):
     pending = "pending"  # ainda a votar
     self_claimed = "self_claimed"  # alguém disse «É minha»
-    accusation_accepted = "accusation_accepted"  # ≥ metade atribuiu à mesma pessoa
+    accusation_accepted = "accusation_accepted"  # ≥ metade escolheu o mesmo grupo exato
     everyone = "everyone"  # todos votaram sem decisão, ou expirou: divide-se por todos
 
 
 class ConfirmationOutcome(ContractModel):
-    """Resultado da votação da regra B. `resident_id` = quem paga (só nos dois veredictos
-    pessoais); `everyone` → conta comum; `pending` → nada a fazer ainda."""
+    """Resultado da votação da regra B. `resident_ids` = quem paga, por igual (só nos dois
+    veredictos pessoais; uma pessoa em `self_claimed`); `everyone` → conta comum; `pending`
+    → nada a fazer ainda."""
 
     verdict: ConfirmationVerdict
-    resident_id: UUID | None = None
+    resident_ids: list[UUID] = []
     votes: Annotated[int, Field(strict=True, ge=0)]
     votes_needed: Annotated[int, Field(strict=True, ge=1)]  # para aceitar uma atribuição a outro
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "resident_id" in data:
+            data = dict(data)
+            old = data.pop("resident_id")
+            data.setdefault("resident_ids", [old] if old else [])
+        return data
 
     @model_validator(mode="after")
     def _coherent(self) -> Self:
@@ -187,8 +228,12 @@ class ConfirmationOutcome(ContractModel):
             ConfirmationVerdict.self_claimed,
             ConfirmationVerdict.accusation_accepted,
         )
-        if personal != (self.resident_id is not None):
-            raise ValueError("resident_id exatamente nos veredictos pessoais")
+        if personal != bool(self.resident_ids):
+            raise ValueError("resident_ids exatamente nos veredictos pessoais")
+        if self.resident_ids != sorted(set(self.resident_ids)):
+            raise ValueError("resident_ids ordenados e sem repetições")
+        if self.verdict is ConfirmationVerdict.self_claimed and len(self.resident_ids) != 1:
+            raise ValueError("«É minha» decide uma só pessoa")
         return self
 
     @property
@@ -211,19 +256,20 @@ def confirmation_outcome(
     if len(set(voters)) != len(voters) or not set(voters) <= set(eligible):
         raise ValueError("votos repetidos ou de quem não é elegível")
     needed = votes_needed(len(eligible))
-    accusations: Counter[UUID] = Counter()
+    groups: Counter[tuple[UUID, ...]] = Counter()
     base = {"votes": len(responses), "votes_needed": needed}
     for r in sorted(responses, key=lambda r: r.responded_at):
         if r.action_id == ConfirmationChoice.mine:
             return ConfirmationOutcome(
-                verdict=ConfirmationVerdict.self_claimed, resident_id=r.resident_id, **base
+                verdict=ConfirmationVerdict.self_claimed, resident_ids=[r.resident_id], **base
             )
         if r.action_id == ConfirmationChoice.other:
-            accusations[r.target_resident_id] += 1
-            if accusations[r.target_resident_id] >= needed:
+            group = tuple(r.target_resident_ids)
+            groups[group] += 1
+            if groups[group] >= needed:
                 return ConfirmationOutcome(
                     verdict=ConfirmationVerdict.accusation_accepted,
-                    resident_id=r.target_resident_id,
+                    resident_ids=list(group),
                     **base,
                 )
     if expired or len(responses) == len(eligible):
@@ -253,7 +299,7 @@ class UnknownActionError(NotificationRespondError):
 
 
 class InvalidTargetError(NotificationRespondError):
-    code = "invalid_request"  # 400: `other` sem alvo elegível, ou alvo noutra ação
+    code = "invalid_request"  # 400: `other` sem grupo elegível, ou grupo noutra ação
 
 
 class Notification(ContractModel):
@@ -315,7 +361,7 @@ class Notification(ContractModel):
     def _check_votes(self) -> None:
         if any(r.notification_id != self.id for r in self.responses):
             raise ValueError("voto de outra notificação")
-        targets = {r.target_resident_id for r in self.responses} - {None}
+        targets = {t for r in self.responses for t in r.target_resident_ids}
         if not targets <= set(self.responder_ids):
             raise ValueError("atribuição a quem não é elegível")
         decided = confirmation_outcome(self.responses, self.responder_ids).decided
@@ -356,7 +402,7 @@ class Notification(ContractModel):
         resident_id: UUID,
         action_id: str,
         now: UtcDatetime,
-        target_resident_id: UUID | None = None,
+        target_resident_ids: list[UUID] | None = None,
     ) -> Notification:
         """Confirmações: regista o voto e fecha (`actioned`) quando a regra B decide (D-32);
         votar duas vezes é 409. Outros tipos: a primeira resposta vence; repetir é 409."""
@@ -371,14 +417,13 @@ class Notification(ContractModel):
         if action_id not in {a.id for a in self.actions}:
             raise UnknownActionError("ação desconhecida")
         voting = self.kind is NotificationKind.confirmation_request
-        if (action_id == ConfirmationChoice.other) != (target_resident_id is not None):
-            raise InvalidTargetError("`other` exige a pessoa; as outras ações não a aceitam")
-        if target_resident_id is not None and (
-            not voting
-            or target_resident_id == resident_id
-            or target_resident_id not in self.responder_ids
+        targets = normalize_targets(target_resident_ids or [])
+        if (action_id == ConfirmationChoice.other) != bool(targets):
+            raise InvalidTargetError("`other` exige as pessoas; as outras ações não as aceitam")
+        if targets and (
+            not voting or targets == [resident_id] or not set(targets) <= set(self.responder_ids)
         ):
-            raise InvalidTargetError("só se atribui a outro morador elegível")
+            raise InvalidTargetError("só a moradores elegíveis (só a ti próprio é «É minha»)")
         if any(r.resident_id == resident_id for r in self.responses):
             raise AlreadyRespondedError("já votou")
         response = NotificationResponse(
@@ -386,7 +431,7 @@ class Notification(ContractModel):
             action_id=action_id,
             resident_id=resident_id,
             responded_at=now,
-            target_resident_id=target_resident_id,
+            target_resident_ids=targets,
         )
         if not voting:
             return replace(self, status=NotificationStatus.actioned, response=response)
@@ -408,9 +453,8 @@ class ConfirmationRequest(ContractModel):
     estimated_cost_cents: Cents | None = None  # None: custo não estimável
     options: Annotated[list[ConfirmationChoice], Field(min_length=1)] = [
         ConfirmationChoice.mine,
-        ConfirmationChoice.everyone,
-        ConfirmationChoice.unknown,
         ConfirmationChoice.other,
+        ConfirmationChoice.unknown,
     ]
     eligible_resident_ids: Annotated[list[UUID], Field(min_length=1)]
     expires_at: UtcDatetime
@@ -452,13 +496,13 @@ class ResponseView(ContractModel):
     action_id: str
     responded_at: UtcDatetime
     by_me: bool  # nunca o id de quem respondeu
-    target_resident_id: UUID | None  # só em `other`: a pessoa a quem se atribui
+    target_resident_ids: list[UUID]  # só em `other`: o grupo escolhido
 
 
 class AccusationTally(ContractModel):
-    """Votos «É de outra pessoa» por alvo (anónimos: só o número)."""
+    """Votos «Escolher responsável(eis)» por grupo exato (anónimos: só o número)."""
 
-    target_resident_id: UUID
+    target_resident_ids: list[UUID]
     votes: int
 
 
@@ -466,7 +510,7 @@ class VotingView(ContractModel):
     """Estado da votação da regra B (só `confirmation_request`)."""
 
     verdict: ConfirmationVerdict
-    pays_me: bool  # decidido que paga quem está a ver (nunca o id de quem assumiu)
+    pays_me: bool  # decidido que quem está a ver paga (ou parte); nunca o id de quem assumiu
     votes: int
     eligible: int
     votes_needed: int
@@ -479,7 +523,7 @@ def _response_view(r: NotificationResponse, resident_id: UUID) -> ResponseView:
         action_id=r.action_id,
         responded_at=r.responded_at,
         by_me=r.resident_id == resident_id,
-        target_resident_id=r.target_resident_id,
+        target_resident_ids=r.target_resident_ids,
     )
 
 
@@ -526,16 +570,16 @@ class NotificationView(ContractModel):
 
 def _voting_view(n: Notification, resident_id: UUID, now: UtcDatetime) -> VotingView:
     out = n.outcome(now)
-    tally = Counter(r.target_resident_id for r in n.responses if r.target_resident_id)
+    tally = Counter(tuple(r.target_resident_ids) for r in n.responses if r.target_resident_ids)
     mine = next((r for r in n.responses if r.resident_id == resident_id), None)
     return VotingView(
         verdict=out.verdict,
-        pays_me=out.resident_id == resident_id,
+        pays_me=resident_id in out.resident_ids,
         votes=out.votes,
         eligible=len(n.responder_ids),
         votes_needed=out.votes_needed,
         accusations=[
-            AccusationTally(target_resident_id=t, votes=v) for t, v in sorted(tally.items())
+            AccusationTally(target_resident_ids=list(t), votes=v) for t, v in sorted(tally.items())
         ],
         my_vote=_response_view(mine, resident_id) if mine else None,
     )

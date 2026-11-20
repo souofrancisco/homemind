@@ -52,7 +52,7 @@ def test_modelos_de_entrada_locais_so_com_o_que_o_cliente_pode_enviar(spec):
     assert "RespondIn" not in schemas
     assert set(schemas["NotificationRespondIn"]["properties"]) == {
         "action_id",
-        "target_resident_id",
+        "target_resident_ids",
     }
     assert schemas["NotificationRespondIn"]["additionalProperties"] is False
     assert set(schemas["NotificationPreferencesIn"]["properties"]) == {

@@ -95,6 +95,21 @@ body { background: var(--mantine-color-body); }
 .conta-vote-title { font-size: 28px; line-height: 1.15; font-weight: 700; letter-spacing: -0.02em; }
 .conta-vote-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .conta-vote-wide { grid-column: 1 / -1; }
+.conta-vote[data-picking="true"] { grid-template-columns: minmax(0, 1fr); }
+/* ---- Assistente: conversa na página toda, coluna centrada e caixa de escrita em baixo ---- */
+.conta-chat { display: flex; flex-direction: column; height: calc(100dvh - var(--app-shell-header-height, 72px) - 48px); min-height: 420px; }
+.conta-chat-title { padding-bottom: 12px; border-bottom: 1px solid var(--mantine-color-default-border); }
+.conta-chat-log { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.conta-chat-col { width: 100%; max-width: 760px; margin: 0 auto; }
+.conta-chat-composer { background: var(--mantine-color-default); border: 1px solid var(--mantine-color-default-border); border-radius: 28px; padding: 6px 6px 6px 20px; }
+@media (max-width: 47.99em) { .conta-chat { height: calc(100dvh - var(--app-shell-header-height, 64px) - 140px - env(safe-area-inset-bottom)); } }
+.conta-rules-highlight { border: 0; }
+.conta-rules-highlight .mantine-Title-root { color: inherit; }
+.conta-rules-waiting { background: #fbedc4; color: #5c4300; text-transform: none; font-size: 13px; height: auto; padding: 5px 12px; }
+.conta-rules-cta { background: var(--mantine-color-body); color: var(--mantine-color-text); }
+.conta-rules-cta:hover { background: var(--mantine-color-default-hover); }
+.conta-picker { border-top: 1px solid var(--mantine-color-default-border); padding-top: 20px; }
+.conta-picker-summary { background: var(--mantine-color-gray-light); border-radius: 16px; padding: 14px 18px; }
 .mantine-Badge-root { text-transform: none; letter-spacing: 0; font-weight: 700; }
 .conta-pending-badge { font-size: 12px; }
 
