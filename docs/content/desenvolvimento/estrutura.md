@@ -5,7 +5,7 @@ Monorepo com tudo da aplicação em `app/`.
 | Caminho | Conteúdo |
 |---|---|
 | `app/backend/` | FastAPI: `src/homemind/{core,contracts,connectors,features,demo}` |
-| `app/frontend/` | React 19 + Vite + Mantine: `src/{app,pages,components,hooks,services,types}` |
+| `app/frontend/` | React 19 + Vite + Mantine: `src/{app,assets,components,hooks,pages,services}`; tipos gerados em `src/shared/api/` |
 | `app/infra/` | Blueprint do Authentik, `local.sh`, alvos `make` auxiliares |
 | `docs/` | Documentação do projeto |
 | `docs/content/` | **Páginas publicadas** neste website (conteúdo público) |

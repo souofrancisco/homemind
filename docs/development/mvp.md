@@ -13,12 +13,14 @@ Segue o v5.1 §9 e §19 e [decisions.md](../decisions.md) D-14. O MVP é a **Cas
 | Leituras de consumo (tomada real ou simulador) | Cenários e regras votadas (SAFE-04, AGENT-04) |
 | M2: degraus e identificação **provável** (`confidence`) | Total da casa em tempo real, HAN, MEO Energia (PILOT-02) |
 | M1 + M3: contagem na porta (clip/RTSP/simulada), Wi-Fi opt-in ou presença manual, fusão em casa/fora/incerto | Várias tomadas de quarto na bancada (só em produção) |
-| Notificação de confirmação na app («É minha / É de todos / Não sei») | Push, leitura de faturas por LLM multimodal |
+| Notificação de confirmação na app («É minha / Escolher responsável(eis) / Não sei», D-38) | Push, leitura de faturas por LLM multimodal |
 | Atribuição ao morador ou à conta comum (A/B; C é F2) | Opção C da sala por presença (BILL-07) |
 | Orçamento 50/80/100 %, pico em zona comum, lâmpada RGB (se MCP-04 PASS) | Previsão avançada e bi-horário (ALERT-02) |
 | M4: assistente na app só com ferramentas read-only (AGENT-01/02) | Ações propostas pela IA (AGENT-03) |
 | Regra «janela aberta + aquecedor» **em simulação** (SAFE-01); física só com PASS | |
 | Fatura, recibos e painel do senhorio; REAL / SIMULADO / ESTIMADO visível | |
+
+A tabela é o âmbito decidido (D-14), não o estado. Alguns itens da coluna da direita foram antecipados e estão implementados, só com testes ou simulados: ações propostas pela IA com confirmação (AGENT-03 #112), previsão e tarifário bi-horário (ALERT-02 #101), regras da casa votadas (SAFE-04, motor simulado), alarme simulado (SAFE-02 #115) e deteção de casa provavelmente vazia (PRES-06, sem modo AWAY). Estado em [functional-flows.md](../functional-flows.md).
 
 **Limitações assumidas:** uma só tomada mede a extensão da bancada (`main_meter`); a identificação por uma tomada é **probabilística** (cargas simultâneas e a sua localização não se inferem com certeza), pelo que cada resultado leva `confidence` e o resíduo divide-se por igual. Isto deve constar nos contratos, testes e no guião.
 
@@ -78,7 +80,7 @@ Adaptado do PDF §22; o grupo de mensagens passa a ser a aplicação; a contagem
 | 0:00 | O problema: «120 € ÷ 4 = 30 € para todos — mas o Bruno tem um aquecedor» | Três regras no ecrã | |
 | 0:25 | Casa de 4 moradores; aparelhos registados | Resumo da casa | Seed simulado |
 | 0:50 | Liga-se o aquecedor do Bruno | Degrau e «Provável: aquecedor do Bruno» | Dizer se leitura real ou simulada |
-| 1:15 | A Carla responde no telemóvel «É minha» | Notificação interativa → atribuição | Real na app; dados conforme acima |
+| 1:15 | O Bruno responde no telemóvel «É minha» | Notificação interativa → atribuição | Real na app; dados conforme acima |
 | 1:45 | Orçamento sobe; alerta de 80 % | Notificação pessoal | |
 | 2:10 | Fecho do mês: recibos | Recibos com «medido / estimado / simulado» + botão de contestar | Fatura simulada |
 | 2:35 | Painel do senhorio | Só totais por quarto; sem presença | |

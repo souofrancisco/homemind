@@ -11,9 +11,9 @@ Só fluxos **comprovados**. Estados usados:
 | Autenticação e casa (Authentik OIDC + PKCE) | Browser | Contas só no Authentik local; verificação de email real bloqueada (#85) |
 | Permissões por papel | Browser + HTTP | Matriz testada por amostra, não exaustiva |
 | Consumo por tomada | Browser | Sem coletor em runtime com FakeHome |
-| Notificação e votação «De quem é esta conta?» | Browser (só «É minha») | Restantes respostas e prazo de 24 h só em testes |
+| Notificação e votação «De quem é esta conta?» | Browser (só «É minha») | «Escolher responsável(eis)», «Não sei» e prazo de 24 h só em testes |
 | Repartição financeira | Browser + testes | Opção C (presença) não existe |
-| Orçamento a 50/80/100 % | Browser | Previsão mensal e tarifário não existem |
+| Orçamento a 50/80/100 % | Browser | Previsão do fim do mês e tarifário só em testes |
 | Fatura e recibos | Browser | Contestação só em testes |
 | Reset e reprodução da demo | Browser | Nunca toca na base original |
 | Controlos manuais sem câmara (lâmpada, SIMULADO) | Browser (2026-11-18) | Sem leitor de ecrã nem contraste medidos; nenhuma escrita física real |
@@ -21,10 +21,12 @@ Só fluxos **comprovados**. Estados usados:
 | Regras da casa votadas | Testes + browser com emissor OIDC falso e Authentik real (2026-11-19) | Motor SIMULADO; sem executor físico |
 | Alarme simulado (armar/desarmar com confirmação) | Browser (2026-11-19) | Só simulado; a leitura MCP real é só de leitura e o estado físico não foi confirmado |
 | Consumo da tomada offline e estimativa da lâmpada | Testes | SIMULADO; sem hardware |
-| Ocupação e visitas; casa vazia | Testes | Sem câmara real |
+| Assistente de IA na aplicação | Testes | LLM desligado por omissão; dados simulados; não visto no browser |
+| «O que é este aparelho?» (aparelho desconhecido) | Testes | Não visto no browser; sem hardware |
+| Ocupação e visitas; deteção de casa provavelmente vazia | Testes | Sem câmara real; não arma nada (sem modo AWAY, fase 2) |
 | Limite mensal de 5 kWh antes de perguntar | Testes | PROPOSTA por validar com a equipa |
 
-**Não demonstrável hoje:** assistente de IA (sem interface de conversa), escritas físicas reais, presença e câmara reais, push e offline.
+**Não demonstrável hoje:** escritas físicas reais, presença e câmara reais, push e offline.
 
 ## Isolamento por papel
 

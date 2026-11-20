@@ -16,7 +16,7 @@ Um serviço que o **senhorio** instala e que:
 2. atribui cada consumo a um morador ou à conta comum, perguntando na aplicação quando há dúvida;
 3. divide a fatura de forma justa e explicada;
 4. avisa antes de a conta chegar ao limite de cada um;
-5. sabe quando a casa fica vazia, sem reconhecer ninguém.
+5. sabe quando a casa fica vazia, sem reconhecer ninguém (deteção «provavelmente vazia» só em testes; modo AWAY <span class="estado estado--plan">PLANEADO</span>, fase 2).
 
 A interface é a **aplicação da Conta Certa** (React, Mantine), para moradores e senhorios. A aplicação é o canal único: não há bot nem grupo de mensagens externo.
 

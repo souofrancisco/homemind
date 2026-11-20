@@ -3,9 +3,9 @@
 ## O que não está provado
 
 - Tudo na demonstração é **SIMULADO**; nada foi validado com hardware real nesta fase.
-- A interface do assistente de IA não existe (há backend, mas a página é um placeholder).
+- O assistente de IA só tem testes: não foi visto no browser, o LLM está desligado por omissão e os dados são simulados.
 - Push e acesso offline não existem.
-- A previsão mensal e o tarifário não existem; a opção C (presença) não está implementada.
+- A previsão mensal e o tarifário só têm testes; a opção C (presença) não está implementada.
 - A verificação de email real para convites está bloqueada (#85).
 - Prazos de retenção de presença e textos de privacidade são **PROPOSTA**, sem revisão jurídica nem política real de backups.
 - Sem testes unitários de frontend; sem leitor de ecrã nem contraste medidos.

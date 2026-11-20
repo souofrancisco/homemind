@@ -16,7 +16,7 @@ Um serviço que o **senhorio** instala e que usa o kit Connected Home da Altice 
 2. atribuir cada consumo a um morador ou à conta comum, perguntando na aplicação quando há dúvida;
 3. dividir a fatura de forma justa e explicada;
 4. avisar antes de a conta chegar ao limite de cada um;
-5. saber quando a casa fica vazia, sem reconhecer ninguém.
+5. saber quando a casa fica vazia, sem reconhecer ninguém (fase 2: o modo AWAY está fora do MVP; a deteção «casa provavelmente vazia», PRES-06, existe só em testes, com dados simulados).
 
 A interface principal é a **aplicação da Conta Certa** (React, Mantine, Capacitor), para moradores e senhorios. O assistente de IA vive dentro da aplicação.
 

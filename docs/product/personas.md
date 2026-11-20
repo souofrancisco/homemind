@@ -26,7 +26,7 @@ Acompanha o seu consumo, configura orçamentos, confirma utilizações e consult
 | Ver o seu consumo, os seus aparelhos e a conta da sala | Só vê o seu detalhe; dos outros vê totais da casa e dos quartos (**PROPOSTA**, a decidir: [decisions.md](../decisions.md) P-04) |
 | Registar aparelhos pessoais e partilhados | Não altera regras da casa sozinho (votação/acordo: **PROPOSTA**) |
 | Definir o orçamento pessoal e os limiares de aviso (50/80/100 %) | |
-| Responder a pedidos: **É minha / É de todos / Não sei** | A resposta fica registada com autor e hora; pode ser contestada |
+| Responder a pedidos: **É minha / Escolher responsável(eis) / Não sei** (D-38) | A resposta fica registada com autor e hora; pode ser contestada |
 | Contestar consumos e recibos | |
 | Consultar histórico de notificações e definir preferências (silêncio noturno, limiares) | |
 | Falar com o assistente de IA sobre o seu consumo e recibos | O assistente só acede aos dados que o próprio utilizador pode ver |
