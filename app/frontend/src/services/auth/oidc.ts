@@ -62,8 +62,19 @@ export async function login(): Promise<void> {
   await Browser.open({ url: (await manager.client.createSigninRequest({ request_type: "si:r" })).url });
 }
 
+// Web: o signoutRedirect remove o utilizador antes de navegar para o Authentik; sem esta marca,
+// a rota protegida via «sem utilizador» e abria um novo login que abortava o end-session.
+let leaving = false;
+export const isLeaving = () => leaving;
+
 export async function logout(): Promise<void> {
-  if (!isNative) return manager.signoutRedirect();
+  if (!isNative) {
+    leaving = true;
+    return manager.signoutRedirect().catch((e) => {
+      leaving = false;
+      throw e;
+    });
+  }
   const idToken = (await manager.getUser())?.id_token;
   const { url } = await manager.client.createSignoutRequest({ id_token_hint: idToken, request_type: "so:r" });
   // O utilizador só é removido quando o Authentik devolve a app (deep link de logout).

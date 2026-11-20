@@ -2,14 +2,14 @@ import { Center, Loader } from "@mantine/core";
 import { useEffect, type ReactNode } from "react";
 import { Route, Routes, useNavigate } from "react-router-dom";
 import Shell from "../components/layout/Shell";
-import { completeLogin } from "../services/auth/oidc";
+import { completeLogin, isLeaving } from "../services/auth/oidc";
 import { useAuth } from "./providers/AuthProvider";
 import { HouseholdProvider } from "./providers/HouseholdProvider";
 
 function Protected({ children }: { children: ReactNode }) {
   const { user, login } = useAuth();
   useEffect(() => {
-    if (!user) void login();
+    if (!user && !isLeaving()) void login();
   }, [user, login]);
   return user ? children : <Center h="100dvh"><Loader aria-label="A iniciar sessão" /></Center>;
 }
