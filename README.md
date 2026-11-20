@@ -39,9 +39,9 @@ Contas de demonstração (só no Authentik local): `ana`, `bruno`, `carla`, `dio
 
 ## Percurso da demo (≈5 min)
 
-1. `ana`: Início → Consumo → **Notificações** → «De quem é esta conta?» → «É minha» → Orçamento (definir 35 €).
-2. `senhorio`: Contas e recibos → fatura 120 € (01–18/11, fixo 15 €, 400 kWh) → pré-visualizar → registar → **Finalizar e repartir**. A página de consumo mostra «RESTRITO».
-3. `ana`, `bruno`, `carla`, `diogo`: Contas e recibos → «Porque pago isto?»; os quatro valores somam 120,00 €.
+1. `ana`: **Hoje** (consumo e pedidos) → sino de **Notificações** → «De quem é esta conta?» → «É minha» → **Contas → Este mês** (definir o orçamento de 35 €).
+2. `senhorio`: **Contas** → fatura 120 € (01–18/11, fixo 15 €, 400 kWh) → pré-visualizar → registar → **Finalizar e repartir**. O **Hoje** do senhorio não mostra consumo detalhado, presença nem aparelhos.
+3. `ana`, `bruno`, `carla`, `diogo`: **Contas → Recibos** → «Porque pago isto?»; os quatro valores somam 120,00 €.
 
 ## Arquitetura
 

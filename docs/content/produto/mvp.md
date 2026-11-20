@@ -18,7 +18,7 @@ O MVP é a **Casa Justa + Casa Atenta**.
 | Assistente na aplicação, só com ferramentas de leitura | Ações propostas pela IA |
 | Fatura, recibos e painel do senhorio; REAL / SIMULADO / ESTIMADO visível | |
 
-O que já está implementado de cada linha está em [Funcionalidades](funcionalidades.md); esta página descreve o âmbito, não o estado.
+Esta tabela descreve o âmbito, não o estado. Alguns itens da coluna da direita foram antecipados e já estão implementados, só com testes ou simulados: ações propostas pela IA com confirmação, previsão e tarifário bi-horário, regras da casa votadas (motor simulado), alarme simulado e deteção de casa provavelmente vazia (sem modo AWAY). O estado de cada um está em [Funcionalidades](funcionalidades.md).
 
 ## Limitações assumidas
 

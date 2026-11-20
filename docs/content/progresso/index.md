@@ -27,7 +27,7 @@ Issues abertas com trabalho corrente (o Project manda):
 
 ## <span class="estado estado--plan">PLANEADO</span>
 
-Issues abertas, por épico (24 abertas e 84 fechadas à data):
+Issues abertas, por épico (24 abertas e 84 fechadas à data; as de «Em desenvolvimento» repetem-se na linha da Demonstração):
 
 | Épico | Exemplos por fazer |
 |---|---|

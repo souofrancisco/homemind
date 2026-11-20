@@ -16,9 +16,9 @@ Os routers são descobertos em `features/*/router.py`. Cada feature vive na sua 
 
 ## Frontend
 
-`app/frontend/src/`: `app`, `pages`, `components`, `hooks`, `services`, `types`. Os tipos da API são gerados por `make contracts`.
+`app/frontend/src/`: `app`, `assets`, `components`, `hooks`, `pages`, `services`. Os tipos da API são gerados por `make contracts` em `src/shared/api/` (não versionados).
 
-Navegação principal (`app/routes.tsx`, filtrada por papel; o servidor aplica sempre o RBAC): **Hoje**, **Contas**, **Casa**, **Assistente** (só inquilinos) e **Diagnóstico** (só operador). Páginas secundárias: Consumo, Aparelhos, Orçamento, Notificações, Regras da casa e Definições.
+Navegação principal (`app/routes.tsx`, filtrada por papel; o servidor aplica sempre o RBAC): **Hoje**, **Contas**, **Casa**, **Assistente** (só inquilinos) e **Diagnóstico** (só operador). Rotas secundárias: Notificações (`/notificacoes`, sino no topo), Regras da casa (`/regras`, só inquilinos) e Definições (`/definicoes`). Consumo, Aparelhos e Orçamento são secções de Hoje, Casa e Contas; os endereços antigos `/consumo`, `/aparelhos` e `/orcamento` redirecionam para elas.
 
 ## Módulos de produto
 

@@ -23,7 +23,7 @@ Só fluxos **comprovados**. Estados usados:
 | Consumo da tomada offline e estimativa da lâmpada | Testes | SIMULADO; sem hardware |
 | Assistente de IA na aplicação | Testes | LLM desligado por omissão; dados simulados; não visto no browser |
 | «O que é este aparelho?» (aparelho desconhecido) | Testes | Não visto no browser; sem hardware |
-| Ocupação e visitas; casa vazia | Testes | Sem câmara real |
+| Ocupação e visitas; deteção de casa provavelmente vazia | Testes | Sem câmara real; não arma nada (sem modo AWAY, fase 2) |
 | Limite mensal de 5 kWh antes de perguntar | Testes | PROPOSTA por validar com a equipa |
 
 **Não demonstrável hoje:** escritas físicas reais, presença e câmara reais, push e offline.

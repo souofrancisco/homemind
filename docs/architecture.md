@@ -23,7 +23,7 @@ Um processo FastAPI; routers descobertos em `features/*/router.py` (`core/featur
 | `…/connectors/` | `fake_home`, `mcp_home`, `altice_auth`, `write_grant`, `mcp_verify` |
 | `…/features/<nome>/` | `households`, `appliances`, `energy`, `billing`, `notifications`, `presence`, `safety`, `agent`, `integration`, `auth`, `health`, `video`, `mcp` |
 | `…/demo/` | `cli.py` (base de demo determinística), `web.py` (contas Authentik + cópia web) |
-| `app/frontend/src/` | `app`, `pages`, `components`, `hooks`, `services`, `types`; tipos da API gerados por `make contracts` |
+| `app/frontend/src/` | `app`, `assets`, `components`, `hooks`, `pages`, `services`; tipos da API gerados por `make contracts` em `shared/api/` (não versionados) |
 | `app/infra/` | blueprint do Authentik, `local.sh`, alvos `make` auxiliares |
 
 ## Regras de arquitetura
