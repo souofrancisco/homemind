@@ -19,7 +19,7 @@ Gere casas, quartos, contratos e faturação, **com acesso limitado aos dados pe
 Acompanha o seu consumo, configura orçamentos, confirma utilizações e consulta recibos.
 
 - Vê o seu consumo e os seus aparelhos; define o orçamento pessoal e os limiares de aviso.
-- Responde a pedidos («É minha», «É de todos», «Não sei»); a resposta fica registada com autor e hora e pode ser contestada.
+- Responde a pedidos («É minha», «Escolher responsável(eis)», «Não sei»); a resposta fica registada com autor e hora e pode ser contestada.
 - Pode optar por registar presença (opt-in) e retirá-la quando quiser; pode consultar e exportar os seus dados.
 
 ## Operador (`operator`)

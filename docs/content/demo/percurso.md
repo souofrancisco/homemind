@@ -26,7 +26,7 @@ Cerca de 5 minutos, com dados **SIMULADOS**.
 | 0:00 | O problema: «120 € ÷ 4 = 30 € para todos, mas o Bruno tem um aquecedor» |
 | 0:25 | Casa de 4 moradores; aparelhos registados |
 | 0:50 | Liga-se o aquecedor; «Provável: aquecedor do Bruno» (inferido, nunca «certo») |
-| 1:15 | A Carla responde «É minha» |
+| 1:15 | O Bruno responde «É minha» |
 | 1:45 | O orçamento sobe; aviso de 80 % |
 | 2:10 | Fecho do mês: recibos «medido / estimado / simulado» e botão de contestar |
 | 2:35 | Painel do senhorio: só totais por quarto |

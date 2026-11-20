@@ -51,7 +51,7 @@ O HTML vai para `/tmp/homemind-docs-site`, fora do repositório. `--strict` falh
 | Evento | Workflow | O que faz |
 |---|---|---|
 | Pull request para `main` | `pr-docs.yml` | `mkdocs build --strict`. Não publica |
-| Push para `main` que altera `docs/**` ou `publish-docs.yml` | `publish-docs.yml` | Constrói o site e publica-o no ambiente `github-pages` |
+| Push para `main` que altera `docs/content/**`, `docs/mkdocs.yml`, `docs/requirements.txt` ou `publish-docs.yml` | `publish-docs.yml` | Constrói o site e publica-o no ambiente `github-pages` |
 | Execução manual (`workflow_dispatch`) | `publish-docs.yml` | O mesmo |
 
 O repositório usa **GitHub Pages com origem «GitHub Actions»** (Settings → Pages → Build and deployment → Source). Deploys concorrentes não se sobrepõem.

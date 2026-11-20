@@ -1,6 +1,6 @@
 # MVP
 
-<span class="estado estado--plan">PLANEADO</span> O MVP demonstra o problema principal, **dividir a conta com justiça e explicação**, com as limitações reais do kit: **uma única tomada com medição**.
+O MVP demonstra o problema principal, **dividir a conta com justiça e explicação**, com as limitações reais do kit: **uma única tomada com medição**.
 
 ## Âmbito
 
@@ -17,6 +17,8 @@ O MVP é a **Casa Justa + Casa Atenta**.
 | Orçamento 50/80/100 %, pico em zona comum, lâmpada RGB (se validada) | Previsão avançada e bi-horário |
 | Assistente na aplicação, só com ferramentas de leitura | Ações propostas pela IA |
 | Fatura, recibos e painel do senhorio; REAL / SIMULADO / ESTIMADO visível | |
+
+O que já está implementado de cada linha está em [Funcionalidades](funcionalidades.md); esta página descreve o âmbito, não o estado.
 
 ## Limitações assumidas
 

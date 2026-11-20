@@ -78,7 +78,7 @@ Adaptado do PDF §22; o grupo de mensagens passa a ser a aplicação; a contagem
 | 0:00 | O problema: «120 € ÷ 4 = 30 € para todos — mas o Bruno tem um aquecedor» | Três regras no ecrã | |
 | 0:25 | Casa de 4 moradores; aparelhos registados | Resumo da casa | Seed simulado |
 | 0:50 | Liga-se o aquecedor do Bruno | Degrau e «Provável: aquecedor do Bruno» | Dizer se leitura real ou simulada |
-| 1:15 | A Carla responde no telemóvel «É minha» | Notificação interativa → atribuição | Real na app; dados conforme acima |
+| 1:15 | O Bruno responde no telemóvel «É minha» | Notificação interativa → atribuição | Real na app; dados conforme acima |
 | 1:45 | Orçamento sobe; alerta de 80 % | Notificação pessoal | |
 | 2:10 | Fecho do mês: recibos | Recibos com «medido / estimado / simulado» + botão de contestar | Fatura simulada |
 | 2:35 | Painel do senhorio | Só totais por quarto; sem presença | |
